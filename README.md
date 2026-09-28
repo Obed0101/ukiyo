@@ -8,8 +8,10 @@
 
 <h3>The world is code. Agents build it. You watch every tick.</h3>
 
-A C# game engine designed from its first line for coding agents and the people who direct them.<br>
-One program runs natively, in the browser and headless, with no editor in between.
+An agent-native game engine in C#. Your coding agent reads and changes the game's code while it runs,<br>
+through skills and MCP. The Studio is the human window: watch, edit, take over.<br>
+Assemble it like Arch Linux: simple, balanced or complete.<br>
+<sub>Pre-alpha. 0.0.1 ships the core: one program on three targets. Skills, MCP and the Studio come next.</sub>
 
 <br>
 
@@ -19,7 +21,7 @@ One program runs natively, in the browser and headless, with no editor in betwee
 [![targets](https://img.shields.io/badge/targets-macOS_·_web_·_headless-000?style=flat-square)](#quickstart)
 [![license](https://img.shields.io/badge/license-MIT-000?style=flat-square)](LICENSE)
 
-[Quickstart](#quickstart) · [How it works](#how-it-works) · [Roadmap](#roadmap) · [G0 report](docs/G0.md) · [Protocol](docs/protocol.md)
+[Website](https://ukiyoengine.top) · [Quickstart](#quickstart) · [How it works](#how-it-works) · [Roadmap](#roadmap) · [G0 report](docs/G0.md) · [Protocol](docs/protocol.md)
 
 </div>
 
@@ -42,9 +44,9 @@ ukiyo starts from the other end.
 
 - **The code is the world.** Scenes, entities, transforms and components are plain C#. There is no hidden editor state to reverse-engineer: what a person or an agent writes is exactly what runs.
 - **Agents are native, not bolted on.** Fixed 60 Hz ticks, headless runs, structured snapshots, typed errors and build-stamped evidence are engine features. Tool protocols sit on top as thin adapters; they are not the product.
-- **Your agent gets a whole engine.** Rendering, materials and textures, physics, audio, input and game UI, each with skills that teach an agent how to use it and checks that prove the result: code tests and visual tests on real frames.
-- **Humans stay in the loop.** A studio window, on the roadmap, shows what agents are doing, lets you review their changes and take over at any point, without ever becoming the source of truth.
-- **Take only what you need.** Like a Linux you assemble yourself, start simple, balanced or complete, both for the studio and for how your game is built. Nothing you did not choose gets in the way.
+- **Your agent gets a whole engine, live.** It connects through skills and MCP and works on the game while it runs. Rendering, materials and textures, physics, audio, input and game UI, each with skills that teach an agent how to use it and checks that prove the result: code tests and visual tests on real frames.
+- **Humans stay in the loop.** The Studio, on the roadmap, shows what agents are doing, lets you review their changes and take over at any point, without ever becoming the source of truth.
+- **Take only what you need.** Like Arch Linux: start simple, balanced or complete, both for the Studio and for the engine, systems and skills your game is built from. Nothing you did not choose gets in the way.
 - **An open library, not a store.** Models, materials, sounds, templates and whole game systems published as packages by the community. Free and open source, all of it: no marketplace cut, no locked assets.
 - **One program, every target.** Renderers implement one contract. The same `Program.cs` runs on wgpu/Metal, in the browser through WebAssembly, and with no GPU at all.
 - **Games ship alone.** A desktop export is a single native executable. A web export is a folder of static files. No editor, daemon or model at runtime.
