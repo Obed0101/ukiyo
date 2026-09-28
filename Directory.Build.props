@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <UkiyoRoot>$(MSBuildThisFileDirectory)</UkiyoRoot>
+    <UkiyoNativeDir>$(MSBuildThisFileDirectory)native/osx-arm64/</UkiyoNativeDir>
+    <Version>0.0.1</Version>
+  </PropertyGroup>
+
+  <!-- Engine libraries must stay trimming/NativeAOT clean: analyzers run as errors. -->
+  <PropertyGroup Condition="$(MSBuildProjectDirectory.Contains('/src/'))">
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

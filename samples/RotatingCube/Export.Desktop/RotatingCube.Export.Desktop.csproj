@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Distribution profile (single-binary): NativeAOT, wgpu-native and SDL3 linked statically through DirectPInvoke.
+    Separate from the development host so the export never depends on dylibs from the dev tree, the Studio,
+    a daemon or Roslyn. Publish: dotnet publish samples/RotatingCube/Export.Desktop -c Release
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rotating-cube</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.RotatingCube</RootNamespace>
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <UseSystemResourceKeys>true</UseSystemResourceKeys>
+    <CopyOutputSymbolsToPublishDirectory>false</CopyOutputSymbolsToPublishDirectory>
+    <AllowedReferenceRelatedFileExtensions>none</AllowedReferenceRelatedFileExtensions>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Desktop/Ukiyo.Platform.Desktop.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <DirectPInvoke Include="wgpu_native" />
+    <DirectPInvoke Include="SDL3" />
+    <NativeLibrary Include="$(UkiyoNativeDir)lib/libwgpu_native.a" />
+    <NativeLibrary Include="$(UkiyoNativeDir)lib/libSDL3.a" />
+    <!-- System frameworks are allowed OS dependencies (docs/export.md); nothing else may be loaded at runtime. -->
+    <LinkerArg Include="-framework Metal -framework QuartzCore -framework Foundation -framework CoreFoundation -framework CoreGraphics -framework AppKit -framework IOKit -framework CoreVideo -framework CoreAudio -framework AudioToolbox -framework Carbon -framework ForceFeedback -framework GameController -framework CoreHaptics -framework AVFoundation -framework CoreMedia -framework UniformTypeIdentifiers -framework Security -framework CoreServices -liconv" />
+  </ItemGroup>
+</Project>

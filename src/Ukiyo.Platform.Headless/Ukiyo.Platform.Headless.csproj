@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Ukiyo.Hosting</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ukiyo.Core/Ukiyo.Core.csproj" />
+    <ProjectReference Include="../Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rotating-cube-headless</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.RotatingCube</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+  </ItemGroup>
+</Project>

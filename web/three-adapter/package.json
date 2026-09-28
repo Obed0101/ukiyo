@@ -1,0 +1,12 @@
+{
+  "name": "@ukiyo/three-adapter",
+  "private": true,
+  "type": "module",
+  "description": "Three.js presentation adapter for Ukiyo. Applies C# resource batches and frame packets; contains no game rules.",
+  "scripts": {
+    "test": "bun test"
+  },
+  "dependencies": {
+    "three": "0.186.0"
+  }
+}

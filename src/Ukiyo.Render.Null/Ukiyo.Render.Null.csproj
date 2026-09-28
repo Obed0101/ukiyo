@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Ukiyo.Rendering.Null</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ukiyo.Render/Ukiyo.Render.csproj" />
+  </ItemGroup>
+</Project>

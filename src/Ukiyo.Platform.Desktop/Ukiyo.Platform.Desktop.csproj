@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Ukiyo.Hosting</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Ukiyo.Core/Ukiyo.Core.csproj" />
+    <ProjectReference Include="../Ukiyo.Render.Wgpu/Ukiyo.Render.Wgpu.csproj" />
+  </ItemGroup>
+</Project>

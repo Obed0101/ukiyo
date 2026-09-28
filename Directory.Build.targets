@@ -1,0 +1,18 @@
+<Project>
+  <!--
+    Source identity: every host that links samples/*/Shared records the SHA-256 of those files as
+    assembly metadata (ukiyo.source:<file>). Desktop, web and headless runs print them, so parity
+    evidence can prove all targets compiled the same Program.cs and game code.
+  -->
+  <Target Name="UkiyoSharedSourceHash" BeforeTargets="GetAssemblyAttributes" Condition="'@(UkiyoSharedSource)' != ''">
+    <GetFileHash Files="@(UkiyoSharedSource)" Algorithm="SHA256" HashEncoding="hex">
+      <Output TaskParameter="Items" ItemName="_UkiyoHashedSource" />
+    </GetFileHash>
+    <ItemGroup>
+      <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+        <_Parameter1>ukiyo.source:%(_UkiyoHashedSource.Filename)%(_UkiyoHashedSource.Extension)</_Parameter1>
+        <_Parameter2>%(_UkiyoHashedSource.FileHash)</_Parameter2>
+      </AssemblyAttribute>
+    </ItemGroup>
+  </Target>
+</Project>

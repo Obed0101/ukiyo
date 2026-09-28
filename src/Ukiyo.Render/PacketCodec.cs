@@ -1,0 +1,292 @@
+using System.Buffers.Binary;
+using System.Numerics;
+
+namespace Ukiyo.Rendering;
+
+/// <summary>
+/// Binary wire format for resource batches and frame packets (protocol v1, little-endian, 4-byte aligned).
+/// Used across the C#↔JS bridge; the JS decoder lives in web/three-adapter/protocol.js and must match
+/// docs/protocol.md byte for byte. 64-bit ticks are written as two uint32 (lo, hi) so JS reads them exactly.
+/// </summary>
+public static class PacketCodec
+{
+    public const uint ResourceMagic = 0x42524B55; // "UKRB"
+    public const uint FrameMagic = 0x50524B55;    // "UKRP"
+    public const ushort Version = 1;
+    public const int HeaderSize = 16;
+    public const int InstanceSize = 96;           // 2 handles (16 bytes each) + 16 floats (64 bytes)
+
+    public static byte[] Encode(ResourceBatch batch)
+    {
+        RenderValidation.Validate(batch);
+        var size = HeaderSize;
+        foreach (var command in batch.Commands)
+        {
+            size += 12 + command.Kind switch
+            {
+                ResourceCommandKind.CreateMesh => 8 + command.Mesh!.Vertices.Length * VertexPositionColor.SizeInBytes + command.Mesh.Indices.Length * 4,
+                ResourceCommandKind.CreateMaterial => 20,
+                _ => 0,
+            };
+        }
+
+        var writer = new Writer(size);
+        writer.U32(ResourceMagic);
+        writer.U16(Version);
+        writer.U16(0);
+        writer.U32((uint)batch.Commands.Count);
+        writer.U32((uint)size);
+        foreach (var command in batch.Commands)
+        {
+            writer.U8((byte)command.Kind);
+            writer.U8((byte)command.Handle.Kind);
+            writer.U16(0);
+            writer.U32(command.Handle.Index);
+            writer.U32(command.Handle.Generation);
+            if (command.Kind == ResourceCommandKind.CreateMesh)
+            {
+                var mesh = command.Mesh!;
+                writer.U32((uint)mesh.Vertices.Length);
+                writer.U32((uint)mesh.Indices.Length);
+                foreach (var vertex in mesh.Vertices)
+                {
+                    writer.Vec3(vertex.Position);
+                    writer.Vec3(vertex.Color);
+                }
+
+                foreach (var index in mesh.Indices)
+                {
+                    writer.U32(index);
+                }
+            }
+            else if (command.Kind == ResourceCommandKind.CreateMaterial)
+            {
+                writer.Vec4(command.Material!.BaseColor);
+                writer.U32(command.Material.UseVertexColors ? 1u : 0u);
+            }
+        }
+
+        return writer.Finish();
+    }
+
+    public static byte[] Encode(RenderPacket packet)
+    {
+        RenderValidation.Validate(packet);
+        var size = HeaderSize + 16 + 16 + 40 + 4 + packet.Instances.Count * InstanceSize;
+        var writer = new Writer(size);
+        writer.U32(FrameMagic);
+        writer.U16(Version);
+        writer.U16(0);
+        writer.U32(packet.Sequence);
+        writer.U32((uint)size);
+        writer.U32((uint)(packet.Tick & 0xFFFFFFFF));
+        writer.U32((uint)((ulong)packet.Tick >> 32));
+        writer.U32((uint)packet.Viewport.Width);
+        writer.U32((uint)packet.Viewport.Height);
+        writer.Vec4(packet.ClearColor);
+        writer.Vec3(packet.Camera.Position);
+        writer.Quat(packet.Camera.Rotation);
+        writer.F32(packet.Camera.FieldOfViewY);
+        writer.F32(packet.Camera.NearPlane);
+        writer.F32(packet.Camera.FarPlane);
+        writer.U32((uint)packet.Instances.Count);
+        foreach (var instance in packet.Instances)
+        {
+            writer.Handle(instance.Mesh);
+            writer.Handle(instance.Material);
+            writer.Matrix(instance.World);
+        }
+
+        return writer.Finish();
+    }
+
+    public static ResourceBatch DecodeResources(ReadOnlySpan<byte> data)
+    {
+        var reader = new Reader(data);
+        reader.Header(ResourceMagic);
+        var count = reader.U32();
+        reader.ExpectLength();
+        var commands = new List<ResourceCommand>((int)Math.Min(count, 4096));
+        for (var i = 0; i < count; i++)
+        {
+            var kind = (ResourceCommandKind)reader.U8();
+            var resourceKind = (ResourceKind)reader.U8();
+            reader.U16();
+            var handle = new ResourceHandle(resourceKind, reader.U32(), reader.U32());
+            switch (kind)
+            {
+                case ResourceCommandKind.CreateMesh:
+                    var vertexCount = reader.Count(RenderValidation.MaxVertices, "vertex");
+                    var indexCount = reader.Count(RenderValidation.MaxIndices, "index");
+                    var vertices = new VertexPositionColor[vertexCount];
+                    for (var v = 0; v < vertexCount; v++)
+                    {
+                        vertices[v] = new VertexPositionColor(reader.Vec3(), reader.Vec3());
+                    }
+
+                    var indices = new uint[indexCount];
+                    for (var n = 0; n < indexCount; n++)
+                    {
+                        indices[n] = reader.U32();
+                    }
+
+                    commands.Add(ResourceCommand.CreateMesh(handle, new MeshData(vertices, indices)));
+                    break;
+                case ResourceCommandKind.CreateMaterial:
+                    commands.Add(ResourceCommand.CreateMaterial(handle, new MaterialData(reader.Vec4(), reader.U32() != 0)));
+                    break;
+                case ResourceCommandKind.Destroy:
+                    commands.Add(ResourceCommand.Destroy(handle));
+                    break;
+                default:
+                    throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown resource command {(byte)kind}");
+            }
+        }
+
+        reader.RequireEnd();
+        var batch = new ResourceBatch(commands);
+        RenderValidation.Validate(batch);
+        return batch;
+    }
+
+    public static RenderPacket DecodeFrame(ReadOnlySpan<byte> data)
+    {
+        var reader = new Reader(data);
+        reader.Header(FrameMagic);
+        var sequence = reader.U32();
+        reader.ExpectLength();
+        var tick = (long)(reader.U32() | ((ulong)reader.U32() << 32));
+        var viewport = new RenderExtent((int)reader.U32(), (int)reader.U32(), 1f);
+        var clear = reader.Vec4();
+        var camera = new CameraState(reader.Vec3(), reader.Quat(), reader.F32(), reader.F32(), reader.F32());
+        var count = reader.Count(RenderValidation.MaxInstances, "instance");
+        var instances = new RenderInstance[count];
+        for (var i = 0; i < count; i++)
+        {
+            instances[i] = new RenderInstance(reader.Handle(), reader.Handle(), reader.Matrix());
+        }
+
+        reader.RequireEnd();
+        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances);
+        RenderValidation.Validate(packet);
+        return packet;
+    }
+
+    private sealed class Writer(int size)
+    {
+        private readonly byte[] _buffer = new byte[size];
+        private int _offset;
+
+        public void U8(byte value) => _buffer[_offset++] = value;
+        public void U16(ushort value) { BinaryPrimitives.WriteUInt16LittleEndian(_buffer.AsSpan(_offset), value); _offset += 2; }
+        public void U32(uint value) { BinaryPrimitives.WriteUInt32LittleEndian(_buffer.AsSpan(_offset), value); _offset += 4; }
+        public void F32(float value) { BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(_offset), value); _offset += 4; }
+        public void Vec3(Vector3 v) { F32(v.X); F32(v.Y); F32(v.Z); }
+        public void Vec4(Vector4 v) { F32(v.X); F32(v.Y); F32(v.Z); F32(v.W); }
+        public void Quat(Quaternion q) { F32(q.X); F32(q.Y); F32(q.Z); F32(q.W); }
+        public void Handle(ResourceHandle handle) { U32((uint)handle.Kind); U32(handle.Index); U32(handle.Generation); U32(0); }
+
+        public void Matrix(Matrix4x4 m)
+        {
+            F32(m.M11); F32(m.M12); F32(m.M13); F32(m.M14);
+            F32(m.M21); F32(m.M22); F32(m.M23); F32(m.M24);
+            F32(m.M31); F32(m.M32); F32(m.M33); F32(m.M34);
+            F32(m.M41); F32(m.M42); F32(m.M43); F32(m.M44);
+        }
+
+        public byte[] Finish()
+        {
+            if (_offset != _buffer.Length)
+            {
+                throw new InvalidOperationException($"[CODEC]: wrote {_offset} of {_buffer.Length} bytes");
+            }
+
+            return _buffer;
+        }
+    }
+
+    private ref struct Reader(ReadOnlySpan<byte> data)
+    {
+        private readonly ReadOnlySpan<byte> _data = data;
+        private int _offset;
+
+        public void Header(uint magic)
+        {
+            if (_data.Length < HeaderSize)
+            {
+                throw new RenderException(RenderErrorCode.TruncatedPayload, $"{_data.Length} bytes is shorter than the {HeaderSize}-byte header");
+            }
+
+            if (U32() != magic)
+            {
+                throw new RenderException(RenderErrorCode.InvalidPacket, "bad magic");
+            }
+
+            var version = U16();
+            if (version != Version)
+            {
+                throw new RenderException(RenderErrorCode.UnsupportedVersion, $"protocol v{version}, expected v{Version}");
+            }
+
+            U16();
+        }
+
+        public void ExpectLength()
+        {
+            var declared = U32();
+            if (declared != _data.Length)
+            {
+                throw new RenderException(RenderErrorCode.TruncatedPayload, $"declared {declared} bytes, received {_data.Length}");
+            }
+        }
+
+        public int Count(int max, string what)
+        {
+            var value = U32();
+            if (value > max)
+            {
+                throw new RenderException(RenderErrorCode.OutOfRange, $"{what} count {value} exceeds {max}");
+            }
+
+            return (int)value;
+        }
+
+        public byte U8() { Need(1); return _data[_offset++]; }
+        public ushort U16() { Need(2); var v = BinaryPrimitives.ReadUInt16LittleEndian(_data[_offset..]); _offset += 2; return v; }
+        public uint U32() { Need(4); var v = BinaryPrimitives.ReadUInt32LittleEndian(_data[_offset..]); _offset += 4; return v; }
+        public float F32() { Need(4); var v = BinaryPrimitives.ReadSingleLittleEndian(_data[_offset..]); _offset += 4; return v; }
+        public Vector3 Vec3() => new(F32(), F32(), F32());
+        public Vector4 Vec4() => new(F32(), F32(), F32(), F32());
+        public Quaternion Quat() => new(F32(), F32(), F32(), F32());
+
+        public ResourceHandle Handle()
+        {
+            var kind = (ResourceKind)U32();
+            var handle = new ResourceHandle(kind, U32(), U32());
+            U32();
+            return handle;
+        }
+
+        public Matrix4x4 Matrix() => new(
+            F32(), F32(), F32(), F32(),
+            F32(), F32(), F32(), F32(),
+            F32(), F32(), F32(), F32(),
+            F32(), F32(), F32(), F32());
+
+        public void RequireEnd()
+        {
+            if (_offset != _data.Length)
+            {
+                throw new RenderException(RenderErrorCode.InvalidPacket, $"{_data.Length - _offset} trailing bytes");
+            }
+        }
+
+        private void Need(int bytes)
+        {
+            if (_offset + bytes > _data.Length)
+            {
+                throw new RenderException(RenderErrorCode.TruncatedPayload, $"need {bytes} bytes at offset {_offset}, have {_data.Length - _offset}");
+            }
+        }
+    }
+}

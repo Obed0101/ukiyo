@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>Ukiyo.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../samples/RotatingCube/Shared/CubeGame.cs" Link="Shared/CubeGame.cs" />
+    <ProjectReference Include="../../src/Ukiyo.Core/Ukiyo.Core.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
+  </ItemGroup>
+</Project>

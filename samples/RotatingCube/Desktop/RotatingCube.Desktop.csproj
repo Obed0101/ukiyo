@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Development host: JIT, loads the pinned wgpu-native and SDL3 dylibs copied next to the executable. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rotating-cube-desktop</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.RotatingCube</RootNamespace>
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Desktop/Ukiyo.Platform.Desktop.csproj" />
+    <None Include="$(UkiyoNativeDir)lib/libwgpu_native.dylib;$(UkiyoNativeDir)lib/libSDL3.dylib" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="UkiyoRequireNative" BeforeTargets="Build" Condition="!Exists('$(UkiyoNativeDir)lib/libwgpu_native.dylib')">
+    <Error Text="Native dependencies missing. Run scripts/fetch-native.sh first." />
+  </Target>
+</Project>

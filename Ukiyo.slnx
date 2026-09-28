@@ -1,0 +1,21 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Ukiyo.Render/Ukiyo.Render.csproj" />
+    <Project Path="src/Ukiyo.Core/Ukiyo.Core.csproj" />
+    <Project Path="src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
+    <Project Path="src/Ukiyo.Render.Wgpu/Ukiyo.Render.Wgpu.csproj" />
+    <Project Path="src/Ukiyo.Render.Three/Ukiyo.Render.Three.csproj" />
+    <Project Path="src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+    <Project Path="src/Ukiyo.Platform.Desktop/Ukiyo.Platform.Desktop.csproj" />
+    <Project Path="src/Ukiyo.Platform.Browser/Ukiyo.Platform.Browser.csproj" />
+  </Folder>
+  <Folder Name="/samples/">
+    <Project Path="samples/RotatingCube/Headless/RotatingCube.Headless.csproj" />
+    <Project Path="samples/RotatingCube/Desktop/RotatingCube.Desktop.csproj" />
+    <Project Path="samples/RotatingCube/Export.Desktop/RotatingCube.Export.Desktop.csproj" />
+    <Project Path="samples/RotatingCube/Browser/RotatingCube.Browser.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Ukiyo.Tests/Ukiyo.Tests.csproj" />
+  </Folder>
+</Solution>

@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <RootNamespace>Ukiyo.Hosting</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+  <ItemGroup>
+    <SupportedPlatform Include="browser" />
+    <ProjectReference Include="../Ukiyo.Core/Ukiyo.Core.csproj" />
+    <ProjectReference Include="../Ukiyo.Render.Three/Ukiyo.Render.Three.csproj" />
+  </ItemGroup>
+</Project>
