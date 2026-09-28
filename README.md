@@ -42,7 +42,10 @@ ukiyo starts from the other end.
 
 - **The code is the world.** Scenes, entities, transforms and components are plain C#. There is no hidden editor state to reverse-engineer: what a person or an agent writes is exactly what runs.
 - **Agents are native, not bolted on.** Fixed 60 Hz ticks, headless runs, structured snapshots, typed errors and build-stamped evidence are engine features. Tool protocols sit on top as thin adapters; they are not the product.
+- **Your agent gets a whole engine.** Rendering, materials and textures, physics, audio, input and game UI, each with skills that teach an agent how to use it and checks that prove the result: code tests and visual tests on real frames.
 - **Humans stay in the loop.** A studio window, on the roadmap, shows what agents are doing, lets you review their changes and take over at any point, without ever becoming the source of truth.
+- **Take only what you need.** Like a Linux you assemble yourself, start simple, balanced or complete, both for the studio and for how your game is built. Nothing you did not choose gets in the way.
+- **An open library, not a store.** Models, materials, sounds, templates and whole game systems published as packages by the community. Free and open source, all of it: no marketplace cut, no locked assets.
 - **One program, every target.** Renderers implement one contract. The same `Program.cs` runs on wgpu/Metal, in the browser through WebAssembly, and with no GPU at all.
 - **Games ship alone.** A desktop export is a single native executable. A web export is a folder of static files. No editor, daemon or model at runtime.
 
@@ -158,8 +161,9 @@ tests/Ukiyo.Tests             core, bridge and renderer contract tests
 - [x] **G0 · One program, two real renderers.** Metal and WebGL2 from the same C#, NativeAOT single binary, static web export.
 - [ ] **G1 · Runtime slice.** Input and platform services, and a physics spike validated on CoreCLR, NativeAOT and WebAssembly.
 - [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI and its tool adapters.
-- [ ] **G3 · Studio and reload.** A human window onto a running game, a dev bridge from any editor, controlled reload.
-- [ ] **G4 · Evidence and games.** Replays, visual conformance and the first real games, starting with the flight sim that began all this.
+- [ ] **G3 · Studio and reload.** A human window onto a running game in simple, balanced or complete layouts, a dev bridge from any editor, controlled reload.
+- [ ] **G4 · Evidence and games.** Replays, visual conformance and the first real games.
+- [ ] **G5 · The open library.** Packages for assets and game systems, published and shared by the community, free and open source.
 
 Each gate closes only with evidence. Order and scope can still change.
 
