@@ -6,6 +6,8 @@
     <RootNamespace>Ukiyo.Samples.RotatingCube</RootNamespace>
     <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
+    <!-- Links the dev bridge (agents attach through ~/.ukiyo/live). The Export.Desktop profile never sets this. -->
+    <UkiyoDevBridge>true</UkiyoDevBridge>
   </PropertyGroup>
   <ItemGroup>
     <UkiyoSharedSource Include="../Shared/*.cs" />

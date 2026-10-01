@@ -82,12 +82,28 @@ public sealed class FixedClock
 /// <summary>Owns tick progression, resource flushing and frame extraction for one game on one renderer.</summary>
 public sealed class GameRuntime(IGame game, SourceIdentity source)
 {
-    private readonly GameContext _context = new();
+    private readonly GameContext _context = new(GameAssets.FromAssembly(game.GetType().Assembly));
     private readonly FixedClock _clock = new();
+    private readonly SoundQueue _sounds = new();
     private IRenderer? _renderer;
     private uint _sequence;
 
     public IGame Game { get; } = game;
+
+    /// <summary>Hosts, the dev bridge and tests push input here; it is latched once per tick.</summary>
+    public InputCollector Input { get; } = new();
+
+    /// <summary>Scheduled input fed before each tick (headless agent runs and replays).</summary>
+    public InputScript? Script { get; set; }
+
+    /// <summary>Where the game's sounds go (SDL3 device, Web Audio, WAV recorder). Null plays nothing.</summary>
+    public IAudioOutput? Audio { get; set; }
+
+    /// <summary>When set, every sound event is appended here: tests and agents assert on sounds without a device.</summary>
+    public List<SoundEvent>? SoundLog { get; set; }
+
+    /// <summary>Drawing-buffer size of the last frame (or the initial extent before the first one).</summary>
+    public RenderExtent Viewport { get; private set; }
 
     public SourceIdentity Source { get; } = source;
 
@@ -103,6 +119,7 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     public async ValueTask StartAsync(IRenderer renderer, RenderConfiguration configuration, CancellationToken cancellationToken = default)
     {
         _renderer = renderer;
+        Viewport = configuration.InitialExtent;
         await renderer.InitializeAsync(configuration, cancellationToken);
         Game.Initialize(_context);
         FlushResources();
@@ -129,7 +146,17 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         ArgumentOutOfRangeException.ThrowIfNegative(ticks);
         for (var i = 0; i < ticks; i++)
         {
-            Game.Update(new TickInfo(Tick, Simulation.TickSeconds));
+            Script?.Feed(Tick, Input);
+            var input = Input.Latch(Tick, Viewport);
+            _sounds.Begin(Tick);
+            Game.Update(new TickInfo(Tick, Simulation.TickSeconds) { Input = input, Audio = _sounds });
+            foreach (var sound in _sounds.Events)
+            {
+                SoundLog?.Add(sound);
+                Audio?.Play(sound, _context.Sound(sound.Sound));
+            }
+
+            Audio?.EndTick(Tick);
             Tick++;
         }
     }
@@ -147,11 +174,29 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     public RenderPacket RenderFrame(RenderExtent viewport)
     {
         FlushResources();
-        var builder = new FrameBuilder();
+        Viewport = viewport;
+        var builder = new FrameBuilder { Viewport = viewport };
         Game.Extract(builder);
         var packet = builder.Build(++_sequence, Tick, viewport);
+        if (packet.Sprites.Count > 0 && !Renderer.Capabilities.SupportsSprites)
+        {
+            throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{Renderer.Capabilities.RendererName} does not draw sprites; {packet.Sprites.Count} were submitted");
+        }
+
         Renderer.Render(packet);
         return packet;
+    }
+
+    /// <summary>Renders the current tick again and reads it back, when the renderer can. Returns null otherwise.</summary>
+    public async ValueTask<CaptureResult?> CaptureAsync(CancellationToken cancellationToken = default)
+    {
+        if (Renderer is not IRenderCapture capture)
+        {
+            return null;
+        }
+
+        RenderFrame(Viewport);
+        return await capture.CaptureAsync(new CaptureRequest(Tick), cancellationToken);
     }
 
     public GameSnapshot Snapshot() => Game.Snapshot(Tick);
@@ -198,6 +243,17 @@ public static class SnapshotWriter
             }
 
             json.WriteEndObject();
+            if (snapshot.Values.Count > 0)
+            {
+                json.WriteStartObject("values");
+                foreach (var (name, value) in snapshot.Values.OrderBy(entry => entry.Key, StringComparer.Ordinal))
+                {
+                    json.WriteNumber(name, value);
+                }
+
+                json.WriteEndObject();
+            }
+
             json.WriteEndObject();
         }
 

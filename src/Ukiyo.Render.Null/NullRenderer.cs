@@ -8,20 +8,25 @@ public sealed class NullRenderer : IRenderer
 {
     private readonly ResourceTable<MeshData> _meshes = new();
     private readonly ResourceTable<MaterialData> _materials = new();
+    private readonly ResourceTable<TextureData> _textures = new();
     private bool _initialized;
     private bool _disposed;
 
-    public RenderCapabilities Capabilities { get; } = new("NullRenderer", "None", "none", RenderProfile.G0Unlit, SupportsCapture: false);
+    public RenderCapabilities Capabilities { get; } = new("NullRenderer", "None", "none", RenderProfile.G0Unlit, SupportsCapture: false) { SupportsSprites = true };
 
     public long FramesRendered { get; private set; }
 
     public long InstancesSubmitted { get; private set; }
+
+    public long SpritesSubmitted { get; private set; }
 
     public RenderExtent Extent { get; private set; }
 
     public int LiveMeshes => _meshes.Count;
 
     public int LiveMaterials => _materials.Count;
+
+    public int LiveTextures => _textures.Count;
 
     public RenderPacket? LastPacket { get; private set; }
 
@@ -47,8 +52,14 @@ public sealed class NullRenderer : IRenderer
                 case ResourceCommandKind.CreateMaterial:
                     _materials.Add(command.Handle, command.Material!);
                     break;
+                case ResourceCommandKind.CreateTexture:
+                    _textures.Add(command.Handle, command.Texture!);
+                    break;
                 case ResourceCommandKind.Destroy when command.Handle.Kind == ResourceKind.Mesh:
                     _meshes.Remove(command.Handle);
+                    break;
+                case ResourceCommandKind.Destroy when command.Handle.Kind == ResourceKind.Texture:
+                    _textures.Remove(command.Handle);
                     break;
                 case ResourceCommandKind.Destroy:
                     _materials.Remove(command.Handle);
@@ -73,8 +84,14 @@ public sealed class NullRenderer : IRenderer
             _materials.Get(instance.Material);
         }
 
+        foreach (var sprite in packet.Sprites)
+        {
+            _textures.Get(sprite.Texture);
+        }
+
         FramesRendered++;
         InstancesSubmitted += packet.Instances.Count;
+        SpritesSubmitted += packet.Sprites.Count;
         LastPacket = packet;
     }
 

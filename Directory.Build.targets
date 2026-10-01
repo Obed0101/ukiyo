@@ -15,4 +15,41 @@
       </AssemblyAttribute>
     </ItemGroup>
   </Target>
+
+  <!--
+    Game assets: everything under the sample's Shared/assets folder is embedded as "assets/<relative path>", read at
+    runtime through GameContext.Assets. Same bytes on desktop, web and headless; exports stay single-file.
+  -->
+  <PropertyGroup>
+    <UkiyoSharedAssetsDir>$(MSBuildProjectDirectory)/../Shared/assets/</UkiyoSharedAssetsDir>
+  </PropertyGroup>
+  <ItemGroup Condition="Exists('$(UkiyoSharedAssetsDir)')">
+    <EmbeddedResource Include="$(UkiyoSharedAssetsDir)**/*" LogicalName="assets/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <!--
+    Dev bridge: development hosts set UkiyoDevBridge=true. They link the bridge library and a module initializer that
+    registers it with DevHooks. Export profiles never set it, so shipped games contain no listener or agent code.
+  -->
+  <ItemGroup Condition="'$(UkiyoDevBridge)' == 'true'">
+    <ProjectReference Include="$(UkiyoRoot)src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />
+    <Compile Include="$(UkiyoRoot)src/Ukiyo.DevBridge/Registration/DevBridgeRegistration.cs" Link="DevBridgeRegistration.cs" />
+  </ItemGroup>
+
+  <!-- Browser hosts: the adapter, the shared shell and the pinned three build are copied into wwwroot/lib. -->
+  <Target Name="UkiyoSyncWebAdapter" BeforeTargets="BeforeBuild" Condition="'$(UkiyoBrowserHost)' == 'true'">
+    <PropertyGroup>
+      <UkiyoAdapterDir>$(UkiyoRoot)web/three-adapter/</UkiyoAdapterDir>
+    </PropertyGroup>
+    <Error Condition="!Exists('$(UkiyoAdapterDir)node_modules/three/build/three.module.js')" Text="three is not installed. Run: (cd web/three-adapter &amp;&amp; bun install)" />
+    <ItemGroup>
+      <_UkiyoAdapter Include="$(UkiyoAdapterDir)protocol.js;$(UkiyoAdapterDir)ukiyo-three.js;$(UkiyoAdapterDir)sprite-geometry.js;$(UkiyoAdapterDir)ukiyo-host.js" />
+      <_UkiyoThree Include="$(UkiyoAdapterDir)node_modules/three/build/three.module.js;$(UkiyoAdapterDir)node_modules/three/build/three.core.js" />
+    </ItemGroup>
+    <Copy SourceFiles="@(_UkiyoAdapter)" DestinationFolder="wwwroot/lib/" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(_UkiyoThree)" DestinationFolder="wwwroot/lib/three/" SkipUnchangedFiles="true" />
+    <ItemGroup>
+      <Content Include="wwwroot/lib/**" Exclude="@(Content)" />
+    </ItemGroup>
+  </Target>
 </Project>

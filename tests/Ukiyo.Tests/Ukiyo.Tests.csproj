@@ -10,7 +10,14 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="../../samples/RotatingCube/Shared/CubeGame.cs" Link="Shared/CubeGame.cs" />
+    <Compile Include="../../samples/LanternRun/Shared/LanternRunGame.cs" Link="Shared/LanternRunGame.cs" />
+    <Compile Include="../../samples/LanternRun/Shared/LanternArt.cs" Link="Shared/LanternArt.cs" />
     <ProjectReference Include="../../src/Ukiyo.Core/Ukiyo.Core.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />
   </ItemGroup>
 </Project>

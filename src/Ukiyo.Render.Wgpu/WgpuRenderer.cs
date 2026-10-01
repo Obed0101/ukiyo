@@ -44,9 +44,40 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
         """;
 
+    private const int SpriteVertexFloats = 8;      // position xy (NDC), uv, linear rgba tint
+    private const int MaxSpritesPerFrame = 16384;
+
+    private const string SpriteShader = """
+        @group(0) @binding(0) var spriteTexture: texture_2d<f32>;
+        @group(0) @binding(1) var spriteSampler: sampler;
+
+        struct SpriteOut {
+            @builtin(position) position: vec4<f32>,
+            @location(0) uv: vec2<f32>,
+            @location(1) color: vec4<f32>,
+        };
+
+        @vertex
+        fn vs_sprite(@location(0) position: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) color: vec4<f32>) -> SpriteOut {
+            var out: SpriteOut;
+            out.position = vec4<f32>(position, 0.0, 1.0);
+            out.uv = uv;
+            out.color = color;
+            return out;
+        }
+
+        @fragment
+        fn fs_sprite(input: SpriteOut) -> @location(0) vec4<f32> {
+            return textureSample(spriteTexture, spriteSampler, input.uv) * input.color;
+        }
+        """;
+
     private readonly nint _metalLayer;
     private readonly ResourceTable<GpuMesh> _meshes = new();
     private readonly ResourceTable<MaterialData> _materials = new();
+    private readonly ResourceTable<GpuTexture> _textures = new();
+    private nint _spriteShader, _spriteBindGroupLayout, _spritePipelineLayout, _spritePipeline, _spriteVertices;
+    private nint _nearestSampler, _linearSampler;
     private readonly List<string> _deviceErrors = [];
     private GCHandle _self;
     private nint _instance, _surface, _adapter, _device, _queue;
@@ -67,7 +98,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         _metalLayer = metalLayer;
     }
 
-    public RenderCapabilities Capabilities { get; private set; } = new("WgpuRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true);
+    public RenderCapabilities Capabilities { get; private set; } = new("WgpuRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true };
 
     public long FramesPresented { get; private set; }
 
@@ -114,7 +145,8 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         _surfaceFormat = PickSurfaceFormat();
         ConfigureSurface();
         CreatePipeline();
-        Capabilities = new RenderCapabilities("WgpuRenderer", "Metal", $"{device} · wgpu-native {NativeVersion}", configuration.Profile, SupportsCapture: true);
+        CreateSpritePipeline();
+        Capabilities = new RenderCapabilities("WgpuRenderer", "Metal", $"{device} · wgpu-native {NativeVersion}", configuration.Profile, SupportsCapture: true) { SupportsSprites = true };
         ThrowOnDeviceErrors("initialize");
         return ValueTask.CompletedTask;
     }
@@ -133,8 +165,14 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
                 case ResourceCommandKind.CreateMaterial:
                     _materials.Add(command.Handle, command.Material!);
                     break;
+                case ResourceCommandKind.CreateTexture:
+                    _textures.Add(command.Handle, UploadTexture(command.Texture!));
+                    break;
                 case ResourceCommandKind.Destroy when command.Handle.Kind == ResourceKind.Mesh:
                     _meshes.Remove(command.Handle).Release();
+                    break;
+                case ResourceCommandKind.Destroy when command.Handle.Kind == ResourceKind.Texture:
+                    _textures.Remove(command.Handle).Release();
                     break;
                 case ResourceCommandKind.Destroy:
                     _materials.Remove(command.Handle);
@@ -296,6 +334,24 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             mesh.Release();
         }
 
+        foreach (var texture in _textures.Values)
+        {
+            texture.Release();
+        }
+
+        if (_spriteVertices != 0)
+        {
+            wgpuBufferDestroy(_spriteVertices);
+        }
+
+        Release(ref _spriteVertices, wgpuBufferRelease);
+        Release(ref _spritePipeline, wgpuRenderPipelineRelease);
+        Release(ref _spritePipelineLayout, wgpuPipelineLayoutRelease);
+        Release(ref _spriteBindGroupLayout, wgpuBindGroupLayoutRelease);
+        Release(ref _spriteShader, wgpuShaderModuleRelease);
+        Release(ref _nearestSampler, wgpuSamplerRelease);
+        Release(ref _linearSampler, wgpuSamplerRelease);
+
         ReleaseDepth();
         Release(ref _bindGroup, wgpuBindGroupRelease);
         if (_uniformBuffer != 0)
@@ -357,6 +413,8 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             }
         }
 
+        var spriteBatches = WriteSpriteVertices(packet, width, height);
+
         var encoder = Require(wgpuDeviceCreateCommandEncoder(_device, null), "command encoder");
         try
         {
@@ -387,6 +445,17 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
                 wgpuRenderPassEncoderDrawIndexed(pass, mesh.IndexCount, 1, 0, 0, 0);
             }
 
+            if (spriteBatches.Count > 0)
+            {
+                wgpuRenderPassEncoderSetPipeline(pass, _spritePipeline);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, _spriteVertices, 0, WgpuConst.WholeSize);
+                foreach (var (texture, firstVertex, vertexCount) in spriteBatches)
+                {
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, texture.BindGroup, 0, null);
+                    wgpuRenderPassEncoderDraw(pass, vertexCount, 1, firstVertex, 0);
+                }
+            }
+
             wgpuRenderPassEncoderEnd(pass);
             wgpuRenderPassEncoderRelease(pass);
             if (copy is { } c)
@@ -405,6 +474,180 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         {
             wgpuCommandEncoderRelease(encoder);
         }
+    }
+
+    /// <summary>
+    /// Expands sprites into pixel-space quads with the shared <see cref="SpriteGeometry"/>, converts them to NDC, uploads
+    /// them and returns draw batches (consecutive sprites sharing a texture become one draw).
+    /// </summary>
+    private List<(GpuTexture Texture, uint FirstVertex, uint VertexCount)> WriteSpriteVertices(RenderPacket packet, uint width, uint height)
+    {
+        var batches = new List<(GpuTexture Texture, uint FirstVertex, uint VertexCount)>();
+        if (packet.Sprites.Count == 0)
+        {
+            return batches;
+        }
+
+        if (packet.Sprites.Count > MaxSpritesPerFrame)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{packet.Sprites.Count} sprites exceed {MaxSpritesPerFrame} per frame");
+        }
+
+        var extent = new RenderExtent((int)width, (int)height, 1f);
+        var vertices = new float[packet.Sprites.Count * 6 * SpriteVertexFloats];
+        Span<SpriteVertex> quad = stackalloc SpriteVertex[4];
+        ReadOnlySpan<int> corners = [0, 1, 2, 0, 2, 3];
+        var written = 0;
+        foreach (var index in SpriteGeometry.DrawOrder(packet.Sprites))
+        {
+            var sprite = packet.Sprites[index];
+            var texture = _textures.Get(sprite.Texture);
+            SpriteGeometry.Quad(sprite, packet.Camera2D, extent, quad);
+            var first = (uint)(written / SpriteVertexFloats);
+            foreach (var corner in corners)
+            {
+                var v = quad[corner];
+                vertices[written++] = v.Pixel.X / width * 2f - 1f;
+                vertices[written++] = 1f - v.Pixel.Y / height * 2f;
+                vertices[written++] = v.Uv.X;
+                vertices[written++] = v.Uv.Y;
+                vertices[written++] = sprite.Color.X;
+                vertices[written++] = sprite.Color.Y;
+                vertices[written++] = sprite.Color.Z;
+                vertices[written++] = sprite.Color.W;
+            }
+
+            if (batches.Count > 0 && ReferenceEquals(batches[^1].Texture, texture))
+            {
+                var last = batches[^1];
+                batches[^1] = (last.Texture, last.FirstVertex, last.VertexCount + 6);
+            }
+            else
+            {
+                batches.Add((texture, first, 6));
+            }
+        }
+
+        fixed (float* data = vertices)
+        {
+            wgpuQueueWriteBuffer(_queue, _spriteVertices, 0, data, (nuint)(vertices.Length * sizeof(float)));
+        }
+
+        return batches;
+    }
+
+    private void CreateSpritePipeline()
+    {
+        var code = Utf8(SpriteShader);
+        fixed (byte* codePtr = code)
+        {
+            var wgsl = new ShaderSourceWgsl { Chain = new ChainedStruct { SType = WgpuConst.STypeShaderSourceWgsl }, Code = new StringView { Data = codePtr, Length = (nuint)code.Length } };
+            var moduleDescriptor = new ShaderModuleDescriptor { NextInChain = (ChainedStruct*)&wgsl };
+            _spriteShader = Require(wgpuDeviceCreateShaderModule(_device, &moduleDescriptor), "sprite shader module");
+        }
+
+        var entries = stackalloc BindGroupLayoutEntry[2];
+        entries[0] = new BindGroupLayoutEntry
+        {
+            Binding = 0,
+            Visibility = WgpuConst.ShaderStageFragment,
+            Texture = new TextureBindingLayout { SampleType = WgpuConst.TextureSampleTypeFloat, ViewDimension = WgpuConst.TextureViewDimension2D },
+        };
+        entries[1] = new BindGroupLayoutEntry
+        {
+            Binding = 1,
+            Visibility = WgpuConst.ShaderStageFragment,
+            Sampler = new SamplerBindingLayout { Type = WgpuConst.SamplerBindingFiltering },
+        };
+        var layoutDescriptor = new BindGroupLayoutDescriptor { EntryCount = 2, Entries = entries };
+        _spriteBindGroupLayout = Require(wgpuDeviceCreateBindGroupLayout(_device, &layoutDescriptor), "sprite bind group layout");
+        var bindGroupLayout = _spriteBindGroupLayout;
+        var pipelineLayoutDescriptor = new PipelineLayoutDescriptor { BindGroupLayoutCount = 1, BindGroupLayouts = &bindGroupLayout };
+        _spritePipelineLayout = Require(wgpuDeviceCreatePipelineLayout(_device, &pipelineLayoutDescriptor), "sprite pipeline layout");
+
+        _nearestSampler = CreateSampler(WgpuConst.FilterModeNearest, "nearest sampler");
+        _linearSampler = CreateSampler(WgpuConst.FilterModeLinear, "linear sampler");
+        _spriteVertices = CreateBuffer((ulong)(MaxSpritesPerFrame * 6 * SpriteVertexFloats * sizeof(float)), WgpuConst.BufferUsageVertex | WgpuConst.BufferUsageCopyDst, "sprite vertices");
+
+        var vsEntry = Utf8("vs_sprite");
+        var fsEntry = Utf8("fs_sprite");
+        var attributes = stackalloc VertexAttribute[3];
+        attributes[0] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x2, Offset = 0, ShaderLocation = 0 };
+        attributes[1] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x2, Offset = 8, ShaderLocation = 1 };
+        attributes[2] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x4, Offset = 16, ShaderLocation = 2 };
+        var vertexLayout = new VertexBufferLayout { StepMode = WgpuConst.VertexStepModeVertex, ArrayStride = SpriteVertexFloats * sizeof(float), AttributeCount = 3, Attributes = attributes };
+        var blend = new BlendState
+        {
+            Color = new BlendComponent { Operation = WgpuConst.BlendOperationAdd, SrcFactor = WgpuConst.BlendFactorSrcAlpha, DstFactor = WgpuConst.BlendFactorOneMinusSrcAlpha },
+            Alpha = new BlendComponent { Operation = WgpuConst.BlendOperationAdd, SrcFactor = WgpuConst.BlendFactorOne, DstFactor = WgpuConst.BlendFactorOneMinusSrcAlpha },
+        };
+        var colorTarget = new ColorTargetState { Format = _surfaceFormat, Blend = &blend, WriteMask = WgpuConst.ColorWriteAll };
+
+        // The pass carries the 3D depth buffer, so the pipeline must declare it; sprites neither test nor write depth.
+        var keep = new StencilFaceState { Compare = WgpuConst.CompareAlways, FailOp = WgpuConst.StencilKeep, DepthFailOp = WgpuConst.StencilKeep, PassOp = WgpuConst.StencilKeep };
+        var depthStencil = new DepthStencilState
+        {
+            Format = WgpuConst.FormatDepth24Plus,
+            DepthWriteEnabled = WgpuConst.OptionalBoolFalse,
+            DepthCompare = WgpuConst.CompareAlways,
+            StencilFront = keep,
+            StencilBack = keep,
+        };
+        fixed (byte* vs = vsEntry)
+        fixed (byte* fs = fsEntry)
+        {
+            var fragment = new FragmentState { Module = _spriteShader, EntryPoint = new StringView { Data = fs, Length = (nuint)fsEntry.Length }, TargetCount = 1, Targets = &colorTarget };
+            var descriptor = new RenderPipelineDescriptor
+            {
+                Layout = _spritePipelineLayout,
+                Vertex = new VertexState { Module = _spriteShader, EntryPoint = new StringView { Data = vs, Length = (nuint)vsEntry.Length }, BufferCount = 1, Buffers = &vertexLayout },
+                Primitive = new PrimitiveState { Topology = WgpuConst.TopologyTriangleList, FrontFace = WgpuConst.FrontFaceCcw, CullMode = WgpuConst.CullModeNone },
+                DepthStencil = &depthStencil,
+                Multisample = new MultisampleState { Count = 1, Mask = uint.MaxValue },
+                Fragment = &fragment,
+            };
+            _spritePipeline = Require(wgpuDeviceCreateRenderPipeline(_device, &descriptor), "sprite pipeline");
+        }
+    }
+
+    private nint CreateSampler(uint filter, string label)
+    {
+        var descriptor = new SamplerDescriptor
+        {
+            AddressModeU = WgpuConst.AddressModeClampToEdge,
+            AddressModeV = WgpuConst.AddressModeClampToEdge,
+            AddressModeW = WgpuConst.AddressModeClampToEdge,
+            MagFilter = filter,
+            MinFilter = filter,
+            MipmapFilter = WgpuConst.MipmapFilterModeNearest,
+            LodMinClamp = 0,
+            LodMaxClamp = 32,
+            MaxAnisotropy = 1,
+        };
+        return Require(wgpuDeviceCreateSampler(_device, &descriptor), label);
+    }
+
+    /// <summary>RGBA8 sRGB texture: the GPU decodes to linear when sampling, so tint and blending happen in linear space.</summary>
+    private GpuTexture UploadTexture(TextureData data)
+    {
+        var width = (uint)data.Width;
+        var height = (uint)data.Height;
+        var texture = CreateTexture(width, height, WgpuConst.FormatRgba8UnormSrgb, WgpuConst.TextureUsageTextureBinding | WgpuConst.TextureUsageCopyDst, "sprite texture");
+        var destination = new TexelCopyTextureInfo { Texture = texture, Aspect = WgpuConst.TextureAspectAll };
+        var layout = new TexelCopyBufferLayout { BytesPerRow = width * 4, RowsPerImage = height };
+        var size = new Extent3D { Width = width, Height = height, DepthOrArrayLayers = 1 };
+        fixed (byte* pixels = data.Rgba)
+        {
+            wgpuQueueWriteTexture(_queue, &destination, pixels, (nuint)data.Rgba.Length, &layout, &size);
+        }
+
+        var view = Require(wgpuTextureCreateView(texture, null), "sprite texture view");
+        var entries = stackalloc BindGroupEntry[2];
+        entries[0] = new BindGroupEntry { Binding = 0, TextureView = view };
+        entries[1] = new BindGroupEntry { Binding = 1, Sampler = data.Filter == TextureFilter.Linear ? _linearSampler : _nearestSampler };
+        var descriptor = new BindGroupDescriptor { Layout = _spriteBindGroupLayout, EntryCount = 2, Entries = entries };
+        var bindGroup = Require(wgpuDeviceCreateBindGroup(_device, &descriptor), "sprite bind group");
+        return new GpuTexture(texture, view, bindGroup);
     }
 
     /// <summary>Right-handed view (inverse of the camera's world transform) and a 0..1 depth perspective, as WebGPU expects.</summary>
@@ -722,6 +965,20 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         public bool Done;
         public uint Status;
         public nint Handle;
+    }
+
+    private sealed class GpuTexture(nint texture, nint view, nint bindGroup)
+    {
+        public nint Texture { get; private set; } = texture;
+        public nint View { get; private set; } = view;
+        public nint BindGroup { get; private set; } = bindGroup;
+
+        public void Release()
+        {
+            if (BindGroup != 0) { wgpuBindGroupRelease(BindGroup); BindGroup = 0; }
+            if (View != 0) { wgpuTextureViewRelease(View); View = 0; }
+            if (Texture != 0) { wgpuTextureDestroy(Texture); wgpuTextureRelease(Texture); Texture = 0; }
+        }
     }
 
     private sealed class GpuMesh(nint vertices, nint indices, uint indexCount)

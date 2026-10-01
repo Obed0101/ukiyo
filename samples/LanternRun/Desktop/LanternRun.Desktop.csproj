@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Development host: JIT, wgpu-native and SDL3 dylibs next to the executable, dev bridge linked for agents. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>lantern-run-desktop</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.LanternRun</RootNamespace>
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <UkiyoDevBridge>true</UkiyoDevBridge>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Desktop/Ukiyo.Platform.Desktop.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
+    <None Include="$(UkiyoNativeDir)lib/libwgpu_native.dylib;$(UkiyoNativeDir)lib/libSDL3.dylib" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="UkiyoRequireNative" BeforeTargets="Build" Condition="!Exists('$(UkiyoNativeDir)lib/libwgpu_native.dylib')">
+    <Error Text="Native dependencies missing. Run scripts/fetch-native.sh first." />
+  </Target>
+</Project>

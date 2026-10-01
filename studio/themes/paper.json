@@ -1,0 +1,30 @@
+{
+  "description": "Light. The ukiyo site palette on paper; the game frame stays a dark screen.",
+  "colorScheme": "light",
+  "tokens": {
+    "bg": "#fafafa",
+    "panel": "#ffffff",
+    "panel-raised": "#f4f4f4",
+    "line": "#e4e4e4",
+    "line-strong": "#cfcfcf",
+    "fg": "#0a0a0a",
+    "muted": "#555555",
+    "subtle": "#6b6b6b",
+    "accent": "#c23a26",
+    "accent-fg": "#fafafa",
+    "ok": "#1f7a45",
+    "warn": "#8a5a00",
+    "danger": "#b42318",
+    "screen": "#0a0a0a",
+    "screen-fg": "#ededed",
+    "screen-muted": "#9a9a9a",
+    "screen-line": "#262626",
+    "selection": "#0a0a0a",
+    "selection-fg": "#fafafa",
+    "radius-control": "8px",
+    "radius-panel": "12px",
+    "font-sans": "\"Geist\", ui-sans-serif, system-ui, sans-serif",
+    "font-mono": "\"Geist Mono\", ui-monospace, monospace",
+    "font-pixel": "\"Geist Pixel Square\", \"Geist Mono\", ui-monospace, monospace"
+  }
+}

@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>lantern-run-headless</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.LanternRun</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
+  </ItemGroup>
+</Project>

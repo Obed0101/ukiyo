@@ -1,0 +1,9 @@
+{
+  "description": "Watch and steer: the live frame and the transport. Nothing else.",
+  "columns": "minmax(0, 1fr)",
+  "rows": "auto minmax(0, 1fr)",
+  "areas": [
+    "transport",
+    "viewport"
+  ]
+}

@@ -11,7 +11,7 @@
 An agent-native game engine in C#. Your coding agent reads and changes the game's code while it runs,<br>
 through skills and MCP. The Studio is the human window: watch, edit, take over.<br>
 Assemble it like Arch Linux: simple, balanced or complete.<br>
-<sub>Pre-alpha. 0.0.1 ships the core: one program on three targets. Skills, MCP and the Studio come next.</sub>
+<sub>Pre-alpha. 0.0.1 ships the core: one program on three targets. Sprites, physics, input, game UI, audio, skills, the MCP server and a first Studio are in the tree: they build and pass their tests, cross-target parity is still open (<a href="docs/G1.md">G1</a>, <a href="docs/G3.md">G3</a>).</sub>
 
 <br>
 
@@ -65,6 +65,31 @@ ukiyo starts from the other end.
 
 All of it is reproducible with one script and documented in the [G0 report](docs/G0.md), including what is still open.
 
+## In the tree, not released yet
+
+Written after 0.0.1. It builds with warnings as errors, its C# and JS tests pass, and LanternRun runs headless, on
+Metal and in the browser with the same simulation and the same pixels, so the G1 checks pass; the Studio (G3) is
+still open. [G1](docs/G1.md) and [G3](docs/G3.md) list what ran, what passed and what is missing.
+
+- **2D layer.** Textures (PNG decoder, `CreateTexture`), sprites in world and screen space, sprite sheets and
+  animations, on wgpu/Metal, three.js and a new CPU renderer that captures frames headless.
+- **Input.** Keyboard and pointer latched per tick, deterministic input scripts, recording and replay.
+- **Physics.** `Ukiyo.Physics`: a deterministic 2D rigid-body world with sensors, raycasts and layers.
+- **Game UI.** `Ukiyo.UI`: immediate-mode HUDs and menus, pixel font, keyboard and pointer focus.
+- **Audio.** `Ukiyo.Audio`: sounds as events from `Update`, a shared mixer, WAV assets and a seeded sound-effect
+  synthesizer, played through SDL3 on desktop and Web Audio in the browser, recorded to WAV headless.
+- **Dev bridge.** A running desktop build answers on localhost: pause, step, snapshot, capture, inject and record input.
+- **MCP server and skills.** `tools/mcp` (Bun, no dependencies) gives agents headless runs, captures, tests, the
+  live bridge, new-game scaffolding, sprite generation through OpenAI or Gemini image models (or offline), sound
+  generation and the Studio. Sixteen skills in `skills/`: simple, balanced and complete presets for making games, and
+  an engine preset for working on ukiyo itself (architecture, renderers, hosts, tooling), linked into `.claude/skills`
+  and `.agents/skills` for agents in this repository.
+- **Studio base.** `studio/` (Bun, plain ES modules): the running game's real frame, transport, values, entities,
+  input recording and activity, in simple, balanced or complete layouts. Panels, layouts and themes are files that
+  agents edit and open pages apply live; agents can read what the person is looking at and send them notices
+  ([G3](docs/G3.md)).
+- **LanternRun.** A small platformer in `samples/LanternRun` that uses all of the above.
+
 ## Quickstart
 
 Apple Silicon Mac with the .NET 10 SDK (`10.0.401`), Xcode command line tools, cmake, ninja and [bun](https://bun.sh).
@@ -79,7 +104,7 @@ Run the same game three ways:
 
 ```sh
 dotnet run --project samples/RotatingCube/Headless   # no window, no GPU
-dotnet run --project samples/RotatingCube/Desktop    # native window, wgpu → Metal  (space: pause · S: step)
+dotnet run --project samples/RotatingCube/Desktop    # native window, wgpu → Metal  (F5: pause · F6: step)
 
 dotnet publish samples/RotatingCube/Browser -c Release -o artifacts/web
 python3 -m http.server --directory artifacts/web/wwwroot 8080   # open http://localhost:8080
@@ -149,21 +174,32 @@ And every run tells you what it actually ran on:
 - Wire format, conventions and limits: [protocol](docs/protocol.md) · [conventions](docs/conventions.md).
 
 ```text
-src/Ukiyo.Render              renderer contract, handles, validation, protocol
-src/Ukiyo.Core                fixed clock, IGame, runtime, snapshots
-src/Ukiyo.Render.*            Null · Wgpu · Three
+src/Ukiyo.Render              renderer contract, handles, validation, protocol, PNG, sprite geometry
+src/Ukiyo.Core                fixed clock, IGame, runtime, snapshots, input, sprites, assets
+src/Ukiyo.Render.*            Null · Software (CPU) · Wgpu · Three
 src/Ukiyo.Platform.*          Headless · Desktop (SDL3 + Metal) · Browser (WASM)
+src/Ukiyo.Physics             deterministic 2D physics            (G1)
+src/Ukiyo.UI                  game UI: HUDs, menus, pixel font    (G1)
+src/Ukiyo.Audio               mixer, WAV, sound synthesizer       (G1)
+src/Ukiyo.DevBridge           live control of dev builds          (G1)
 samples/RotatingCube/Shared   the one Program.cs and CubeGame.cs
+samples/LanternRun            2D platformer sample                (G1)
 web/three-adapter             three.js presentation adapter, no game rules
-tests/Ukiyo.Tests             core, bridge and renderer contract tests
+tools/mcp                     MCP server for agents               (G1)
+studio                        the Studio: live view, files as UI  (G3)
+skills                        agent skills and presets
+tests/Ukiyo.Tests             core, bridge, renderer, input, physics, UI tests
 ```
+
+Host keys: desktop **F5** pause/resume, **F6** step one tick; browser **`** pause, **Shift+`** step. Every other key
+goes to the game.
 
 ## Roadmap
 
 - [x] **G0 · One program, two real renderers.** Metal and WebGL2 from the same C#, NativeAOT single binary, static web export.
-- [ ] **G1 · Runtime slice.** Input and platform services, and a physics spike validated on CoreCLR, NativeAOT and WebAssembly.
+- [x] **G1 · Runtime slice.** Input, 2D sprites, physics, game UI, audio, dev bridge, MCP and skills. Headless, Metal and WebGL2 match in simulation and pixels; NativeAOT export without the dev bridge ([report](docs/G1.md)). Not committed or released yet.
 - [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI and its tool adapters.
-- [ ] **G3 · Studio and reload.** A human window onto a running game in simple, balanced or complete layouts, a dev bridge from any editor, controlled reload.
+- [ ] **G3 · Studio and reload.** A human window onto a running game in simple, balanced or complete layouts, a dev bridge from any editor, controlled reload. The Studio base is written, [not yet run](docs/G3.md).
 - [ ] **G4 · Evidence and games.** Replays, visual conformance and the first real games.
 - [ ] **G5 · The open library.** Packages for assets and game systems, published and shared by the community, free and open source.
 

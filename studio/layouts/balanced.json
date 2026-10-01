@@ -1,0 +1,10 @@
+{
+  "description": "Frame plus the game's numbers and entities, for following what an agent changes.",
+  "columns": "minmax(0, 1fr) minmax(280px, 340px)",
+  "rows": "auto minmax(0, 1fr) minmax(0, 1fr)",
+  "areas": [
+    "transport transport",
+    "viewport values",
+    "viewport entities"
+  ]
+}

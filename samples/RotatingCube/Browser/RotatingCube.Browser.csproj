@@ -5,7 +5,8 @@
     <AssemblyName>rotating-cube-web</AssemblyName>
     <RootNamespace>Ukiyo.Samples.RotatingCube</RootNamespace>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <UkiyoAdapterDir>$(UkiyoRoot)web/three-adapter/</UkiyoAdapterDir>
+    <!-- Directory.Build.targets copies the adapter, the shared shell and three into wwwroot/lib before the build. -->
+    <UkiyoBrowserHost>true</UkiyoBrowserHost>
   </PropertyGroup>
   <ItemGroup>
     <UkiyoSharedSource Include="../Shared/*.cs" />
@@ -17,18 +18,4 @@
       <_Parameter1>browser</_Parameter1>
     </AssemblyAttribute>
   </ItemGroup>
-
-  <!-- The adapter and the pinned three build are copied into wwwroot/lib before static web assets are resolved. -->
-  <Target Name="UkiyoSyncWebAdapter" BeforeTargets="BeforeBuild">
-    <Error Condition="!Exists('$(UkiyoAdapterDir)node_modules/three/build/three.module.js')" Text="three is not installed. Run: (cd web/three-adapter &amp;&amp; bun install)" />
-    <ItemGroup>
-      <_UkiyoAdapter Include="$(UkiyoAdapterDir)protocol.js;$(UkiyoAdapterDir)ukiyo-three.js" />
-      <_UkiyoThree Include="$(UkiyoAdapterDir)node_modules/three/build/three.module.js;$(UkiyoAdapterDir)node_modules/three/build/three.core.js" />
-    </ItemGroup>
-    <Copy SourceFiles="@(_UkiyoAdapter)" DestinationFolder="wwwroot/lib/" SkipUnchangedFiles="true" />
-    <Copy SourceFiles="@(_UkiyoThree)" DestinationFolder="wwwroot/lib/three/" SkipUnchangedFiles="true" />
-    <ItemGroup>
-      <Content Include="wwwroot/lib/**" Exclude="@(Content)" />
-    </ItemGroup>
-  </Target>
 </Project>

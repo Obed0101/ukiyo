@@ -1,0 +1,30 @@
+{
+  "description": "Dark. The ukiyo site palette: ink black, hairlines, seal vermilion only for live state and focus.",
+  "colorScheme": "dark",
+  "tokens": {
+    "bg": "#0a0a0a",
+    "panel": "#111111",
+    "panel-raised": "#181818",
+    "line": "#1f1f1f",
+    "line-strong": "#2e2e2e",
+    "fg": "#ededed",
+    "muted": "#a1a1a1",
+    "subtle": "#8f8f8f",
+    "accent": "#e0513b",
+    "accent-fg": "#0a0a0a",
+    "ok": "#5cc98a",
+    "warn": "#e6a23c",
+    "danger": "#ff6b5e",
+    "screen": "#0a0a0a",
+    "screen-fg": "#ededed",
+    "screen-muted": "#9a9a9a",
+    "screen-line": "#262626",
+    "selection": "#ededed",
+    "selection-fg": "#0a0a0a",
+    "radius-control": "8px",
+    "radius-panel": "12px",
+    "font-sans": "\"Geist\", ui-sans-serif, system-ui, sans-serif",
+    "font-mono": "\"Geist Mono\", ui-monospace, monospace",
+    "font-pixel": "\"Geist Pixel Square\", \"Geist Mono\", ui-monospace, monospace"
+  }
+}

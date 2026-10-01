@@ -15,6 +15,11 @@ public static class PacketCodec
     public const ushort Version = 1;
     public const int HeaderSize = 16;
     public const int InstanceSize = 96;           // 2 handles (16 bytes each) + 16 floats (64 bytes)
+    public const int SpriteSize = 84;             // handle (16) + u32 space + i32 layer + 15 floats (60)
+    public const int Camera2DSize = 16;           // center xy, view height, pad
+
+    /// <summary>Frame flag: a 2D section (camera + sprites) follows the instances. Absent, the bytes are exactly v1 G0.</summary>
+    public const ushort FlagSprites = 0x1;
 
     public static byte[] Encode(ResourceBatch batch)
     {
@@ -26,6 +31,7 @@ public static class PacketCodec
             {
                 ResourceCommandKind.CreateMesh => 8 + command.Mesh!.Vertices.Length * VertexPositionColor.SizeInBytes + command.Mesh.Indices.Length * 4,
                 ResourceCommandKind.CreateMaterial => 20,
+                ResourceCommandKind.CreateTexture => 12 + command.Texture!.Rgba.Length,
                 _ => 0,
             };
         }
@@ -64,6 +70,14 @@ public static class PacketCodec
                 writer.Vec4(command.Material!.BaseColor);
                 writer.U32(command.Material.UseVertexColors ? 1u : 0u);
             }
+            else if (command.Kind == ResourceCommandKind.CreateTexture)
+            {
+                var texture = command.Texture!;
+                writer.U32((uint)texture.Width);
+                writer.U32((uint)texture.Height);
+                writer.U32((uint)texture.Filter);
+                writer.Bytes(texture.Rgba);
+            }
         }
 
         return writer.Finish();
@@ -72,11 +86,17 @@ public static class PacketCodec
     public static byte[] Encode(RenderPacket packet)
     {
         RenderValidation.Validate(packet);
+        var hasSprites = packet.Sprites.Count > 0;
         var size = HeaderSize + 16 + 16 + 40 + 4 + packet.Instances.Count * InstanceSize;
+        if (hasSprites)
+        {
+            size += Camera2DSize + 4 + packet.Sprites.Count * SpriteSize;
+        }
+
         var writer = new Writer(size);
         writer.U32(FrameMagic);
         writer.U16(Version);
-        writer.U16(0);
+        writer.U16(hasSprites ? FlagSprites : (ushort)0);
         writer.U32(packet.Sequence);
         writer.U32((uint)size);
         writer.U32((uint)(packet.Tick & 0xFFFFFFFF));
@@ -97,13 +117,37 @@ public static class PacketCodec
             writer.Matrix(instance.World);
         }
 
+        if (hasSprites)
+        {
+            writer.F32(packet.Camera2D.Center.X);
+            writer.F32(packet.Camera2D.Center.Y);
+            writer.F32(packet.Camera2D.ViewHeight);
+            writer.F32(0);
+            writer.U32((uint)packet.Sprites.Count);
+            foreach (var sprite in packet.Sprites)
+            {
+                writer.Handle(sprite.Texture);
+                writer.U32((uint)sprite.Space);
+                writer.U32(unchecked((uint)sprite.Layer));
+                writer.F32(sprite.Position.X);
+                writer.F32(sprite.Position.Y);
+                writer.F32(sprite.Size.X);
+                writer.F32(sprite.Size.Y);
+                writer.F32(sprite.Pivot.X);
+                writer.F32(sprite.Pivot.Y);
+                writer.F32(sprite.Rotation);
+                writer.Vec4(sprite.Uv);
+                writer.Vec4(sprite.Color);
+            }
+        }
+
         return writer.Finish();
     }
 
     public static ResourceBatch DecodeResources(ReadOnlySpan<byte> data)
     {
         var reader = new Reader(data);
-        reader.Header(ResourceMagic);
+        reader.Header(ResourceMagic, allowedFlags: 0);
         var count = reader.U32();
         reader.ExpectLength();
         var commands = new List<ResourceCommand>((int)Math.Min(count, 4096));
@@ -135,6 +179,12 @@ public static class PacketCodec
                 case ResourceCommandKind.CreateMaterial:
                     commands.Add(ResourceCommand.CreateMaterial(handle, new MaterialData(reader.Vec4(), reader.U32() != 0)));
                     break;
+                case ResourceCommandKind.CreateTexture:
+                    var width = reader.Count(RenderValidation.MaxTextureSize, "texture width");
+                    var height = reader.Count(RenderValidation.MaxTextureSize, "texture height");
+                    var filter = (TextureFilter)reader.U32();
+                    commands.Add(ResourceCommand.CreateTexture(handle, new TextureData(width, height, reader.Bytes(width * height * 4), filter)));
+                    break;
                 case ResourceCommandKind.Destroy:
                     commands.Add(ResourceCommand.Destroy(handle));
                     break;
@@ -152,7 +202,7 @@ public static class PacketCodec
     public static RenderPacket DecodeFrame(ReadOnlySpan<byte> data)
     {
         var reader = new Reader(data);
-        reader.Header(FrameMagic);
+        var flags = reader.Header(FrameMagic, allowedFlags: FlagSprites);
         var sequence = reader.U32();
         reader.ExpectLength();
         var tick = (long)(reader.U32() | ((ulong)reader.U32() << 32));
@@ -166,8 +216,29 @@ public static class PacketCodec
             instances[i] = new RenderInstance(reader.Handle(), reader.Handle(), reader.Matrix());
         }
 
+        var camera2D = Camera2D.Default;
+        SpriteInstance[] sprites = [];
+        if ((flags & FlagSprites) != 0)
+        {
+            camera2D = new Camera2D(new Vector2(reader.F32(), reader.F32()), reader.F32());
+            reader.F32();
+            var spriteCount = reader.Count(RenderValidation.MaxSprites, "sprite");
+            sprites = new SpriteInstance[spriteCount];
+            for (var i = 0; i < spriteCount; i++)
+            {
+                var texture = reader.Handle();
+                var space = (SpriteSpace)reader.U32();
+                var layer = unchecked((int)reader.U32());
+                var position = new Vector2(reader.F32(), reader.F32());
+                var size = new Vector2(reader.F32(), reader.F32());
+                var pivot = new Vector2(reader.F32(), reader.F32());
+                var rotation = reader.F32();
+                sprites[i] = new SpriteInstance(texture, space, position, size, pivot, rotation, reader.Vec4(), reader.Vec4(), layer);
+            }
+        }
+
         reader.RequireEnd();
-        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances);
+        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances) { Camera2D = camera2D, Sprites = sprites };
         RenderValidation.Validate(packet);
         return packet;
     }
@@ -183,6 +254,7 @@ public static class PacketCodec
         public void F32(float value) { BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(_offset), value); _offset += 4; }
         public void Vec3(Vector3 v) { F32(v.X); F32(v.Y); F32(v.Z); }
         public void Vec4(Vector4 v) { F32(v.X); F32(v.Y); F32(v.Z); F32(v.W); }
+        public void Bytes(ReadOnlySpan<byte> data) { data.CopyTo(_buffer.AsSpan(_offset)); _offset += data.Length; }
         public void Quat(Quaternion q) { F32(q.X); F32(q.Y); F32(q.Z); F32(q.W); }
         public void Handle(ResourceHandle handle) { U32((uint)handle.Kind); U32(handle.Index); U32(handle.Generation); U32(0); }
 
@@ -210,7 +282,8 @@ public static class PacketCodec
         private readonly ReadOnlySpan<byte> _data = data;
         private int _offset;
 
-        public void Header(uint magic)
+        /// <summary>Checks magic and version; returns the flags, rejecting any bit this decoder does not understand.</summary>
+        public ushort Header(uint magic, ushort allowedFlags)
         {
             if (_data.Length < HeaderSize)
             {
@@ -228,7 +301,13 @@ public static class PacketCodec
                 throw new RenderException(RenderErrorCode.UnsupportedVersion, $"protocol v{version}, expected v{Version}");
             }
 
-            U16();
+            var flags = U16();
+            if ((flags & ~allowedFlags) != 0)
+            {
+                throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown flags 0x{flags:X4}");
+            }
+
+            return flags;
         }
 
         public void ExpectLength()
@@ -252,6 +331,7 @@ public static class PacketCodec
         }
 
         public byte U8() { Need(1); return _data[_offset++]; }
+        public byte[] Bytes(int count) { Need(count); var v = _data.Slice(_offset, count).ToArray(); _offset += count; return v; }
         public ushort U16() { Need(2); var v = BinaryPrimitives.ReadUInt16LittleEndian(_data[_offset..]); _offset += 2; return v; }
         public uint U32() { Need(4); var v = BinaryPrimitives.ReadUInt32LittleEndian(_data[_offset..]); _offset += 4; return v; }
         public float F32() { Need(4); var v = BinaryPrimitives.ReadSingleLittleEndian(_data[_offset..]); _offset += 4; return v; }

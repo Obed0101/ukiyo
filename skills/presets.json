@@ -1,0 +1,21 @@
+{
+  "$comment": "Skill presets, Arch-style: take only what you need. ukiyo_skills {\"action\":\"install\",\"preset\":\"balanced\"} copies them into .claude/skills and/or .agents/skills. simple/balanced/complete are for making games; engine is for working on ukiyo itself.",
+  "presets": {
+    "simple": {
+      "description": "Make and check a game: the loop, 2D drawing, input and testing.",
+      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing"]
+    },
+    "balanced": {
+      "description": "Simple plus physics, game UI, sound, generated art and starting new games.",
+      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing", "ukiyo-physics", "ukiyo-ui", "ukiyo-audio", "ukiyo-sprite-generation", "ukiyo-new-game"]
+    },
+    "complete": {
+      "description": "Everything for games, including rendering internals, driving running games live and changing the Studio.",
+      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing", "ukiyo-physics", "ukiyo-ui", "ukiyo-audio", "ukiyo-sprite-generation", "ukiyo-new-game", "ukiyo-rendering", "ukiyo-live", "ukiyo-studio"]
+    },
+    "engine": {
+      "description": "Working on ukiyo itself: architecture and rules, renderers and protocol, hosts and the dev bridge, MCP tools and skills, the Studio.",
+      "skills": ["ukiyo-engine", "ukiyo-core", "ukiyo-rendering", "ukiyo-renderer-dev", "ukiyo-platform-dev", "ukiyo-tooling", "ukiyo-studio", "ukiyo-live", "ukiyo-testing"]
+    }
+  }
+}

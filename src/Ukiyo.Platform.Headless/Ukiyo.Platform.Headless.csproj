@@ -4,6 +4,8 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Ukiyo.Core/Ukiyo.Core.csproj" />
+    <ProjectReference Include="../Ukiyo.Audio/Ukiyo.Audio.csproj" />
     <ProjectReference Include="../Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
+    <ProjectReference Include="../Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
   </ItemGroup>
 </Project>

@@ -15,11 +15,13 @@ public static class PlatformBootstrap
 
 /// <param name="Checkpoints">When set, runs the deterministic checkpoint capture and publishes evidence to the page.</param>
 /// <param name="FixedSize">Keeps one canvas size for every checkpoint instead of cycling sizes (for animations).</param>
-public sealed record BrowserOptions(long[]? Checkpoints, bool StartPaused, bool FixedSize = false)
+/// <param name="InputJson">Input script JSON (the page fetches ?input=&lt;url&gt;), fed tick by tick like headless --input.</param>
+public sealed record BrowserOptions(long[]? Checkpoints, bool StartPaused, bool FixedSize = false, string? InputJson = null)
 {
     public static BrowserOptions Parse(string[] args)
     {
         long[]? checkpoints = null;
+        string? input = null;
         var paused = false;
         var fixedSize = false;
         for (var i = 0; i < args.Length; i++)
@@ -36,9 +38,13 @@ public sealed record BrowserOptions(long[]? Checkpoints, bool StartPaused, bool 
             {
                 fixedSize = true;
             }
+            else if (args[i] == "--input-json" && i + 1 < args.Length)
+            {
+                input = args[++i];
+            }
         }
 
-        return new BrowserOptions(checkpoints, paused, fixedSize);
+        return new BrowserOptions(checkpoints, paused, fixedSize, input);
     }
 }
 
@@ -64,12 +70,19 @@ public sealed partial class BrowserHost(BrowserOptions options) : IPlatformHost
         await runtime.StartAsync(renderer, new RenderConfiguration("ukiyo-web", s_extent));
         s_runtime = runtime;
         runtime.Paused = options.StartPaused;
+        if (options.InputJson is { } input)
+        {
+            runtime.Script = InputScript.Parse(input);
+            Console.WriteLine($"[ukiyo] input script events={runtime.Script.Events.Count}");
+        }
+
         if (options.Checkpoints is { } checkpoints)
         {
             await PublishEvidence(runtime, renderer, checkpoints, options.FixedSize);
             return 0;
         }
 
+        runtime.Audio = new WebAudioOutput();
         StartLoop();
         return 0;
     }
@@ -156,6 +169,48 @@ public sealed partial class BrowserHost(BrowserOptions options) : IPlatformHost
     private static partial void Publish(string json);
 }
 
+/// <summary>
+/// Sends sounds to Web Audio (ukiyo-host.js). Each sound crosses the bridge once, as 16-bit PCM, and is cached by id
+/// in JS; afterwards a play is four numbers. Browsers start audio only after a user gesture, which the page handles.
+/// </summary>
+[SupportedOSPlatform("browser")]
+internal sealed partial class WebAudioOutput : IAudioOutput
+{
+    private readonly HashSet<uint> _loaded = [];
+
+    public void Play(in SoundEvent sound, AudioData data)
+    {
+        if (_loaded.Add(sound.Sound.Id))
+        {
+            var pcm = new byte[data.Samples.Length * 2];
+            for (var i = 0; i < data.Samples.Length; i++)
+            {
+                var value = (short)MathF.Round(Math.Clamp(data.Samples[i], -1f, 1f) * 32767f);
+                pcm[i * 2] = (byte)value;
+                pcm[i * 2 + 1] = (byte)(value >> 8);
+            }
+
+            AudioLoad((int)sound.Sound.Id, pcm, data.SampleRate, data.Channels);
+        }
+
+        AudioPlay((int)sound.Sound.Id, sound.Volume, sound.Pan, sound.Pitch);
+    }
+
+    public void EndTick(long tick)
+    {
+    }
+
+    public void Dispose()
+    {
+    }
+
+    [JSImport("audioLoad", "ukiyo-host")]
+    private static partial void AudioLoad(int id, byte[] pcm16, int sampleRate, int channels);
+
+    [JSImport("audioPlay", "ukiyo-host")]
+    private static partial void AudioPlay(int id, double volume, double pan, double pitch);
+}
+
 /// <summary>Entry points the page calls. The runtime state lives in C#; these only forward.</summary>
 [SupportedOSPlatform("browser")]
 public static partial class BrowserExports
@@ -175,4 +230,40 @@ public static partial class BrowserExports
 
     [JSExport]
     public static string Snapshot() => BrowserHost.Runtime.SnapshotJson();
+
+    /// <summary>Keyboard event with the browser's <c>KeyboardEvent.code</c>. Returns false for keys the engine does not map.</summary>
+    [JSExport]
+    public static bool KeyEvent(string code, bool down)
+    {
+        var key = KeyNames.FromWebCode(code);
+        if (key == Key.None)
+        {
+            return false;
+        }
+
+        BrowserHost.Runtime.Input.Push(down ? InputEvent.KeyDown(key) : InputEvent.KeyUp(key));
+        return true;
+    }
+
+    /// <summary>Pointer event in drawing-buffer pixels. kind: 0 move, 1 down, 2 up; button follows <c>MouseEvent.button</c> (0 left, 1 middle, 2 right).</summary>
+    [JSExport]
+    public static void PointerEvent(int kind, double x, double y, int button)
+    {
+        var position = new System.Numerics.Vector2((float)x, (float)y);
+        var mapped = button switch
+        {
+            1 => PointerButton.Middle,
+            2 => PointerButton.Right,
+            _ => PointerButton.Left,
+        };
+        BrowserHost.Runtime.Input.Push(kind switch
+        {
+            1 => InputEvent.PointerDown(mapped, position),
+            2 => InputEvent.PointerUp(mapped, position),
+            _ => InputEvent.PointerMove(position),
+        });
+    }
+
+    [JSExport]
+    public static void ReleaseAllInput() => BrowserHost.Runtime.Input.ReleaseAll();
 }

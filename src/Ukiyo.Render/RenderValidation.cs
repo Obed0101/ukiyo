@@ -8,6 +8,53 @@ public static class RenderValidation
     public const int MaxVertices = 1 << 20;
     public const int MaxIndices = 3 << 20;
     public const int MaxInstances = 1 << 16;
+    public const int MaxSprites = 1 << 16;
+    public const int MaxTextureSize = 4096;
+
+    public static void Validate(TextureData texture)
+    {
+        if (texture.Width is <= 0 or > MaxTextureSize || texture.Height is <= 0 or > MaxTextureSize)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"texture {texture.Width}x{texture.Height} outside 1..{MaxTextureSize}");
+        }
+
+        if (texture.Rgba.Length != texture.Width * texture.Height * 4)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"texture {texture.Width}x{texture.Height} needs {texture.Width * texture.Height * 4} RGBA bytes, got {texture.Rgba.Length}");
+        }
+
+        if (texture.Filter is not (TextureFilter.Nearest or TextureFilter.Linear))
+        {
+            throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown texture filter {(byte)texture.Filter}");
+        }
+    }
+
+    public static void Validate(Camera2D camera)
+    {
+        if (!float.IsFinite(camera.Center.X) || !float.IsFinite(camera.Center.Y))
+        {
+            throw new RenderException(RenderErrorCode.NonFiniteValue, $"2D camera center is not finite: {camera.Center}");
+        }
+
+        if (!(camera.ViewHeight > 0) || !float.IsFinite(camera.ViewHeight))
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"2D camera view height {camera.ViewHeight} must be positive and finite");
+        }
+    }
+
+    public static void Validate(SpriteInstance sprite)
+    {
+        RequireKind(sprite.Texture, ResourceKind.Texture);
+        if (sprite.Space is not (SpriteSpace.World or SpriteSpace.Screen))
+        {
+            throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown sprite space {(byte)sprite.Space}");
+        }
+
+        RequireFinite(new Vector4(sprite.Position, sprite.Size.X, sprite.Size.Y), "sprite position/size");
+        RequireFinite(new Vector3(sprite.Pivot, sprite.Rotation), "sprite pivot/rotation");
+        RequireFinite(sprite.Uv, "sprite uv");
+        RequireFinite(sprite.Color, "sprite color");
+    }
 
     public static void Validate(MeshData mesh)
     {
@@ -52,7 +99,16 @@ public static class RenderValidation
                     RequireKind(command.Handle, ResourceKind.Material);
                     Validate(command.Material ?? throw new RenderException(RenderErrorCode.InvalidPacket, "CreateMaterial without material data"));
                     break;
+                case ResourceCommandKind.CreateTexture:
+                    RequireKind(command.Handle, ResourceKind.Texture);
+                    Validate(command.Texture ?? throw new RenderException(RenderErrorCode.InvalidPacket, "CreateTexture without texture data"));
+                    break;
                 case ResourceCommandKind.Destroy:
+                    if (command.Handle.Kind is not (ResourceKind.Mesh or ResourceKind.Material or ResourceKind.Texture))
+                    {
+                        throw new RenderException(RenderErrorCode.WrongResourceKind, $"destroy of unknown resource kind {command.Handle}");
+                    }
+
                     break;
                 default:
                     throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown resource command {(byte)command.Kind}");
@@ -85,6 +141,17 @@ public static class RenderValidation
             RequireKind(instance.Mesh, ResourceKind.Mesh);
             RequireKind(instance.Material, ResourceKind.Material);
             RequireFinite(instance.World, "instance world matrix");
+        }
+
+        if (packet.Sprites.Count > MaxSprites)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{packet.Sprites.Count} sprites exceed {MaxSprites}");
+        }
+
+        Validate(packet.Camera2D);
+        foreach (var sprite in packet.Sprites)
+        {
+            Validate(sprite);
         }
     }
 

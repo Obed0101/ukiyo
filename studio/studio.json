@@ -1,0 +1,12 @@
+{
+  "$comment": "What the Studio shows. The layout menu in the Studio, ukiyo_studio compose and plain edits all change this file; the Studio applies it live.",
+  "layout": "balanced",
+  "theme": "auto",
+  "auto": {
+    "dark": "ink",
+    "light": "paper"
+  },
+  "hide": [],
+  "show": [],
+  "panels": {}
+}

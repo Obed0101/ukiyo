@@ -11,7 +11,10 @@ native/.work/
 
 # JS dependencies and synced web assets
 node_modules/
-samples/RotatingCube/Browser/wwwroot/lib/
+samples/*/Browser/wwwroot/lib/
+
+# MCP sprite tool scratch output (generated sprites land in the game's Shared/assets instead)
+.ukiyo/
 
 # Local tool state
 .mendcode/

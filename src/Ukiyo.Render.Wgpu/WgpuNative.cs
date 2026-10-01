@@ -504,6 +504,38 @@ internal struct Future
     public ulong Id;
 }
 
+[StructLayout(LayoutKind.Sequential)]
+internal unsafe struct SamplerDescriptor
+{
+    public ChainedStruct* NextInChain;
+    public StringView Label;
+    public uint AddressModeU;
+    public uint AddressModeV;
+    public uint AddressModeW;
+    public uint MagFilter;
+    public uint MinFilter;
+    public uint MipmapFilter;
+    public float LodMinClamp;
+    public float LodMaxClamp;
+    public uint Compare;
+    public ushort MaxAnisotropy;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct BlendComponent
+{
+    public uint Operation;
+    public uint SrcFactor;
+    public uint DstFactor;
+}
+
+[StructLayout(LayoutKind.Sequential)]
+internal struct BlendState
+{
+    public BlendComponent Color;
+    public BlendComponent Alpha;
+}
+
 internal static class WgpuConst
 {
     public const uint STypeShaderSourceWgsl = 0x02;
@@ -558,6 +590,25 @@ internal static class WgpuConst
     public const uint MapAsyncSuccess = 0x01;
     public const uint DepthSliceUndefined = uint.MaxValue;
     public const ulong WholeSize = ulong.MaxValue;
+
+    // Sprite path (2D layer). Values from the pinned webgpu.h; re-check on any wgpu-native bump.
+    public const ulong TextureUsageCopyDst = 0x02;
+    public const ulong TextureUsageTextureBinding = 0x04;
+    public const uint VertexFormatFloat32x2 = 0x1D;
+    public const uint VertexFormatFloat32x4 = 0x1F;
+    public const uint CullModeNone = 0x01;
+    public const uint OptionalBoolFalse = 0x00;
+    public const uint TextureSampleTypeFloat = 0x02;
+    public const uint TextureViewDimension2D = 0x02;
+    public const uint SamplerBindingFiltering = 0x02;
+    public const uint AddressModeClampToEdge = 0x01;
+    public const uint FilterModeNearest = 0x01;
+    public const uint FilterModeLinear = 0x02;
+    public const uint MipmapFilterModeNearest = 0x01;
+    public const uint BlendOperationAdd = 0x01;
+    public const uint BlendFactorOne = 0x02;
+    public const uint BlendFactorSrcAlpha = 0x05;
+    public const uint BlendFactorOneMinusSrcAlpha = 0x06;
 }
 
 internal static unsafe partial class WgpuNative
@@ -603,6 +654,10 @@ internal static unsafe partial class WgpuNative
     [LibraryImport(Library)] public static partial void wgpuBufferUnmap(nint buffer);
     [LibraryImport(Library)] public static partial uint wgpuDevicePoll(nint device, uint wait, ulong* submissionIndex);
     [LibraryImport(Library)] public static partial uint wgpuGetVersion();
+    [LibraryImport(Library)] public static partial nint wgpuDeviceCreateSampler(nint device, SamplerDescriptor* descriptor);
+    [LibraryImport(Library)] public static partial void wgpuQueueWriteTexture(nint queue, TexelCopyTextureInfo* destination, void* data, nuint dataSize, TexelCopyBufferLayout* dataLayout, Extent3D* writeSize);
+    [LibraryImport(Library)] public static partial void wgpuRenderPassEncoderDraw(nint pass, uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance);
+    [LibraryImport(Library)] public static partial void wgpuSamplerRelease(nint handle);
 
     [LibraryImport(Library)] public static partial void wgpuInstanceRelease(nint handle);
     [LibraryImport(Library)] public static partial void wgpuSurfaceRelease(nint handle);

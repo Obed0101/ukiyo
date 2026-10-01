@@ -15,7 +15,7 @@ public sealed partial class ThreeJsRenderer(string canvasId) : IRenderer, IRende
     private RenderPacket? _lastPacket;
     private bool _initialized;
 
-    public RenderCapabilities Capabilities { get; private set; } = new("ThreeJsRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true);
+    public RenderCapabilities Capabilities { get; private set; } = new("ThreeJsRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true };
 
     public long FramesRendered { get; private set; }
 
@@ -29,7 +29,10 @@ public sealed partial class ThreeJsRenderer(string canvasId) : IRenderer, IRende
             info.GetProperty("backend").GetString() ?? "unknown",
             $"{info.GetProperty("device").GetString()} · three r{info.GetProperty("three").GetString()}",
             configuration.Profile,
-            SupportsCapture: true);
+            SupportsCapture: true)
+        {
+            SupportsSprites = true,
+        };
         _initialized = true;
         Resize(configuration.InitialExtent);
         return ValueTask.CompletedTask;

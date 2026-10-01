@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="ukiyo-studio-token" content="__UKIYO_STUDIO_TOKEN__">
+  <title>ukiyo Studio</title>
+  <link rel="icon" href="/brand/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/web/studio.css">
+  <script src="/web/boot.js"></script>
+</head>
+<body>
+  <a class="skip" href="#grid">Skip to panels</a>
+  <header class="topbar">
+    <div class="brand">
+      <span class="mark" aria-hidden="true"></span>
+      <span class="brand-name">Studio</span>
+    </div>
+    <div class="game">
+      <span id="game" class="game-name">No game connected</span>
+      <span id="state" class="state" data-state="idle" role="status">Connecting</span>
+    </div>
+    <div class="tick" aria-label="Current tick">
+      <span class="tick-label">tick</span>
+      <span id="tick" class="tick-value">—</span>
+    </div>
+    <div class="view-controls">
+      <div id="layouts" class="segmented" role="group" aria-label="Layout"></div>
+      <label class="visually-hidden" for="theme">Theme</label>
+      <select id="theme" class="select"></select>
+    </div>
+  </header>
+  <main id="grid" class="grid" tabindex="-1">
+    <p class="loading">Loading the Studio files…</p>
+  </main>
+  <footer id="statusbar" class="statusbar" aria-label="Game and Studio status"></footer>
+  <div id="notices" class="notices" aria-live="polite"></div>
+  <script type="module" src="/web/studio.js"></script>
+</body>
+</html>

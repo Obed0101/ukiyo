@@ -1,0 +1,14 @@
+{
+  "name": "@ukiyo/mcp",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "MCP server that gives coding agents the ukiyo engine: headless runs, frame captures, tests, live dev bridge, sprite generation and skills. Zero dependencies; runs on Bun.",
+  "bin": {
+    "ukiyo-mcp": "./src/server.ts"
+  },
+  "scripts": {
+    "start": "bun src/server.ts",
+    "test": "bun test"
+  }
+}
