@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Multi-camera parity (docs/rendering-passes.md): the Minimap sample (main view + minimap, two passes) on headless (CPU),
 # desktop (Metal) and web (WASM + three.js WebGL2) through scripts/g1lit.sh, which compares snapshots and, with
-# lit-pixel-report.ts, every whole frame and every per-pass capture (interiors Δ ≤ 1, edges reported). This wrapper
+# lit-pixel-report.ts, every whole frame and every per-pass capture (edges from the CPU reference's geometric masks, also per pass; interiors
+# Δ ≤ 1 + floor(gradient/16), edges reported). This wrapper
 # also fails when a host wrote no per-pass captures. Evidence: artifacts/evidence-g1lit-minimap. Set WEB_PORT if
 # 8768 is taken; opens a window briefly.
 set -euo pipefail
