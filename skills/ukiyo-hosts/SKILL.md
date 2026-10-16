@@ -47,12 +47,12 @@ Unknown flags are ignored without an error, and a flag missing its value is skip
 
 | Host | Flags |
 |---|---|
-| Headless | `--checkpoints 0,60,180,600` (default) · `--input script.json` · `--capture dir` (CPU frames `headless-tick-NNNNNN.png` + `.json`) · `--size 1280x720` (default; bad value → `[HEADLESS]:` error) · `--audio run.wav` |
+| Headless | `--checkpoints 0,60,180,600` (default) · `--input script.json` · `--capture dir` (CPU frames `headless-tick-NNNNNN.png` + `.json`) · `--size 1280x720` (default; bad value → `[HEADLESS]:` error) · `--audio run.wav` · `--edge-masks dir` (debug, needs `--capture`: geometric edge mask `edges-tick-NNNNNN.png` per checkpoint for pixel gates; frames unchanged) |
 | Desktop, Export.Desktop (same `DesktopHost`) | `--capture dir` (GPU readback at each checkpoint, `desktop-tick-NNNNNN.png` + `.json`, then exit) · `--checkpoints` · `--frames N` (exit after N presented frames, prints a snapshot) · `--resize-test` · `--input script.json`. Keys: F5 pause, F6 step one tick (prints a snapshot) |
 | Browser (URL query → args in `web/three-adapter/ukiyo-host.js`) | `?checkpoints=0,60` → `--checkpoints` · `?paused` → `--paused` · `?fixed` → `--fixed-size` · `?input=input.json` (same origin; fetched and passed as `--input-json`). Keys: `` ` `` pause, Shift+`` ` `` step |
 
 Headless stdout is a contract the MCP tools parse: `[ukiyo] target=…`, `[ukiyo] renderer=…`, one `snapshot {json}` per
-checkpoint, `capture <path>`, `audio <path> seconds=… sounds=… peak=… rms=…`.
+checkpoint, `capture <path>`, `edges <path>` (only with `--edge-masks`), `audio <path> seconds=… sounds=… peak=… rms=…`.
 
 ## The dev bridge exists only in dev hosts
 

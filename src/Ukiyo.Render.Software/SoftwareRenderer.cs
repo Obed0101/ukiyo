@@ -27,6 +27,13 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
 
     public long FramesRendered { get; private set; }
 
+    /// <summary>
+    /// Debug only, null by default: when set, every <see cref="Render"/> also records which surface covers each pixel,
+    /// for pixel-parity gates (see <see cref="SurfaceMap"/>). It never changes the frame; while it is null the only cost
+    /// is a null check per covered pixel.
+    /// </summary>
+    public SurfaceMap? Surfaces { get; set; }
+
     public ValueTask InitializeAsync(RenderConfiguration configuration, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -95,13 +102,15 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
             _depth[i] = 1f;
         }
 
+        Surfaces?.BeginFrame(packet.Tick, _extent.Width, _extent.Height);
         var viewProjection = ViewProjection(packet.Camera, _extent.Width / (float)_extent.Height);
-        foreach (var instance in packet.Instances)
+        for (var i = 0; i < packet.Instances.Count; i++)
         {
+            var instance = packet.Instances[i];
             var mesh = _meshes.Get(instance.Mesh);
             var material = _materials.Get(instance.Material);
             RenderValidation.RequireLitInputs(mesh.Normals is not null, material, packet, instance);
-            DrawMesh(mesh, material, instance.World, viewProjection, material.Lit ? packet.Lighting : null);
+            DrawMesh(mesh, material, instance.World, viewProjection, material.Lit ? packet.Lighting : null, i);
         }
 
         Span<SpriteVertex> quad = stackalloc SpriteVertex[4];
@@ -110,8 +119,8 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
             var sprite = packet.Sprites[index];
             var texture = _textures.Get(sprite.Texture);
             SpriteGeometry.Quad(sprite, packet.Camera2D, _extent, quad);
-            DrawSpriteTriangle(quad[0], quad[1], quad[2], texture, sprite.Color, ownsEdgeAB: true);
-            DrawSpriteTriangle(quad[0], quad[2], quad[3], texture, sprite.Color, ownsEdgeAB: false);
+            DrawSpriteTriangle(quad[0], quad[1], quad[2], texture, sprite.Color, ownsEdgeAB: true, index);
+            DrawSpriteTriangle(quad[0], quad[2], quad[3], texture, sprite.Color, ownsEdgeAB: false, index);
         }
 
         _lastTick = packet.Tick;
@@ -158,7 +167,8 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     }
 
     /// <param name="lighting">Set for lit materials: world position and normal are interpolated and shaded per pixel.</param>
-    private void DrawMesh(MeshData mesh, MaterialData material, Matrix4x4 world, Matrix4x4 viewProjection, SceneLighting? lighting)
+    /// <param name="instance">Index in the packet, recorded in <see cref="Surfaces"/> when it is set.</param>
+    private void DrawMesh(MeshData mesh, MaterialData material, Matrix4x4 world, Matrix4x4 viewProjection, SceneLighting? lighting, int instance)
     {
         var mvp = world * viewProjection;
         var normalMatrix = lighting is null ? default : LightingMath.NormalMatrix(world);
@@ -173,13 +183,14 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
                 : new ClipVertex(Vector4.Transform(new Vector4(v.Position, 1f), mvp), color, Vector3.Transform(v.Position, world), Vector3.TransformNormal(mesh.Normals![i], normalMatrix));
         }
 
+        Surfaces?.BeginInstance(mesh);
         Span<ClipVertex> polygon = stackalloc ClipVertex[4];
         for (var t = 0; t < mesh.Indices.Length; t += 3)
         {
             var count = ClipNear(clip[mesh.Indices[t]], clip[mesh.Indices[t + 1]], clip[mesh.Indices[t + 2]], polygon);
             for (var k = 1; k + 1 < count; k++)
             {
-                DrawTriangle(polygon[0], polygon[k], polygon[k + 1], lighting);
+                DrawTriangle(polygon[0], polygon[k], polygon[k + 1], lighting, instance, t / 3);
             }
         }
     }
@@ -214,7 +225,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         return count;
     }
 
-    private void DrawTriangle(ClipVertex a, ClipVertex b, ClipVertex c, SceneLighting? lighting)
+    private void DrawTriangle(ClipVertex a, ClipVertex b, ClipVertex c, SceneLighting? lighting, int instance, int triangle)
     {
         if (a.Position.W <= 0 || b.Position.W <= 0 || c.Position.W <= 0)
         {
@@ -232,6 +243,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
             return;
         }
 
+        Surfaces?.FrontFacing(instance, triangle);
         var width = _extent.Width;
         var height = _extent.Height;
         var sa = ToPixel(na, width, height);
@@ -269,6 +281,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
                 }
 
                 _depth[pixel] = depth;
+                Surfaces?.Cover(pixel, instance, triangle);
                 var pw0 = w0 * invW.X;
                 var pw1 = w1 * invW.Y;
                 var pw2 = w2 * invW.Z;
@@ -289,7 +302,8 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     }
 
     /// <param name="ownsEdgeAB">The quad diagonal is shared; only one triangle may cover pixels exactly on it, or alpha blends twice.</param>
-    private void DrawSpriteTriangle(SpriteVertex a, SpriteVertex b, SpriteVertex c, LinearTexture texture, Vector4 tint, bool ownsEdgeAB)
+    /// <param name="sprite">Index in the packet's sprites, recorded in <see cref="Surfaces"/> when it is set.</param>
+    private void DrawSpriteTriangle(SpriteVertex a, SpriteVertex b, SpriteVertex c, LinearTexture texture, Vector4 tint, bool ownsEdgeAB, int sprite)
     {
         var area = Edge(a.Pixel, b.Pixel, c.Pixel);
         if (area == 0)
@@ -325,6 +339,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
                     continue;
                 }
 
+                Surfaces?.CoverSprite(y * width + x, sprite);
                 var pixel = (y * width + x) * 3;
                 var alpha = MathF.Min(1f, texel.W);
                 _color[pixel] = texel.X * alpha + _color[pixel] * (1 - alpha);

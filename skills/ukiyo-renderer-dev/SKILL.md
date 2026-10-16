@@ -61,7 +61,12 @@ there once; renderers do not reimplement it differently.
 - wgpu: meshes with normals use the lit pipeline (36-byte vertices, 224-byte instance uniforms, lights uniform in
   group 1); meshes without normals keep the G0 pipeline, so G0 frames are untouched. three.js: lit materials are a
   `ShaderMaterial` (three's built-in lights use a different BRDF); unlit stay `MeshBasicMaterial`.
-- Evidence: `scripts/g1lit.sh` (LitCube on CPU, Metal and WebGL2; `SAMPLE=RotatingCube` for the unlit baseline).
+- Evidence: `scripts/g1lit.sh` (LitCube on CPU, Metal and WebGL2; `SAMPLE=RotatingCube` for the unlit baseline,
+  `SAMPLE=ImportedMesh` for an imported smooth mesh). Interior vs silhouette comes from geometry: the CPU reference's
+  debug `SoftwareRenderer.Surfaces` (`SurfaceMap`, headless `--edge-masks`) marks pixels whose 3×3 neighborhood spans
+  background, another draw or triangles of one mesh that are not neighbors on one smooth sheet (no shared edge, and no
+  shared vertex whose closed fan faces the camera). Interior tolerance is Δ ≤ 1 + floor(G/16), G = the reference's
+  local gradient. Keep the map debug-only: null by default, never changes a frame.
 
 ## wgpu specifics
 

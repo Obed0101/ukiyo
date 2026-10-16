@@ -17,7 +17,11 @@ public static class PlatformBootstrap
 /// <param name="Extent">Drawing-buffer size used for frames, UI layout and captures.</param>
 /// <param name="AudioPath">When set, mixes every sound the run plays and writes it as a WAV (one tick of audio per tick).</param>
 /// <param name="PatchLog">When set, a patch log (docs/scenes-patches.md) submitted at boundary 0, before the first tick.</param>
-public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, string? CaptureDirectory, RenderExtent Extent, string? AudioPath = null, string? PatchLog = null)
+/// <param name="EdgeMaskDirectory">
+/// Debug, for pixel-parity gates; needs <paramref name="CaptureDirectory"/>. Writes the CPU frame's geometric edge mask
+/// (<see cref="SurfaceMap"/>) per checkpoint. The captures themselves are the same bytes with or without it.
+/// </param>
+public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, string? CaptureDirectory, RenderExtent Extent, string? AudioPath = null, string? PatchLog = null, string? EdgeMaskDirectory = null)
 {
     public static readonly long[] DefaultCheckpoints = [0, 60, 180, 600];
 
@@ -28,6 +32,7 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
         string? capture = null;
         string? audio = null;
         string? patches = null;
+        string? edgeMasks = null;
         var extent = new RenderExtent(1280, 720, 1f);
         for (var i = 0; i < args.Length; i++)
         {
@@ -50,6 +55,11 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
                     break;
                 case "--patches":
                     throw new ArgumentException("[HEADLESS]: --patches expects a patch log path (a JSON array of patches)");
+                case "--edge-masks" when i + 1 < args.Length:
+                    edgeMasks = args[++i];
+                    break;
+                case "--edge-masks":
+                    throw new ArgumentException("[HEADLESS]: --edge-masks expects a directory");
                 case "--size" when i + 1 < args.Length:
                     var size = args[++i].Split('x');
                     if (size.Length != 2 || !int.TryParse(size[0], out var w) || !int.TryParse(size[1], out var h))
@@ -67,14 +77,20 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
             throw new ArgumentException($"[HEADLESS]: --size must be positive, got {extent.Width}x{extent.Height}");
         }
 
-        return new HeadlessOptions(checkpoints, input, capture, extent, audio, patches);
+        if (edgeMasks is not null && capture is null)
+        {
+            throw new ArgumentException("[HEADLESS]: --edge-masks needs --capture: the masks describe the CPU frames it writes");
+        }
+
+        return new HeadlessOptions(checkpoints, input, capture, extent, audio, patches, edgeMasks);
     }
 }
 
 /// <summary>
 /// Runs the game with no window, GPU or DOM. Each checkpoint prints one JSON line prefixed with "snapshot "; with
-/// --capture it also writes headless-tick-NNNNNN.png and prints "capture {path}"; with --patches it prints
-/// "patches {path} submitted=N" once the log is accepted. Agents parse exactly these lines. Output goes to
+/// --capture it also writes headless-tick-NNNNNN.png and prints "capture {path}" (and with --edge-masks writes
+/// edges-tick-NNNNNN.png and prints "edges {path}"); with --patches it prints "patches {path} submitted=N" once the
+/// log is accepted. Agents parse exactly these lines. Output goes to
 /// <paramref name="output"/> (stdout by default) and refusals to <paramref name="errors"/> (stderr by default).
 /// </summary>
 public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = null, TextWriter? errors = null) : IPlatformHost
@@ -150,6 +166,12 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
     {
         Directory.CreateDirectory(directory);
         using var renderer = new SoftwareRenderer();
+        if (options.EdgeMaskDirectory is { } edgeDirectory)
+        {
+            Directory.CreateDirectory(edgeDirectory);
+            renderer.Surfaces = new SurfaceMap();
+        }
+
         await runtime.StartAsync(renderer, new RenderConfiguration("ukiyo-headless", options.Extent));
         runtime.Paused = true;
         if (patches is not null && !SubmitPatches(runtime, patches))
@@ -168,6 +190,12 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".json"), snapshot);
             _out.WriteLine($"snapshot {snapshot}");
             _out.WriteLine($"capture {png}");
+            if (renderer.Surfaces is { } surfaces)
+            {
+                var edges = Path.GetFullPath(Path.Combine(options.EdgeMaskDirectory!, $"edges-tick-{checkpoint:D6}.png"));
+                await File.WriteAllBytesAsync(edges, surfaces.EncodePng(runtime.Tick));
+                _out.WriteLine($"edges {edges}");
+            }
         }
 
         _out.WriteLine($"[ukiyo] software frames={renderer.FramesRendered} size={options.Extent.Width}x{options.Extent.Height}");
