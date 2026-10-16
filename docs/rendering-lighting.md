@@ -92,6 +92,13 @@ cannot change.
 | `scripts/g1lit.sh` snapshots | pass: LitCube at ticks 0/60/180/600 identical on CPU, Metal and WebGL2 (max Δ = 0), same source hashes |
 | `scripts/g1lit.sh` pixels | see below; `g1-parity.ts` reports FAIL because silhouette edges differ by more than 1, which the unlit G0 cube does too |
 
+**Re-run on the integrated `dev` · 2026-10-16** (lighting, scenes, texture importer and Studio merged; same machine and
+versions): C# 171/171, adapter 25/25, tools/mcp 38/38, studio 20/20; `scripts/g0.sh` exit 0 (run without its
+`bun install` step and on port 8775 because 8765 was taken by an unrelated process); `scripts/g1.sh` exit 0, 32 checks;
+`scripts/g1lit.sh` exit 0. `g1lit.sh` now gates on snapshots, source hashes and backends from `g1-parity.ts` and on
+interior pixels from `lit-pixel-report.ts` (interior Δ ≤ 1); `g1-parity.ts`'s whole-image pixel rows are kept in
+`parity.log` as information, since silhouettes rasterize differently on every renderer.
+
 Pixels: each target against the CPU reference rendered at the same size (web canvas 960×640, Metal drawing buffer
 1920×1280). "Edge" means the pixel sits on a color discontinuity in the reference (a silhouette).
 

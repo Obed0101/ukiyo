@@ -43,15 +43,19 @@ function compare(referencePath: string, targetPath: string): Stats | string {
   return s;
 }
 
+// Interior shading may differ by one 8-bit step (float rounding next to a quantization boundary); more is a failure.
+const INTERIOR_TOLERANCE = 1;
+let failures = 0;
 const rows = ["| Tick | Pair | Size | Max Δ | Pixels Δ>0 | Edge px (max Δ) | Interior px (max Δ) | Δ=0 / 1 / 2 / ≥3 |", "|---|---|---|---|---|---|---|---|"];
 const ticks = readdirSync(join(dir, "headless")).filter((f) => f.endsWith(".png")).map((f) => Number(f.match(/(\d+)\.png$/)![1])).sort((a, b) => a - b);
 const png = (folder: string, target: string, tick: number) => join(dir, folder, `${target}-tick-${String(tick).padStart(6, "0")}.png`);
 for (const tick of ticks) {
   for (const [target, reference] of [["web", "headless"], ["desktop", "headless-desktop-size"]] as const) {
     const t = png(target, target, tick), r = png(reference, "headless", tick);
-    if (!existsSync(t) || !existsSync(r)) { rows.push(`| ${tick} | CPU vs ${target} | – | missing | | | | |`); continue; }
+    if (!existsSync(t) || !existsSync(r)) { failures++; rows.push(`| ${tick} | CPU vs ${target} | – | missing | | | | |`); continue; }
     const s = compare(r, t);
-    if (typeof s === "string") { rows.push(`| ${tick} | CPU vs ${target} | ${s} | size mismatch | | | | |`); continue; }
+    if (typeof s === "string") { failures++; rows.push(`| ${tick} | CPU vs ${target} | ${s} | size mismatch | | | | |`); continue; }
+    if (s.interiorMax > INTERIOR_TOLERANCE) failures++;
     const size = `${decodePng(r).width}x${decodePng(r).height}`;
     rows.push(`| ${tick} | CPU vs ${target} | ${size} | ${s.maxDelta} | ${s.differing} of ${s.pixels} | ${s.edge} (${s.edgeMax}) | ${s.interior} (${s.interiorMax}) | ${s.histogram.join(" / ")} |`);
   }
@@ -60,3 +64,5 @@ for (const tick of ticks) {
 const report = rows.join("\n");
 writeFileSync(join(dir, "lit-pixels.md"), `${report}\n`);
 console.log(report);
+console.log(failures ? `[lit-pixels] FAIL: ${failures} comparison(s) missing or with interior Δ > ${INTERIOR_TOLERANCE}` : `[lit-pixels] PASS: interior Δ ≤ ${INTERIOR_TOLERANCE} everywhere`);
+process.exit(failures ? 1 : 0);

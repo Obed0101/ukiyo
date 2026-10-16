@@ -36,6 +36,10 @@ rm -rf "$WEB" && dotnet publish "samples/$SAMPLE/Browser" -c Release -o "$WEB" -
 scripts/web-evidence.sh "$WEB/wwwroot" "$EV/web-dom.html" "$PORT" "checkpoints=$CHECKPOINTS&fixed=1"
 
 step "parity"
-bun scripts/g1-parity.ts "$EV" || PARITY_FAILED=1
-bun scripts/lit-pixel-report.ts "$EV"
+# Snapshots, source hashes and backends must pass in g1-parity.ts. Its whole-image pixel rows are informational here:
+# mesh silhouettes rasterize differently on every renderer (the unlit G0 cube too), so lit-pixel-report.ts gates pixels
+# on interiors, where lighting math drift would show.
+bun scripts/g1-parity.ts "$EV" | tee "$EV/parity.log" || true
+if grep -E '\| FAIL \|' "$EV/parity.log" | grep -v ' pixels headless≈'; then PARITY_FAILED=1; fi
+bun scripts/lit-pixel-report.ts "$EV" || PARITY_FAILED=1
 exit "${PARITY_FAILED:-0}"

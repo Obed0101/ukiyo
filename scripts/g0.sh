@@ -7,7 +7,10 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}" DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1
 EV="artifacts/evidence"; EVA="artifacts/evidence-aot"
+PORT="${WEB_PORT:-8765}"
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+# web-evidence.sh would silently read another process's server if the port were taken.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then echo "[g0] port $PORT is in use; set WEB_PORT" >&2; exit 1; fi
 
 step "native dependencies (wgpu-native, SDL3)"; scripts/fetch-native.sh | tail -1
 step "three.js adapter dependencies"; (cd web/three-adapter && bun install --frozen-lockfile >/dev/null && bun test)
@@ -17,7 +20,7 @@ step "headless (NullRenderer)"; dotnet run --project samples/RotatingCube/Headle
 step "desktop dev host (wgpu/Metal, resize test)"; dotnet build samples/RotatingCube/Desktop -nologo -v q
 dotnet run --project samples/RotatingCube/Desktop --no-build -- --capture "$EV/desktop" --resize-test | grep -v '^snapshot'
 step "web export (.NET WASM + Three.js)"; rm -rf artifacts/web && dotnet publish samples/RotatingCube/Browser -c Release -o artifacts/web -nologo -v q
-scripts/web-evidence.sh artifacts/web/wwwroot "$EV/web-dom.html" 8765
+scripts/web-evidence.sh artifacts/web/wwwroot "$EV/web-dom.html" "$PORT"
 step "parity (dev builds)"; bun scripts/g0-parity.ts "$EV"
 step "NativeAOT single binary, run in isolation"; rm -rf artifacts/desktop && dotnet publish samples/RotatingCube/Export.Desktop -c Release -o artifacts/desktop -nologo -v q
 ls -la artifacts/desktop; otool -L artifacts/desktop/rotating-cube > "$EVA/otool.txt"
