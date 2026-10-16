@@ -43,7 +43,13 @@ export default tool;                                                       // or
 - Paths from arguments go through `insideRoot(root, path)`; never read or write outside the repository except the
   documented state dirs (`~/.ukiyo/live`, `~/.ukiyo/studio`).
 - Long work uses `runProcess` from engine.ts with a timeout and the abort signal. Parse host output by its documented
-  line formats (`parseHeadless`), never by scraping prose.
+  line formats (`parseHeadless`: `snapshot`, `capture`, `audio`, `patches`), never by scraping prose.
+- Shapes shared by several tools are exported once and reused: `inputEventSchema` and `patchSchema` (tools/run.ts)
+  serve `ukiyo_run`, `ukiyo_capture` and `ukiyo_live`. The engine stays the judge: a schema only tells agents the
+  shape; a scene patch's prefabs, ranges and ticks are refused by the engine with its typed `[SCENE:Code]` message,
+  and the tool passes that message through instead of re-checking it.
+- `tools/mcp/src/cli.ts` is the thin editor-neutral adapter over the same code (`live <action>` through bridge.ts,
+  `run <Game>` through `runHeadless`): JSON on stdout, `[UKIYO]: …` on stderr and exit 1 on error.
 - Secrets only from environment variables (`OPENAI_API_KEY`, `GEMINI_API_KEY`); never log them or put them in results.
 - Shared clients, reused by the Studio: `tools/mcp/src/bridge.ts` (dev bridge discovery and requests) and
   `studio/src/discovery.ts` + `studio/src/manifest.ts` (Studio discovery and files).

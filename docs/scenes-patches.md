@@ -3,7 +3,8 @@
 Opt-in Core types (`src/Ukiyo.Core/Scenes.cs`, `SceneRegistry.cs`, `ScenePatch.cs`) that let a game describe its
 world as **prefabs (code) plus scenes (data)**, switch scenes, and take **patches**: typed diffs applied between ticks.
 `IGame` is unchanged; a game opts in by creating a `SceneRegistry<TEntity>` in `Initialize`. Example:
-`samples/SceneHop` (two scenes, 60 ticks each). Tests: `tests/Ukiyo.Tests/SceneTests.cs`, `ScenePatchTests.cs`.
+`samples/SceneHop` (two scenes, 60 ticks each; Headless and Desktop hosts). Tests: `tests/Ukiyo.Tests/SceneTests.cs`,
+`ScenePatchTests.cs`, `HeadlessPatchTests.cs`, `DevBridgeTests.cs`.
 
 ## Using it in a game
 
@@ -105,8 +106,9 @@ sorted by name). In C#: `new ScenePatch("p1", 90, [new SpawnOp("bat-3", "drifter
 
 ## Submitting and what happens to a patch
 
-One entry point: `runtime.SubmitPatch(patch)` (the registry's `Submit` is the same call, for game code). It is what
-the dev bridge, the agent CLI and hot reload are meant to reuse.
+One entry point: `runtime.SubmitPatch(patch)` (the registry's `Submit` is the same call, for game code). The headless
+`--patches` flag, the dev bridge `patch` command and the tools below all go through it, so they apply exactly the rules
+in the table; hot reload is meant to reuse it too.
 
 | When | Check | Outcome when it fails |
 |---|---|---|
@@ -140,10 +142,45 @@ Games with a registry get one extra key; every other game's snapshot JSON is byt
 read `PendingPatches` instead. Same code + same input script + same patch log ⇒ the same snapshot sequence (tested by
 `The_same_patch_log_gives_the_same_snapshot_sequence_whether_queued_up_front_or_submitted_live`).
 
+## Submitting from each entry point
+
+| From | How | Result |
+|---|---|---|
+| C# (tests, game code, tools) | `runtime.SubmitPatch(ScenePatch.Parse(json))`; a log: `ScenePatch.ParseLog` then submit in order | throws `SceneException` on refusal |
+| Headless host | `dotnet run --project samples/SceneHop/Headless -- --checkpoints 0,60,120 --patches log.json` (with `--input`, `--capture`, `--audio` as usual) | snapshot lines as always |
+| MCP, headless | `ukiyo_run` (or `ukiyo_capture`) with `"patches": [ … ]` inline or `"patchLog": "path/in/repo.json"` | `patches: {submitted, applied, rejected, notReached}` |
+| CLI, headless | `bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches log.json` | the `ukiyo_run` result as JSON on stdout |
+| Running desktop build | dev bridge `{"cmd":"patch","patch":{…}}`; `ukiyo_live {"action":"patch","patch":{…}}`; `bun tools/mcp/src/cli.ts live patch --pid N --patch patch.json` | `{"id","tick","status":"queued"\|"applied","currentTick","paused"}` |
+
+**Headless `--patches <log.json>`.** The log (a JSON array, `ScenePatch.ParseLog`) is read before the game starts and
+submitted in file order right after `Initialize`, at boundary 0, before any tick runs: the same as calling
+`SubmitPatch` for each entry up front, so the same code + input script + log give the same snapshots as the C# API
+(`HeadlessPatchTests`). The host prints `patches <absolute path> submitted=N` once the whole log is accepted. A log
+that cannot be read or parsed, any submit-time refusal, or a game without a `SceneRegistry` stops the run before tick
+0 with no snapshot lines, exit code 2 and one line on stderr:
+`[HEADLESS]: --patches <path>: [SCENE:UnknownPrefab]: patch oops op #0: prefab "dragon" is not registered …`.
+A tick-0 patch the world refuses is not a bad log: it is recorded in `rejected` and the run goes on, like any patch
+refused at its tick.
+
+**MCP `ukiyo_run`.** `patches` (inline array, validated against the advertised patch schema) or `patchLog` (a file
+inside the repository), not both. The result adds `patches.applied` and `patches.rejected` (from the last snapshot's
+`scene` section, with the typed messages) and `patches.notReached` (submitted patches whose tick is after the last
+checkpoint). A refused log makes the run an error result with `patches.refused` holding the host's stderr line.
+
+**Dev bridge `patch`.** One patch per request, run on the host thread between frames, where the runtime is exactly at
+a boundary. A patch for a later tick is queued (`"status":"queued"`); one for the current tick applies now
+(`"applied"`). A running game moves 60 ticks a second, so read the tick first (`status`) and add a margin, or `pause`,
+patch at the current tick and `step`. Refusals are `ok:false` with the typed message as `error`
+(`[SCENE:PastTick]: patch p targets tick 1790, but tick 1791 is the current boundary; target 1791 or later`); a
+world-dependent refusal at the current tick is also recorded in `rejected`. A game without scenes answers
+`[RUNTIME]: <Game> has no SceneRegistry, so it cannot take patches`. The bridge only exists in development builds
+(`UkiyoDevBridge=true`), never in exports. Patches submitted live are not recorded into input recordings: keep the
+patch files and replay them headless with `--patches`.
+
 ## Not in this slice
 
-- No host flag or MCP tool submits patches yet; `GameRuntime.SubmitPatch` is the hook for the dev bridge, a headless
-  `--patches <log.json>` option and G3 reload.
+- Hot reload does not submit patches yet; `GameRuntime.SubmitPatch` is its hook.
+- The Studio does not submit patches.
 - No patch op loads a scene; scene changes come from game code (`LoadScene`).
 - Game code cannot spawn or dispose registry entities mid-tick; runtime-only objects (bullets, particles) stay in the
   game's own collections.
