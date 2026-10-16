@@ -61,23 +61,70 @@ describe("patch log for a headless run", () => {
     }
   });
 
-  test("the report reads applied and rejected patches from the last snapshot and lists the ones not reached", () => {
+  // The documented chain (docs/scenes-patches.md), recomputed in JS: FNV-1a 64 over id, 0, tick as 8 bytes
+  // little-endian (rejected: then the code name and 0).
+  const fnv = (hash: bigint, bytes: Iterable<number>) => {
+    for (const b of bytes) hash = ((hash ^ BigInt(b)) * 0x100000001b3n) & 0xffffffffffffffffn;
+    return hash;
+  };
+  const entry = (id: string, tick: number, code?: string) => {
+    const tickBytes = Array.from({ length: 8 }, (_, i) => Number((BigInt(tick) >> BigInt(8 * i)) & 0xffn));
+    return [...new TextEncoder().encode(id), 0, ...tickBytes, ...(code === undefined ? [] : [...new TextEncoder().encode(code), 0])];
+  };
+  const chain = (entries: { id: string; tick: number; code?: string }[]) =>
+    entries.reduce((hash, e) => fnv(hash, entry(e.id, e.tick, e.code)), 0xcbf29ce484222325n).toString(16).padStart(16, "0");
+  const history = (patches: { id: string; tick: number }[], rejected: { id: string; tick: number; code: string }[], applied = patches) => ({
+    appliedCount: applied.length,
+    appliedHash: chain(applied),
+    patches,
+    rejectedCount: rejected.length,
+    rejectedHash: chain(rejected),
+    rejected,
+  });
+
+  test("the JS chain matches the hashes the C# headless host printed for the SceneHop log", () => {
+    // From `dotnet run --project samples/SceneHop/Headless -- --checkpoints 0,12,60,80,120 --patches log.json`.
+    expect(chain([])).toBe("cbf29ce484222325");
+    expect(chain([{ id: "p1", tick: 12 }])).toBe("d48fa5b9fffbae42");
+    expect(chain([{ id: "p1", tick: 12 }, { id: "p2", tick: 40 }, { id: "p3", tick: 75 }])).toBe("0b380a05d110bf94");
+    expect(chain([{ id: "p4", tick: 80, code: "UnknownEntity" }])).toBe("021904ec402bed74");
+  });
+
+  test("the report reads counts, hashes and windows from the last snapshot and lists the ones not reached", () => {
     const rejection = { id: "p4", tick: 80, code: "UnknownEntity", message: "[SCENE:UnknownEntity]: patch p4 op #0 (moth): no live entity to dispose" };
     const stdout = [
       "patches /tmp/run/patches.json submitted=3",
-      `snapshot ${JSON.stringify({ tick: 0, scene: { active: "meadow", loadedAt: 0, patches: [], rejected: [] } })}`,
-      `snapshot ${JSON.stringify({ tick: 120, scene: { active: "meadow", loadedAt: 120, patches: [{ id: "p1", tick: 12 }], rejected: [rejection] } })}`,
+      `snapshot ${JSON.stringify({ tick: 0, scene: { active: "meadow", loadedAt: 0, ...history([], []) } })}`,
+      `snapshot ${JSON.stringify({ tick: 120, scene: { active: "meadow", loadedAt: 120, ...history([{ id: "p1", tick: 12 }], [rejection]) } })}`,
     ].join("\n");
     const report = patchReport(parseHeadless(stdout), [{ id: "p1", tick: 12 }, { id: "p4", tick: 80 }, { id: "p9", tick: 500 }]);
 
     expect(report).toEqual({
       log: "/tmp/run/patches.json",
       submitted: 3,
+      appliedCount: 1,
+      appliedHash: "d48fa5b9fffbae42",
       applied: [{ id: "p1", tick: 12 }],
+      rejectedCount: 1,
+      rejectedHash: "021904ec402bed74",
       rejected: [rejection],
       notReached: [{ id: "p9", tick: 500 }],
     });
     expect(patchReport(parseHeadless('snapshot {"tick":0}'), null)).toBeNull();
+  });
+
+  test("a log longer than the snapshot window is counted in full and not reached is decided by tick", () => {
+    const log = Array.from({ length: 40 }, (_, i) => ({ id: `p${i + 1}`, tick: i + 1 }));
+    const window = log.slice(14, 30);
+    const stdout = ["patches /tmp/run/patches.json submitted=40", `snapshot ${JSON.stringify({ tick: 30, scene: { active: "meadow", loadedAt: 0, ...history(window, [], log.slice(0, 30)) } })}`].join("\n");
+    const report = patchReport(parseHeadless(stdout), log)!;
+
+    expect(report.appliedCount).toBe(30);
+    expect(report.appliedHash).toBe(chain(log.slice(0, 30)));
+    expect(report.applied).toEqual(window);
+    expect(report.notReached).toEqual(log.slice(30));
+    // Without any snapshot nothing was reached.
+    expect(patchReport(parseHeadless("patches /tmp/run/patches.json submitted=40"), log)!.notReached).toHaveLength(40);
   });
 });
 

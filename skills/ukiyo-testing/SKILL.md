@@ -55,8 +55,11 @@ corner). Prefer a few well-chosen pixels over whole-image hashes, which break on
 A game with a `SceneRegistry` reads its scene JSON from `context.Assets`, which in tests is the test assembly: embed
 the game's assets in `Ukiyo.Tests.csproj` too (see the SceneHop `EmbeddedResource` line). Submit patches with
 `runtime.SubmitPatch(…)` before or between `StepTo` calls; assert `runtime.SceneState` (`Applied`, `Rejected` with a
-`SceneErrorCode`) or the `"scene"` key of `SnapshotJson()`. Prove determinism by running the same patch log twice
-(and once submitted live at each tick) and comparing the snapshot sequences (`ScenePatchTests`).
+`SceneErrorCode`, `AppliedCount`, `RejectedCount`, `AppliedHash`, `RejectedHash`) or the `"scene"` key of
+`SnapshotJson()`. `Applied`/`Rejected` keep only the last `PatchHistory.Window` (16): for longer logs assert the
+counts and compare the hashes with `PatchHistory.AppliedHash(expected records)` / `RejectedHash(…)`. Prove
+determinism by running the same patch log twice (and once submitted live at each tick) and comparing the snapshot
+sequences (`ScenePatchTests`).
 
 ## Rules
 

@@ -72,13 +72,15 @@ _scenes.LoadScene("meadow");                                       // live at ti
   prefabs/parameters and out-of-range values throw at submit; missing entities, bounds and the `scene` guard are
   checked at the tick and land in `RejectedPatches`. Game code may submit for `tick.Tick + 1`, never the running tick.
   At a boundary a pending `LoadScene` happens first, then that tick's patches. A patch changes the live entities only:
-  reloading the scene rebuilds them from the scene file, so the patch's effect is gone while it stays listed in
-  `scene.patches`.
-- Snapshots of games with a registry carry `"scene":{"active","loadedAt","patches":[{"id","tick"}],"rejected":[…]}`.
+  reloading the scene rebuilds them from the scene file, so the patch's effect is gone while it stays counted in
+  `scene.appliedCount`/`appliedHash`.
+- Snapshots of games with a registry carry
+  `"scene":{"active","loadedAt","appliedCount","appliedHash","patches":[{"id","tick"}],"rejectedCount","rejectedHash","rejected":[…]}`:
+  `patches`/`rejected` are the last 16 only, counts and FNV-1a 64 hashes cover the whole session.
   Same input script + same patch log ⇒ same snapshots.
 - Submitting without code: headless `--patches log.json` (a JSON array, submitted before tick 0; a bad log exits 2
-  with the `[SCENE:Code]` line on stderr), `ukiyo_run {"patches":[…]}` or `{"patchLog":"path"}` (reports `applied`,
-  `rejected`, `notReached`), and on a running desktop build `ukiyo_live {"action":"patch","patch":{…}}` /
+  with the `[SCENE:Code]` line on stderr), `ukiyo_run {"patches":[…]}` or `{"patchLog":"path"}` (reports `appliedCount`,
+  `appliedHash`, `applied`, `rejectedCount`, `rejectedHash`, `rejected`, `notReached`), and on a running desktop build `ukiyo_live {"action":"patch","patch":{…}}` /
   `bun tools/mcp/src/cli.ts live patch --pid N --patch p.json` (`queued` or `applied`). Details per entry point:
   docs/scenes-patches.md.
 

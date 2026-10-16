@@ -68,7 +68,7 @@ every case: `tests/Ukiyo.Tests/ScenePatchTests.cs`.
 From outside the game: headless `--patches log.json`, `ukiyo_run`/`ukiyo_capture` `patches`/`patchLog`, or
 `ukiyo_live patch` on a running dev build. Desktop hosts ignore `--patches` silently. A pending `LoadScene` runs
 before that tick's patches, and a reload rebuilds entities from the scene file, so a patch's effect does not survive it
-(it stays listed in `scene.patches`). Scene JSON is not in the `source` hashes.
+(it stays counted in `scene.appliedCount`/`appliedHash`). Scene JSON is not in the `source` hashes.
 
 ## How scenes show in snapshots
 
@@ -76,12 +76,15 @@ A game with a registry gets a `"scene"` key in every snapshot; its own poses and
 `dotnet run --project samples/SceneHop/Headless -- --checkpoints 0,59,60,120`, tick 60 (trimmed):
 
 ```
-snapshot {"tick":60,…,"entities":{"bat-1":…,"torch":…},"values":{"entities":4,…},"scene":{"active":"cavern","loadedAt":60,"patches":[],"rejected":[]}}
+snapshot {"tick":60,…,"entities":{"bat-1":…,"torch":…},"values":{"entities":4,…},"scene":{"active":"cavern","loadedAt":60,"appliedCount":0,"appliedHash":"cbf29ce484222325","patches":[],"rejectedCount":0,"rejectedHash":"cbf29ce484222325","rejected":[]}}
 ```
 
-`patches` lists applied patches `{id,tick}` in order; `rejected` holds `{id,tick,code,message}` for patches refused at
-their tick; pending patches are not listed. Put scene facts you will assert on (entity count, ticks in scene) in
-`Snapshot().Values` too.
+The patch history is bounded: `patches` lists the **last 16** applied patches `{id,tick}` (oldest first) and
+`rejected` the last 16 `{id,tick,code,message}` refused at their tick; `appliedCount` / `rejectedCount` count all of
+them and `appliedHash` / `rejectedHash` are FNV-1a 64 chains over all of them (format in docs/scenes-patches.md). To
+compare two runs, compare counts and hashes, not the windows; to know a patch from early in a long session, keep the
+patch log. `AppliedPatches` / `RejectedPatches` on the registry are the same windows. Pending patches are not listed.
+Put scene facts you will assert on (entity count, ticks in scene) in `Snapshot().Values` too.
 
 ## Imported art: `Shared/gen/`, content-hashed
 
