@@ -26,8 +26,31 @@ Conventions (docs/conventions.md): meters, radians, right-handed +Y up, cameras 
 `Matrix4x4` (`world = scale * rotation * translation`), depth 0..1, CCW front faces, back faces culled, colors in
 linear space (each renderer encodes to sRGB).
 
-Current profile is G0 unlit: vertex colors × base color, no lights or textures on meshes yet. Textures exist for the 2D
-layer (see ukiyo-sprites).
+Games run the `G0Unlit` profile unless they declare another: vertex colors × base color, no textures on meshes yet.
+Textures exist for the 2D layer (see ukiyo-sprites).
+
+## Lighting (profile G1Lit)
+
+```csharp
+public RenderProfile Profile => RenderProfile.G1Lit;                          // in the IGame; default is G0Unlit
+
+// Initialize: lit meshes need one normal per vertex; lit materials opt in.
+_mesh = context.CreateMesh(new MeshData(vertices, indices) { Normals = normals });
+_material = context.CreateMaterial(new MaterialData(new Vector4(0.6f, 0.6f, 0.6f, 1), UseVertexColors: false) { Lit = true });
+
+// Extract: ambient + up to 8 lights, every frame that draws a lit material.
+frame.Lighting = new SceneLighting(new Vector3(0.03f), [
+    Light.Directional(new Vector3(-0.4f, -1f, -0.6f), new Vector3(1f, 0.93f, 0.82f), intensity: 0.85f),
+    Light.Point(lampPosition, new Vector3(1f, 0.5f, 0.2f), intensity: 1.8f, range: 4f),
+]);
+```
+
+Model (docs/rendering-lighting.md): per-pixel Lambert in linear RGB, `albedo × (ambient + Σ color × intensity × max(N·L, 0)
+× attenuation)`; directional vectors are the direction the light travels; point lights fade to zero at `range`.
+Unlit materials still draw flat in a lit frame. A lit material on a mesh without normals, or in a frame without
+`Lighting`, is `InvalidPacket`; more than 8 lights is `OutOfRange`; lighting in a G0Unlit game is `UnsupportedFeature`.
+Sample: `samples/LitCube`. Pixel parity: faces with constant lighting match exactly across renderers; light gradients
+(point lights) may differ by 1/255 where rounding falls differently.
 
 ## Renderers
 
@@ -38,7 +61,7 @@ layer (see ukiyo-sprites).
 | `SoftwareRenderer` | headless `--capture`, tests | yes (CPU, no MSAA) |
 | `NullRenderer` | headless default, tests | no |
 
-`renderer.Capabilities` says what a backend supports (`SupportsCapture`, `SupportsSprites`). The runtime throws
+`renderer.Capabilities` says what a backend supports (`SupportsCapture`, `SupportsSprites`, `Profile`). The runtime throws
 `RenderException(UnsupportedFeature)` instead of silently dropping features a backend lacks.
 
 ## Changing the protocol

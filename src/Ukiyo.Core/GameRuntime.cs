@@ -115,12 +115,20 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
 
     public IRenderer Renderer => _renderer ?? throw new InvalidOperationException("[RUNTIME]: not started");
 
-    /// <summary>Initialize the renderer, then the game, then upload the game's resources.</summary>
+    /// <summary>
+    /// Initialize the renderer with the game's <see cref="IGame.Profile"/> (hosts do not choose it), then the game,
+    /// then upload the game's resources. A renderer that comes up on a lower profile fails with UnsupportedFeature.
+    /// </summary>
     public async ValueTask StartAsync(IRenderer renderer, RenderConfiguration configuration, CancellationToken cancellationToken = default)
     {
         _renderer = renderer;
         Viewport = configuration.InitialExtent;
-        await renderer.InitializeAsync(configuration, cancellationToken);
+        await renderer.InitializeAsync(configuration with { Profile = Game.Profile }, cancellationToken);
+        if (!renderer.Capabilities.Profile.Includes(Game.Profile))
+        {
+            throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{renderer.Capabilities.RendererName} runs {renderer.Capabilities.Profile}; {Game.Name} needs {Game.Profile}");
+        }
+
         Game.Initialize(_context);
         _context.Scenes?.AtBoundary(Tick);
         FlushResources();
@@ -203,6 +211,8 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
             throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{Renderer.Capabilities.RendererName} does not draw sprites; {packet.Sprites.Count} were submitted");
         }
 
+        RenderValidation.RequireProfile(Renderer.Capabilities.Profile, packet);
+
         Renderer.Render(packet);
         return packet;
     }
@@ -232,6 +242,7 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         var batch = _context.TakePending();
         if (batch is not null)
         {
+            RenderValidation.RequireProfile(Renderer.Capabilities.Profile, batch);
             Renderer.ApplyResources(batch);
         }
     }

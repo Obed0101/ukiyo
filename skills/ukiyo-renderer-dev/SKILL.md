@@ -48,6 +48,21 @@ there once; renderers do not reimplement it differently.
    three.js (browser evidence mode); compare pixels at feature centers, not whole-image hashes (MSAA and
    rasterization rules differ at edges).
 
+## Profiles and lighting (G1Lit)
+
+- `RenderProfile` is cumulative (`G0Unlit` < `G1Lit`). `InitializeAsync` calls
+  `RenderValidation.RequireImplemented(configuration.Profile, <highest>, name)` and reports the configured profile in
+  `Capabilities.Profile`; `ApplyResources`/`Render` call `RenderValidation.RequireProfile(Capabilities.Profile, …)` so
+  lit data on a G0Unlit renderer is `UnsupportedFeature`, never drawn unlit. Per instance, call
+  `RenderValidation.RequireLitInputs(meshHasNormals, material, packet, instance)`.
+- All four renderers implement G1Lit (Null validates and counts). The model is `LightingMath.Shade`
+  (`src/Ukiyo.Render/Lighting.cs`); `fs_lit` in `WgpuRenderer.cs` and the GLSL in `web/three-adapter/lit-material.js`
+  are copies in the same operation order. Change all three together and update docs/rendering-lighting.md.
+- wgpu: meshes with normals use the lit pipeline (36-byte vertices, 224-byte instance uniforms, lights uniform in
+  group 1); meshes without normals keep the G0 pipeline, so G0 frames are untouched. three.js: lit materials are a
+  `ShaderMaterial` (three's built-in lights use a different BRDF); unlit stay `MeshBasicMaterial`.
+- Evidence: `scripts/g1lit.sh` (LitCube on CPU, Metal and WebGL2; `SAMPLE=RotatingCube` for the unlit baseline).
+
 ## wgpu specifics
 
 - Bindings in `WgpuNative.cs` follow `webgpu.h` of the pinned wgpu-native (`scripts/fetch-native.sh`). Struct layout

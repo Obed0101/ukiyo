@@ -4,8 +4,10 @@
 import * as THREE from "three";
 import { CommandKind, RenderError, ResourceKind, TextureFilter, decodeFrame, decodeResources } from "./protocol.js";
 import { spriteDrawOrder, spriteQuad } from "./sprite-geometry.js";
+import { createLitMaterial, createSceneLightUniforms, writeSceneLights } from "./lit-material.js";
 
 const state = {
+  sceneLights: createSceneLightUniforms(),
   renderer: null,
   scene: null,
   camera: null,
@@ -78,10 +80,12 @@ export function applyResources(bytes) {
     const id = key(command.handle);
     if (command.kind === CommandKind.CreateMesh) {
       if (state.geometries.has(id)) throw new RenderError("DuplicateHandle", `mesh slot ${command.handle.index} is live`);
-      const buffer = new THREE.InterleavedBuffer(command.interleaved, 6);
+      const buffer = new THREE.InterleavedBuffer(command.interleaved, command.stride);
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.InterleavedBufferAttribute(buffer, 3, 0));
       geometry.setAttribute("color", new THREE.InterleavedBufferAttribute(buffer, 3, 3));
+      if (command.hasNormals) geometry.setAttribute("normal", new THREE.InterleavedBufferAttribute(buffer, 3, 6));
+      geometry.userData.hasNormals = command.hasNormals;
       geometry.setIndex(new THREE.BufferAttribute(command.indices, 1));
       geometry.computeBoundingSphere();
       state.geometries.set(id, { generation: command.handle.generation, value: geometry });
@@ -89,7 +93,9 @@ export function applyResources(bytes) {
       if (state.materials.has(id)) throw new RenderError("DuplicateHandle", `material slot ${command.handle.index} is live`);
       const [r, g, b] = command.baseColor;
       // Colors arrive linear; Three's working space is linear sRGB and output is encoded to sRGB.
-      const material = new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColorSpace), vertexColors: command.useVertexColors, side: THREE.FrontSide });
+      const material = command.lit
+        ? createLitMaterial(command.baseColor, command.useVertexColors, state.sceneLights)
+        : new THREE.MeshBasicMaterial({ color: new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColorSpace), vertexColors: command.useVertexColors, side: THREE.FrontSide });
       state.materials.set(id, { generation: command.handle.generation, value: material });
     } else if (command.kind === CommandKind.CreateTexture) {
       if (state.textures.has(id)) throw new RenderError("DuplicateHandle", `texture slot ${command.handle.index} is live`);
@@ -151,11 +157,17 @@ export function render(bytes) {
     if (!instance) return;
     mesh.geometry = lookup(state.geometries, instance.mesh, "mesh");
     mesh.material = lookup(state.materials, instance.material, "material");
+    // Same draw-time checks as RenderValidation.RequireLitInputs in C#.
+    if (mesh.material.userData.lit) {
+      if (!mesh.geometry.userData.hasNormals) throw new RenderError("InvalidPacket", `lit material ${instance.material.index} drawn on mesh ${instance.mesh.index} without normals`);
+      if (!frame.lighting) throw new RenderError("InvalidPacket", `lit material ${instance.material.index} drawn in frame ${frame.sequence} without a lighting section`);
+    }
     // Field order M11..M44 from System.Numerics is the column-major array Three expects (docs/conventions.md).
     mesh.matrix.fromArray(instance.world);
     mesh.matrixWorldNeedsUpdate = true;
   });
 
+  writeSceneLights(state.sceneLights, frame.lighting);
   if (state.target.width !== size.x || state.target.height !== size.y) state.target.setSize(size.x, size.y);
   state.renderer.setRenderTarget(state.target);
   // Three converts the clear color for the bound target when it is set, so it must be set after binding.

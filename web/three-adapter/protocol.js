@@ -12,10 +12,15 @@ export const MAX_INSTANCES = 1 << 16;
 export const MAX_SPRITES = 1 << 16;
 export const MAX_TEXTURE_SIZE = 4096;
 export const FLAG_SPRITES = 0x1;
+export const FLAG_LIGHTING = 0x2;
+export const MAX_LIGHTS = 8;
 
-export const CommandKind = Object.freeze({ CreateMesh: 1, CreateMaterial: 2, Destroy: 3, CreateTexture: 4 });
+// Wire command 5 is CreateMesh with per-vertex normals (G1Lit); it decodes to a CreateMesh command with hasNormals.
+export const CommandKind = Object.freeze({ CreateMesh: 1, CreateMaterial: 2, Destroy: 3, CreateTexture: 4, CreateMeshWithNormals: 5 });
 export const ResourceKind = Object.freeze({ Mesh: 1, Material: 2, Texture: 3 });
 export const TextureFilter = Object.freeze({ Nearest: 1, Linear: 2 });
+export const MaterialFlags = Object.freeze({ VertexColors: 0x1, Lit: 0x2 });
+export const LightKind = Object.freeze({ Directional: 1, Point: 2 });
 
 export class RenderError extends Error {
   constructor(code, message) {
@@ -111,22 +116,33 @@ export function decodeResources(bytes) {
     const resourceKind = r.u8();
     r.u16();
     const handle = { kind: resourceKind, index: r.u32(), generation: r.u32() };
-    if (kind === CommandKind.CreateMesh) {
+    if (kind === CommandKind.CreateMesh || kind === CommandKind.CreateMeshWithNormals) {
       if (resourceKind !== ResourceKind.Mesh) throw new RenderError("WrongResourceKind", "CreateMesh with a non-mesh handle");
+      const hasNormals = kind === CommandKind.CreateMeshWithNormals;
+      const stride = hasNormals ? 9 : 6;
       const vertexCount = r.count(MAX_VERTICES, "vertex");
       const indexCount = r.count(MAX_INDICES, "index");
       if (vertexCount === 0 || indexCount === 0 || indexCount % 3 !== 0) throw new RenderError("OutOfRange", `mesh ${vertexCount} vertices / ${indexCount} indices`);
-      const interleaved = r.floats(vertexCount * 6);
+      const interleaved = r.floats(vertexCount * stride);
+      if (hasNormals) {
+        for (let v = 0; v < vertexCount; v++) {
+          const at = v * stride + 6;
+          if (interleaved[at] === 0 && interleaved[at + 1] === 0 && interleaved[at + 2] === 0) throw new RenderError("OutOfRange", `vertex ${v} normal has zero length`);
+        }
+      }
       const indices = new Uint32Array(indexCount);
       for (let n = 0; n < indexCount; n++) {
         const index = r.u32();
         if (index >= vertexCount) throw new RenderError("OutOfRange", `index ${index} >= vertex count ${vertexCount}`);
         indices[n] = index;
       }
-      commands.push({ kind, handle, vertexCount, interleaved, indices });
+      commands.push({ kind: CommandKind.CreateMesh, handle, vertexCount, stride, hasNormals, interleaved, indices });
     } else if (kind === CommandKind.CreateMaterial) {
       if (resourceKind !== ResourceKind.Material) throw new RenderError("WrongResourceKind", "CreateMaterial with a non-material handle");
-      commands.push({ kind, handle, baseColor: r.floats(4), useVertexColors: r.u32() !== 0 });
+      const baseColor = r.floats(4);
+      const flags = r.u32();
+      if ((flags & ~(MaterialFlags.VertexColors | MaterialFlags.Lit)) !== 0) throw new RenderError("InvalidPacket", `unknown material flags 0x${flags.toString(16)}`);
+      commands.push({ kind, handle, baseColor, useVertexColors: (flags & MaterialFlags.VertexColors) !== 0, lit: (flags & MaterialFlags.Lit) !== 0 });
     } else if (kind === CommandKind.CreateTexture) {
       if (resourceKind !== ResourceKind.Texture) throw new RenderError("WrongResourceKind", "CreateTexture with a non-texture handle");
       const width = r.count(MAX_TEXTURE_SIZE, "texture width");
@@ -149,7 +165,7 @@ export function decodeResources(bytes) {
 /** Decodes one frame packet. The 64-bit tick is combined from (lo, hi) as a BigInt, then exposed as a safe Number. */
 export function decodeFrame(bytes) {
   const r = new Reader(bytes);
-  const flags = r.header(FRAME_MAGIC, FLAG_SPRITES);
+  const flags = r.header(FRAME_MAGIC, FLAG_SPRITES | FLAG_LIGHTING);
   const sequence = r.u32();
   r.expectLength();
   const tick = BigInt(r.u32()) | (BigInt(r.u32()) << 32n);
@@ -188,6 +204,31 @@ export function decodeFrame(bytes) {
       });
     }
   }
+  const lighting = flags & FLAG_LIGHTING ? readLighting(r) : null;
   r.end();
-  return { sequence, tick: Number(tick), viewport, clearColor, camera, instances, camera2D, sprites };
+  return { sequence, tick: Number(tick), viewport, clearColor, camera, instances, camera2D, sprites, lighting };
+}
+
+/** G1Lit lighting section; the same limits and checks as RenderValidation.Validate(SceneLighting) in C#. */
+function readLighting(r) {
+  const ambient = r.floats(3);
+  if (ambient.some((v) => v < 0)) throw new RenderError("OutOfRange", "ambient light has a negative component");
+  const count = r.count(MAX_LIGHTS, "light");
+  const lights = [];
+  for (let i = 0; i < count; i++) {
+    const kind = r.u32();
+    if (kind !== LightKind.Directional && kind !== LightKind.Point) throw new RenderError("InvalidPacket", `unknown light kind ${kind}`);
+    const vector = r.floats(3);
+    const color = r.floats(3);
+    const intensity = r.f32();
+    const range = r.f32();
+    r.u32();
+    if (color.some((v) => v < 0) || intensity < 0) throw new RenderError("OutOfRange", `light ${i} has a negative color or intensity`);
+    if (kind === LightKind.Directional && ((vector[0] === 0 && vector[1] === 0 && vector[2] === 0) || range !== 0)) {
+      throw new RenderError("OutOfRange", `directional light ${i} needs a non-zero direction and range 0`);
+    }
+    if (kind === LightKind.Point && !(range > 0)) throw new RenderError("OutOfRange", `point light ${i} range ${range} must be positive`);
+    lights.push({ kind, vector, color, intensity, range });
+  }
+  return { ambient, lights };
 }
