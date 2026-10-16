@@ -15,9 +15,9 @@ captured frames and tests.
 games/<Name>/                  (samples/ holds the engine's own examples)
   Shared/Program.cs            the only entry point, identical for every host
   Shared/<Name>Game.cs         your IGame; other .cs under Shared/ compile into every host (host csproj glob ../Shared/**/*.cs)
-  Shared/gen/*.g.cs            imported art (tools/Ukiyo.Import): pixels compiled in, nothing decoded at runtime
+  Shared/gen/*.g.cs            imported art (tools/Ukiyo.Import): pixels and meshes compiled in, nothing decoded at runtime
   Shared/assets/**             embedded into every host as assets/<path>
-  art/                         source PNGs + *.import.json; never shipped (see docs/assets.md)
+  art/                         source PNGs, glTF models + *.import.json; never shipped (see docs/assets.md)
   Headless/ Desktop/ Browser/  one csproj per host, nothing else
 ```
 

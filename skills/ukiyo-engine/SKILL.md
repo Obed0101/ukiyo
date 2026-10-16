@@ -23,7 +23,8 @@ src/Ukiyo.Platform.*       Headless · Desktop (SDL3) · Browser (WASM): own the
 src/Ukiyo.DevBridge        localhost control of dev builds; linked only when UkiyoDevBridge=true
 web/three-adapter          JS half of the browser renderer and host (protocol.js mirrors PacketCodec.cs)
 tools/mcp                  MCP server (Bun); studio/ the Studio (Bun + plain JS); skills/ agent skills
-tools/Ukiyo.Import         dev-time asset importer: PNG + atlas JSON → Shared/gen/*.g.cs (docs/assets.md)
+tools/Ukiyo.Import         dev-time asset importer: PNG + atlas JSON, glTF 2.0 meshes → Shared/gen/*.g.cs (docs/assets.md);
+                           bump MeshImporter.Version when the same model would generate different code or data
 tests/Ukiyo.Tests          xUnit for everything in src/; Bun tests live next to their JS/TS
 docs/                      protocol, conventions, gate reports (G0.md, G1.md, G3.md)
 ```
