@@ -1,0 +1,132 @@
+# Build, tests and the golden CLI transcript on every push and pull request to dev and main.
+# ubuntu: everything that does not need the macOS native libraries (desktop hosts are excluded, see the build step).
+# macOS (Apple Silicon): the pinned native libraries, the whole solution, the NativeAOT export. Nothing opens a window:
+# the desktop hosts are built, never run, so neither job needs a display or a GPU. Details: README.md § CI.
+name: CI
+
+on:
+  push:
+    branches: [dev, main]
+  pull_request:
+    branches: [dev, main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: "1"
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: "1"
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # The SDK pinned in global.json; wasm-tools is the workload the browser hosts are built with (docs/G0.md).
+      - uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+          workloads: wasm-tools
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.13"
+
+      - name: Check the runner architecture (native/ is osx-arm64 only)
+        if: runner.os == 'macOS'
+        run: |
+          [[ "$(uname -m)" == "arm64" ]] || { echo "::error::scripts/fetch-native.sh builds osx-arm64 only; this runner is $(uname -m)"; exit 1; }
+
+      - name: Cache native libraries
+        if: runner.os == 'macOS'
+        uses: actions/cache@v6
+        with:
+          path: native/osx-arm64
+          key: native-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('scripts/fetch-native.sh') }}
+
+      - name: Native libraries (wgpu-native, SDL3)
+        if: runner.os == 'macOS'
+        run: |
+          command -v cmake >/dev/null || brew install cmake
+          command -v ninja >/dev/null || brew install ninja
+          scripts/fetch-native.sh
+
+      # Only web/three-adapter has dependencies (three) and a lockfile; tools/mcp and studio have none.
+      - name: JS dependencies
+        run: |
+          for pkg in tools/mcp studio web/three-adapter; do
+            if [[ -f "$pkg/bun.lock" ]]; then (cd "$pkg" && bun install --frozen-lockfile); else echo "$pkg: no dependencies, no lockfile"; fi
+          done
+
+      # Linux cannot build the Desktop and Export.Desktop hosts: they target RuntimeIdentifier osx-arm64 and copy or
+      # statically link the macOS wgpu-native/SDL3 builds from native/osx-arm64, which scripts/fetch-native.sh only
+      # produces on macOS. The filter drops exactly those host projects; the Desktop platform and wgpu renderer
+      # libraries, every Headless and Browser host, the importer and the tests are still built. macOS builds all.
+      - name: Build (Release)
+        run: |
+          if [[ "$RUNNER_OS" == "macOS" ]]; then
+            dotnet build Ukiyo.slnx -c Release
+          else
+            mkdir -p artifacts/ci
+            grep -v -E 'Path="[^"]*/(Export\.)?Desktop/' Ukiyo.slnx | sed 's|Path="|Path="../../|' > artifacts/ci/Ukiyo.Linux.slnx
+            echo "Excluded on Linux:"; grep -E 'Path="[^"]*/(Export\.)?Desktop/' Ukiyo.slnx
+            dotnet build artifacts/ci/Ukiyo.Linux.slnx -c Release
+          fi
+
+      - name: C# tests
+        run: dotnet test tests/Ukiyo.Tests
+
+      - name: Bun tests (tools/mcp)
+        working-directory: tools/mcp
+        run: bun test
+
+      - name: Bun tests (studio)
+        working-directory: studio
+        run: bun test
+
+      - name: Bun tests (web/three-adapter)
+        working-directory: web/three-adapter
+        run: bun test
+
+      # CLI-driven scaffold → headless run → CPU capture → import check → removal, compared with
+      # tools/mcp/test/golden/cli-flow.txt. Prints a unified diff and fails on any difference.
+      - name: Golden CLI transcript
+        run: bun scripts/cli-flow.ts
+
+      - name: Upload the differing transcript
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: cli-flow-actual-${{ matrix.os }}
+          path: artifacts/cli-flow/actual.txt
+          if-no-files-found: ignore
+
+      # The single-binary export links wgpu-native and SDL3 statically and must depend only on system libraries
+      # and never contain the dev bridge (docs/game-layout.md). Published, not run: running it opens a window.
+      - name: NativeAOT export (no window)
+        if: runner.os == 'macOS'
+        run: |
+          dotnet publish samples/RotatingCube/Hosts/Export.Desktop -c Release -o artifacts/ci/desktop
+          otool -L artifacts/ci/desktop/rotating-cube
+          non_system="$(otool -L artifacts/ci/desktop/rotating-cube | tail -n +2 | awk '{print $1}' | grep -vE '^/(System|usr/lib)/' || true)"
+          [[ -z "$non_system" ]] || { echo "::error::non-system dependency in the export: $non_system"; exit 1; }
+          [[ "$(strings artifacts/ci/desktop/rotating-cube | grep -c DevBridge || true)" == "0" ]] || { echo "::error::the export contains the dev bridge"; exit 1; }
+
+      - name: Nothing left behind in the checkout
+        run: |
+          git status --short
+          [[ -z "$(git status --short)" ]]

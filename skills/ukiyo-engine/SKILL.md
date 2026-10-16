@@ -72,6 +72,7 @@ dotnet build Ukiyo.slnx -c Release        # warnings are errors, AOT analyzers o
 dotnet test tests/Ukiyo.Tests             # add a test for the behavior you changed
 (cd web/three-adapter && bun test)        # when protocol or adapter changed
 (cd tools/mcp && bun test) ; (cd studio && bun test)
+bun scripts/cli-flow.ts                   # golden CLI transcript; --update after an intended output change
 scripts/g0.sh                             # cross-target parity must keep passing
 ```
 

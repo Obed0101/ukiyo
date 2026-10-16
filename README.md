@@ -217,6 +217,27 @@ It is early and the architecture is still moving. Issues and discussions are wel
 small fix, open an issue first. Run `dotnet test tests/Ukiyo.Tests` and `scripts/g0.sh` before sending changes to
 the core.
 
+### CI
+
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs on every push and pull request to `dev` and `main`, on
+`ubuntu-latest` and `macos-latest` (Apple Silicon):
+
+- Release build. macOS builds all of `Ukiyo.slnx` after `scripts/fetch-native.sh` (cached). Linux leaves out only the
+  `Desktop` and `Export.Desktop` host projects: they target `osx-arm64` and need the macOS wgpu-native/SDL3 builds in
+  `native/`. The desktop platform and wgpu libraries, every Headless and Browser host, the importer and the tests
+  still build there.
+- `dotnet test tests/Ukiyo.Tests` and `bun test` in `tools/mcp`, `studio` and `web/three-adapter`. None of these
+  needs native libraries, a GPU or a display; the Studio's `*.browser.ts` checks (Chrome plus a running Metal game) are
+  not part of `bun test` and stay manual.
+- The golden CLI transcript, `bun scripts/cli-flow.ts` (help, status, scaffold, headless run, CPU capture, import
+  check, removal), against `tools/mcp/test/golden/cli-flow.txt`. When a CLI or tool output changes on purpose,
+  `bun scripts/cli-flow.ts --update` rewrites it; review the diff and commit the golden with the change.
+- macOS only: the NativeAOT export of RotatingCube, published but not run, checked for system-only dependencies and
+  no dev bridge.
+
+Nothing opens a window: desktop hosts are built, never run. GPU and browser evidence (`scripts/g0.sh`, `g1.sh`,
+`ukiyo_live capture`) stays a local check on a Mac.
+
 ## Credits
 
 Built on [wgpu-native](https://github.com/gfx-rs/wgpu-native), [SDL](https://github.com/libsdl-org/SDL),

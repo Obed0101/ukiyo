@@ -45,6 +45,24 @@ bun tools/mcp/src/cli.ts skills install --preset engine --target claude
 - Not every tool needs a target: `import` with no specs and no `--game` is refused by the tool (exit 2), as
   `ukiyo_import {"action":"check"}` is.
 
+### Golden transcript
+
+`bun scripts/cli-flow.ts` drives only the CLI through `--help`, `status`, `new-game CiProbe --hosts Headless`,
+`run CiProbe --checkpoints 0,60`, `capture CiProbe --checkpoints 0 --out DIR`, `import --check samples`, the removal of
+the game and a `run CiProbe` that no longer finds it. It works in a temporary copy of the repository (tracked and
+untracked-but-not-ignored files, without `games/`, so no `bin/`, `obj/`, `native/` or `node_modules`) and deletes it
+afterwards; it fails if `git status --short` of the checkout changed. CI runs it on Linux and macOS.
+
+The normalized transcript must equal `test/golden/cli-flow.txt`: on any difference it prints a unified diff, writes
+the actual transcript to `artifacts/cli-flow/actual.txt` and exits 1. After an intended change, run
+`bun scripts/cli-flow.ts --update`, read the diff of the golden file and commit it with the change.
+
+- Normalized: the copy's root (`<repo>`), the `--out` dir (`<out>`), the CLI's `TMPDIR` (`<tmp>`), mkdtemp suffixes
+  (`<id>`), every `ms` / `…Ms` duration, the dotnet patch version (`10.0.<patch>`) and the `live` sessions of status.
+- Kept as is: snapshot JSON, source hashes of the scaffolded `Game.cs` / `Program.cs`, file lists, import content
+  hashes, the captured PNG's size and SHA-256, `[UKIYO]:` error lines and every exit code. Other stderr (logs) is
+  not recorded.
+
 ## Tools
 
 | Tool | What it does |

@@ -58,6 +58,12 @@ export default tool;                                                       // or
   `ukiyo_import` (`import [--check] [specs…]`) and `ukiyo_capture` (`--out DIR` copies `captures`) do. stdout is the
   `structuredContent` JSON, `[UKIYO]: …` errors on stderr; exit 2 for usage errors (including `ToolInputError`),
   exit 1 for tool failures (an `isError` result still prints its structured result). Tests: test/cli-tools.test.ts.
+  The golden transcript `tools/mcp/test/golden/cli-flow.txt` records `--help` and a scaffold → run → capture →
+  import check → removal flow; `bun scripts/cli-flow.ts` replays it in a temporary repository copy and fails with a
+  diff on any change (CI runs it). When you change help text, a schema or a tool's output on purpose, run
+  `bun scripts/cli-flow.ts --update` and commit the golden diff with the change. Output must stay the same on every
+  OS: sort directory listings, report durations only under `ms` / `…Ms` keys and paths only inside the repository
+  or `TMPDIR` (the script normalizes exactly those; the rules are in tools/mcp/README.md).
 - Secrets only from environment variables (`OPENAI_API_KEY`, `GEMINI_API_KEY`); never log them or put them in results.
 - Shared clients, reused by the Studio: `tools/mcp/src/bridge.ts` (dev bridge discovery and requests) and
   `studio/src/discovery.ts` + `studio/src/manifest.ts` (Studio discovery and files).

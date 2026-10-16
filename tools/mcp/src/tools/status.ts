@@ -64,7 +64,8 @@ const status: Tool = {
       imports: { specs: (specsByGame.get(g.name) ?? []).map((s) => relative(root, s)), ...(importChecks.has(g.name) ? { check: importChecks.get(g.name) } : {}) },
     }));
     const skillsDir = join(root, "skills");
-    const skills = existsSync(skillsDir) ? readdirSync(skillsDir).filter((d) => existsSync(join(skillsDir, d, "SKILL.md"))) : [];
+    // Sorted: readdir order is the file system's (alphabetical on APFS, hash order on ext4), and status must not vary by OS.
+    const skills = existsSync(skillsDir) ? readdirSync(skillsDir).filter((d) => existsSync(join(skillsDir, d, "SKILL.md"))).sort() : [];
     const result = {
       engine: { version, root },
       toolchain: {
