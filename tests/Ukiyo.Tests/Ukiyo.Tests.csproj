@@ -26,5 +26,6 @@
     <ProjectReference Include="../../src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
     <ProjectReference Include="../../src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
   </ItemGroup>
 </Project>

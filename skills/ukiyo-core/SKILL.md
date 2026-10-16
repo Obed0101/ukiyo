@@ -73,6 +73,11 @@ _scenes.LoadScene("meadow");                                       // live at ti
   checked at the tick and land in `RejectedPatches`. Game code may submit for `tick.Tick + 1`, never the running tick.
 - Snapshots of games with a registry carry `"scene":{"active","loadedAt","patches":[{"id","tick"}],"rejected":[…]}`.
   Same input script + same patch log ⇒ same snapshots.
+- Submitting without code: headless `--patches log.json` (a JSON array, submitted before tick 0; a bad log exits 2
+  with the `[SCENE:Code]` line on stderr), `ukiyo_run {"patches":[…]}` or `{"patchLog":"path"}` (reports `applied`,
+  `rejected`, `notReached`), and on a running desktop build `ukiyo_live {"action":"patch","patch":{…}}` /
+  `bun tools/mcp/src/cli.ts live patch --pid N --patch p.json` (`queued` or `applied`). Details per entry point:
+  docs/scenes-patches.md.
 
 ## Resources
 

@@ -28,8 +28,11 @@ while (running) {
   Every other key goes to the game. Adding a host key is a user-visible change: README, both hosts, the skill.
 - Resizes change the drawing-buffer extent passed to `RenderFrame`; the renderer gets `Resize` from the host.
 - Headless has no loop: it steps to each checkpoint, prints machine-readable lines (`snapshot {json}`, `capture
-  <path>`, `audio <path> seconds=…`) that `tools/mcp/src/engine.ts` parses. Changing a line format means changing that
-  parser and its test (`tools/mcp/test/engine.test.ts`).
+  <path>`, `audio <path> seconds=…`, `patches <path> submitted=N`) that `tools/mcp/src/engine.ts` parses. Changing a
+  line format means changing that parser and its test (`tools/mcp/test/engine.test.ts`). `HeadlessHost` takes optional
+  `TextWriter`s for stdout/stderr so tests run it in process (`HeadlessPatchTests`).
+- Headless `--patches <log.json>` submits a patch log through `GameRuntime.SubmitPatch` right after start (boundary 0);
+  a refused log returns `HeadlessHost.PatchLogRefused` (2) before tick 0 with a `[HEADLESS]: --patches …` stderr line.
 
 ## Native interop
 

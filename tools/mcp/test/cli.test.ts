@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { parseArgs, selectSession, run } from "../src/cli.ts";
+import { parseArgs, parseRunArgs, selectSession, run } from "../src/cli.ts";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +9,30 @@ test("CLI builds only explicit supported bridge commands", () => {
   expect(parseArgs(["live", "step", "--ticks", "60", "--pid", "12"]).request).toEqual({ cmd: "step", ticks: 60 });
   expect(parseArgs(["live", "record", "--on", "false"]).request).toEqual({ cmd: "record", on: false });
   expect(parseArgs(["live", "step"]).request.ticks).toBe(1);
+});
+
+test("CLI patch needs one patch file and run passes only known options through", () => {
+  expect(parseArgs(["live", "patch", "--pid", "12", "--patch", "p.json"])).toMatchObject({ pid: 12, request: { cmd: "patch" }, patch: "p.json" });
+  expect(() => parseArgs(["live", "patch"])).toThrow("patch needs --patch FILE");
+  expect(() => parseArgs(["live", "step", "--patch", "p.json"])).toThrow("invalid or duplicate option --patch");
+  expect(parseRunArgs(["run", "SceneHop", "--checkpoints", "0,60,120", "--patches", "log.json", "--size", "640x360"]))
+    .toEqual({ input: { game: "SceneHop", checkpoints: [0, 60, 120], size: "640x360" }, patches: "log.json", events: undefined });
+  expect(() => parseRunArgs(["run"])).toThrow("run needs a game");
+  expect(() => parseRunArgs(["run", "--patches", "log.json"])).toThrow("run needs a game");
+  expect(() => parseRunArgs(["run", "SceneHop", "--checkpoints", "0,-1"])).toThrow("expected integer");
+  expect(() => parseRunArgs(["run", "SceneHop", "--capture", "dir"])).toThrow("invalid or duplicate option --capture");
+});
+
+test("CLI refuses a patch log where one patch is expected, before contacting a game", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "ukiyo-cli-"));
+  try {
+    const file = join(dir, "log.json");
+    writeFileSync(file, JSON.stringify([{ id: "p1", tick: 10, ops: [{ op: "dispose", id: "moth" }] }]));
+    await expect(run(["live", "patch", "--patch", file])).rejects.toThrow("one patch object");
+    await expect(run(["run", "SceneHop", "--patches", join(dir, "empty.json")])).rejects.toThrow();
+    writeFileSync(join(dir, "empty.json"), "[]");
+    await expect(run(["run", "SceneHop", "--patches", join(dir, "empty.json")])).rejects.toThrow("non-empty JSON array");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
 test.each([

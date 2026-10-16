@@ -9,7 +9,8 @@ namespace Ukiyo.DevBridge;
 
 /// <summary>
 /// Lets an agent (through the ukiyo MCP server) or the Studio drive a running development build: status, pause,
-/// resume, step, snapshot, capture, inject input and record replays. Newline-delimited JSON over TCP on 127.0.0.1.
+/// resume, step, snapshot, capture, inject input, record replays and submit scene patches. Newline-delimited JSON over
+/// TCP on 127.0.0.1.
 /// Every request carries the token from the discovery file <c>~/.ukiyo/live/&lt;pid&gt;.json</c> (mode 0600), so other
 /// local processes cannot drive the game. Requests run on the host thread inside <see cref="Pump"/>, never concurrently
 /// with a tick or a frame.
@@ -203,9 +204,53 @@ public sealed class DevBridgeServer : IDevSession
                 });
             }
 
+            case "patch":
+                return SubmitPatch(id, request);
             default:
-                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record");
+                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record, patch");
         }
+    }
+
+    /// <summary>
+    /// Submits one patch through <see cref="GameRuntime.SubmitPatch"/>, so the bridge applies the same submit-time rules
+    /// as code. A patch for a later tick is queued; one for the current boundary applies now (between frames the
+    /// runtime is exactly at a boundary). Refusals come back as the typed <c>[SCENE:Code]</c> message; one that needed
+    /// the world at the current boundary is also recorded in the snapshot's <c>rejected</c> list.
+    /// </summary>
+    private string SubmitPatch(long id, JsonElement request)
+    {
+        if (!request.TryGetProperty("patch", out var patchElement) || patchElement.ValueKind != JsonValueKind.Object)
+        {
+            return Error(id, "patch needs \"patch\": {\"id\":\"p1\",\"tick\":120,\"ops\":[{\"op\":\"dispose\",\"id\":\"moth\"}]} (docs/scenes-patches.md)");
+        }
+
+        if (!_runtime.HasScenes)
+        {
+            return Error(id, $"[RUNTIME]: {_runtime.Game.Name} has no SceneRegistry, so it cannot take patches");
+        }
+
+        ScenePatch patch;
+        try
+        {
+            patch = ScenePatch.Parse(patchElement.GetRawText());
+            _runtime.SubmitPatch(patch);
+        }
+        catch (SceneException refused)
+        {
+            return Error(id, refused.Message);
+        }
+
+        var applied = _runtime.SceneState!.Applied.Any(record => record.Id == patch.Id);
+        return Ok(id, json =>
+        {
+            json.WriteStartObject();
+            json.WriteString("id", patch.Id);
+            json.WriteNumber("tick", patch.Tick);
+            json.WriteString("status", applied ? "applied" : "queued");
+            json.WriteNumber("currentTick", _runtime.Tick);
+            json.WriteBoolean("paused", _runtime.Paused);
+            json.WriteEndObject();
+        });
     }
 
     private void WriteStatus(Utf8JsonWriter json)

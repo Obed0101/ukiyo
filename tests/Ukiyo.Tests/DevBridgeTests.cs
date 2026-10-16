@@ -163,6 +163,104 @@ public sealed class DevBridgeTests
 
             var unknown = await Ask(new Dictionary<string, object> { ["id"] = 5, ["cmd"] = "explode", ["token"] = token });
             Assert.Contains("use status, pause, resume, step", unknown.GetProperty("error").GetString());
+
+            var noScenes = await Ask(new Dictionary<string, object> { ["id"] = 6, ["cmd"] = "patch", ["token"] = token, ["patch"] = Json("""{"id":"p","tick":20,"ops":[{"op":"dispose","id":"cube"}]}""") });
+            Assert.False(noScenes.GetProperty("ok").GetBoolean());
+            Assert.Equal("[RUNTIME]: RotatingCube has no SceneRegistry, so it cannot take patches", noScenes.GetProperty("error").GetString());
+        }
+        finally
+        {
+            session.Dispose();
+        }
+
+        Assert.False(File.Exists(discovery));
+    }
+
+    private static JsonElement Json(string json) => JsonDocument.Parse(json).RootElement.Clone();
+
+    [Fact]
+    public async Task Bridge_patch_queues_or_applies_with_the_submit_rules_and_needs_the_token()
+    {
+        var (runtime, game) = await SceneTests.StartSceneHopAsync();
+        var session = DevBridgeServer.TryStart(runtime, "test") ?? throw new InvalidOperationException("dev bridge disabled by UKIYO_DEV_BRIDGE");
+        var server = (DevBridgeServer)session;
+        var discovery = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ukiyo", "live", $"{Environment.ProcessId}.json");
+        try
+        {
+            string token;
+            using (var file = JsonDocument.Parse(await File.ReadAllTextAsync(discovery)))
+            {
+                token = file.RootElement.GetProperty("token").GetString()!;
+            }
+
+            using var client = new TcpClient();
+            await client.ConnectAsync(IPAddress.Loopback, server.Port);
+            using var reader = new StreamReader(client.GetStream());
+            await using var writer = new StreamWriter(client.GetStream()) { AutoFlush = true, NewLine = "\n" };
+            long id = 0;
+
+            async Task<JsonElement> Ask(string command, Dictionary<string, object>? args = null, string? withToken = null)
+            {
+                var request = args ?? new Dictionary<string, object>();
+                request["id"] = ++id;
+                request["cmd"] = command;
+                request["token"] = withToken ?? token;
+                await writer.WriteLineAsync(JsonSerializer.Serialize(request));
+                var line = reader.ReadLineAsync();
+                var deadline = DateTime.UtcNow + AnswerTimeout;
+                while (!line.IsCompleted && DateTime.UtcNow < deadline)
+                {
+                    session.Pump();
+                    await Task.Delay(5);
+                }
+
+                Assert.True(line.IsCompleted, "no answer from the bridge");
+                return JsonDocument.Parse(await line ?? "{}").RootElement.Clone();
+            }
+
+            Task<JsonElement> Patch(string json, string? withToken = null) => Ask("patch", new() { ["patch"] = Json(json) }, withToken);
+            static string Refusal(JsonElement answer)
+            {
+                Assert.False(answer.GetProperty("ok").GetBoolean());
+                return answer.GetProperty("error").GetString()!;
+            }
+
+            // Without the discovery token nothing is submitted, and the id stays free.
+            const string spawn = """{"id":"p1","tick":12,"ops":[{"op":"spawn","id":"bat-3","prefab":"drifter","position":[-5,-1],"values":{"speed":3}}]}""";
+            Assert.Contains("token", Refusal(await Patch(spawn, withToken: "wrong")));
+            Assert.Empty(game.Scenes.PendingPatches);
+
+            var queued = await Patch(spawn);
+            Assert.True(queued.GetProperty("ok").GetBoolean());
+            var result = queued.GetProperty("result");
+            Assert.Equal(("p1", 12, "queued", 0), (result.GetProperty("id").GetString(), result.GetProperty("tick").GetInt64(), result.GetProperty("status").GetString(), result.GetProperty("currentTick").GetInt64()));
+            Assert.Equal("p1", Assert.Single(game.Scenes.PendingPatches).Id);
+
+            var stepped = (await Ask("step", new() { ["ticks"] = 12 })).GetProperty("result");
+            Assert.True(stepped.GetProperty("entities").TryGetProperty("bat-3", out _));
+            Assert.Equal("p1", stepped.GetProperty("scene").GetProperty("patches")[0].GetProperty("id").GetString());
+
+            // Paused exactly at boundary 12: a patch for 12 applies now, as GameRuntime.SubmitPatch does.
+            var now = (await Patch("""{"id":"dim","tick":12,"ops":[{"op":"retarget","id":"lamp-east","values":{"glow":0.25}}]}""")).GetProperty("result");
+            Assert.Equal("applied", now.GetProperty("status").GetString());
+            Assert.Equal(0.25f, game.Scenes["lamp-east"].Glow);
+
+            // Submit-time refusals: the typed message, nothing recorded.
+            Assert.StartsWith("[SCENE:UnknownPrefab]:", Refusal(await Patch("""{"id":"p2","tick":30,"ops":[{"op":"spawn","id":"x","prefab":"dragon","position":[0,0]}]}""")));
+            Assert.StartsWith("[SCENE:PastTick]:", Refusal(await Patch("""{"id":"p3","tick":3,"ops":[{"op":"dispose","id":"moth"}]}""")));
+            Assert.StartsWith("[SCENE:DuplicatePatch]:", Refusal(await Patch(spawn)));
+            Assert.StartsWith("[SCENE:Malformed]:", Refusal(await Patch("""{"id":"p4","tick":30,"ops":[]}""")));
+            Assert.StartsWith("patch needs \"patch\"", Refusal(await Ask("patch")));
+            Assert.Empty(game.Scenes.PendingPatches);
+
+            // The world refuses at the current boundary: thrown back and recorded, like a queued patch refused at its tick.
+            Assert.StartsWith("[SCENE:UnknownEntity]:", Refusal(await Patch("""{"id":"ghost","tick":12,"ops":[{"op":"dispose","id":"nobody"}]}""")));
+
+            // Queued now, refused at tick 80 because the cavern (live from 60) has no moth.
+            Assert.Equal("queued", (await Patch("""{"id":"p5","tick":80,"ops":[{"op":"dispose","id":"moth"}]}""")).GetProperty("result").GetProperty("status").GetString());
+            var at80 = (await Ask("step", new() { ["ticks"] = 68 })).GetProperty("result").GetProperty("scene");
+            Assert.Equal(["p1", "dim"], at80.GetProperty("patches").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
+            Assert.Equal([("ghost", 12L, "UnknownEntity"), ("p5", 80L, "UnknownEntity")], at80.GetProperty("rejected").EnumerateArray().Select(r => (r.GetProperty("id").GetString(), r.GetProperty("tick").GetInt64(), r.GetProperty("code").GetString())));
         }
         finally
         {

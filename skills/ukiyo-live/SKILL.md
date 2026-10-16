@@ -1,6 +1,6 @@
 ---
 name: ukiyo-live
-description: Use when working with a game that is running — pausing, stepping tick by tick, reading snapshots, capturing the real GPU frame, injecting input or recording a player's input through the dev bridge (ukiyo_live).
+description: Use when working with a game that is running — pausing, stepping tick by tick, reading snapshots, capturing the real GPU frame, injecting input, recording a player's input or submitting scene patches through the dev bridge (ukiyo_live).
 ---
 
 # Driving a running game
@@ -10,7 +10,8 @@ bridge: a TCP server on `127.0.0.1` speaking newline-delimited JSON, guarded by 
 writes a discovery file `~/.ukiyo/live/<pid>.json` (mode 0600) with port and token; it is removed on exit. Exported
 builds do not contain the bridge. Disable it with `UKIYO_DEV_BRIDGE=0`; pin the port with `UKIYO_DEV_BRIDGE_PORT`.
 
-Start a game: `dotnet run --project games/<Name>/Desktop` (or `samples/LanternRun/Desktop`). Then:
+Start a game: `dotnet run --project games/<Name>/Desktop` (or `samples/LanternRun/Desktop`, `samples/SceneHop/Desktop`
+for patches). Then:
 
 | `ukiyo_live` action | Does |
 |---|---|
@@ -22,6 +23,7 @@ Start a game: `dotnet run --project games/<Name>/Desktop` (or `samples/LanternRu
 | `capture` | the real frame from the GPU (wgpu → Metal) as PNG |
 | `input` + `events` | queue key/pointer events (same JSON as input scripts, without `tick`); they apply on the next tick |
 | `record` + `on` | start recording the player's input; `on:false` stops and returns it as an input script |
+| `patch` + `patch` | submit one scene patch (games with a `SceneRegistry`): `queued` for a later tick, `applied` when its tick is the current one; refusals return the typed `[SCENE:Code]` message |
 
 Requests run on the game's own thread between frames, so a snapshot or capture is always of a consistent tick.
 
@@ -40,6 +42,7 @@ bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
 bun tools/mcp/src/cli.ts live input --pid 123 --events events.json
 bun tools/mcp/src/cli.ts live record --pid 123 --on true
 bun tools/mcp/src/cli.ts live record --pid 123 --on false --out input.json
+bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json   # one patch object, not a log
 ```
 
 Use these as editor tasks or terminal commands. `--pid` is mandatory when multiple games are running; unlike the
@@ -54,6 +57,11 @@ a fresh runtime requires the same prior state/input history and viewport.
   `ukiyo_run {"input": …}` → fix → replay again → turn the replay into a test (ukiyo-testing).
 - Inspect a moment: `pause` → `step 1` repeatedly → `snapshot` / `capture` at each tick.
 - Drive a menu: `pause`, `input` Enter down, `step 1`, `input` Enter up, `step 1`, `capture`.
+- Try content on the running game: `pause` → `status` (tick T) → `patch` with `"tick": T` (applies now) → `snapshot` /
+  `capture` → `resume`. A running game advances 60 ticks a second: patching without pausing needs `tick` = the
+  current tick plus a margin, or it is refused as `PastTick`. Scene loads dispose patched entities like any other.
+  Live patches are not part of `record`; keep the patch files and replay them headless with `ukiyo_run {"patches":…}`.
+  Format and rules: docs/scenes-patches.md.
 
 The person at the window keeps control: F5 pauses/resumes, F6 steps. Tell them before you inject input into a game
 they are playing.
