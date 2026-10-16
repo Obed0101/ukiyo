@@ -9,10 +9,29 @@ namespace Ukiyo.Rendering;
 //   Matrices use System.Numerics (row vectors: v' = v * M). Serialized in field order M11..M44,
 //   which is the column-major array of the equivalent column-vector matrix (WGSL, Three.js).
 
-/// <summary>Rendering profile a renderer implements. G0 only needs indexed unlit meshes.</summary>
+/// <summary>
+/// Rendering profile a game runs and a renderer implements. Profiles are cumulative: a higher value contains every
+/// lower one, so a G1Lit renderer still draws G0Unlit packets byte for byte as before. A game declares its profile
+/// (<c>IGame.Profile</c>); old games keep <see cref="G0Unlit"/> and never see lit data.
+/// </summary>
 public enum RenderProfile
 {
+    /// <summary>Indexed meshes with vertex/base colors, textures and sprites. No normals, no lights.</summary>
     G0Unlit = 1,
+
+    /// <summary>G0Unlit plus per-pixel Lambert lighting: mesh normals, lit materials and a light list per frame (docs/rendering-lighting.md).</summary>
+    G1Lit = 2,
+}
+
+public static class RenderProfiles
+{
+    /// <summary>The highest profile this engine version defines.</summary>
+    public const RenderProfile Latest = RenderProfile.G1Lit;
+
+    public static bool IsDefined(RenderProfile profile) => profile is RenderProfile.G0Unlit or RenderProfile.G1Lit;
+
+    /// <summary>True when a renderer running <paramref name="active"/> can draw data that needs <paramref name="required"/>.</summary>
+    public static bool Includes(this RenderProfile active, RenderProfile required) => IsDefined(active) && (int)active >= (int)required;
 }
 
 public enum ResourceKind : byte
@@ -36,7 +55,10 @@ public readonly record struct RenderExtent(int Width, int Height, float PixelRat
 
 public sealed record RenderConfiguration(string ApplicationName, RenderExtent InitialExtent, RenderProfile Profile = RenderProfile.G0Unlit);
 
-/// <summary>What a renderer actually runs on. Backend is the effective API (e.g. "Metal", "WebGL2"), never a guess.</summary>
+/// <summary>
+/// What a renderer actually runs on. Backend is the effective API (e.g. "Metal", "WebGL2"), never a guess.
+/// <see cref="Profile"/> is the profile it was initialized with; data from a higher profile fails with UnsupportedFeature.
+/// </summary>
 public sealed record RenderCapabilities(string RendererName, string Backend, string Device, RenderProfile Profile, bool SupportsCapture)
 {
     /// <summary>Textures and the 2D sprite layer. A packet with sprites fails on a renderer without it.</summary>
@@ -49,10 +71,46 @@ public readonly record struct VertexPositionColor(Vector3 Position, Vector3 Colo
     public const int SizeInBytes = 24;
 }
 
-public sealed record MeshData(VertexPositionColor[] Vertices, uint[] Indices);
+/// <summary>
+/// Indexed triangle mesh. <see cref="Normals"/> (G1Lit) gives one object-space normal per vertex; it need not be unit
+/// length (renderers normalize per pixel) but must be finite and non-zero. Lit materials require it.
+/// </summary>
+public sealed record MeshData(VertexPositionColor[] Vertices, uint[] Indices)
+{
+    public Vector3[]? Normals { get; init; }
+}
 
-/// <summary>Unlit material: final color = vertex color (when enabled) * base color. Colors are linear.</summary>
-public sealed record MaterialData(Vector4 BaseColor, bool UseVertexColors);
+/// <summary>
+/// Material. Albedo = vertex color (when enabled) * base color, linear. Unlit (default): final color = albedo.
+/// <see cref="Lit"/> (G1Lit): final color = albedo * (ambient + Σ lights), the model in docs/rendering-lighting.md.
+/// </summary>
+public sealed record MaterialData(Vector4 BaseColor, bool UseVertexColors)
+{
+    public bool Lit { get; init; }
+}
+
+public enum LightKind : byte
+{
+    /// <summary>Parallel light. <see cref="Light.PositionOrDirection"/> is the direction the light travels (world).</summary>
+    Directional = 1,
+
+    /// <summary>Omni light at <see cref="Light.PositionOrDirection"/> (world) with a smooth falloff to zero at <see cref="Light.Range"/>.</summary>
+    Point = 2,
+}
+
+/// <summary>
+/// One light (G1Lit). <see cref="Color"/> is linear RGB ≥ 0 and is multiplied by <see cref="Intensity"/> ≥ 0.
+/// <see cref="Range"/> is in meters, &gt; 0 for point lights and 0 for directional lights.
+/// </summary>
+public readonly record struct Light(LightKind Kind, Vector3 PositionOrDirection, Vector3 Color, float Intensity, float Range)
+{
+    public static Light Directional(Vector3 direction, Vector3 color, float intensity = 1f) => new(LightKind.Directional, direction, color, intensity, 0f);
+
+    public static Light Point(Vector3 position, Vector3 color, float intensity, float range) => new(LightKind.Point, position, color, intensity, range);
+}
+
+/// <summary>Per-frame lighting (G1Lit): linear ambient RGB plus up to <see cref="RenderValidation.MaxLights"/> lights, applied in order.</summary>
+public sealed record SceneLighting(Vector3 Ambient, IReadOnlyList<Light> Lights);
 
 public sealed record CameraState(Vector3 Position, Quaternion Rotation, float FieldOfViewY, float NearPlane, float FarPlane);
 
@@ -113,6 +171,9 @@ public sealed record RenderPacket(uint Sequence, long Tick, RenderExtent Viewpor
     public Camera2D Camera2D { get; init; } = Camera2D.Default;
 
     public IReadOnlyList<SpriteInstance> Sprites { get; init; } = [];
+
+    /// <summary>G1Lit lighting for lit materials. Null keeps the frame in the G0 format (no lighting section).</summary>
+    public SceneLighting? Lighting { get; init; }
 }
 
 public enum ResourceCommandKind : byte

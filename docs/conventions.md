@@ -14,6 +14,7 @@ wgpu/Metal and on Three.js.
 | Winding | Counter-clockwise front faces; back faces culled in both renderers. |
 | Color | Linear working space. Each renderer encodes to its sRGB output (Metal `*Srgb` surface; Three `SRGBColorSpace`). |
 | Depth | 24-bit, compare `less`, cleared to 1. |
+| Lighting (G1Lit) | Per-pixel Lambert in linear RGB, world space: albedo × (ambient + Σ lights). Directional vectors are the direction light travels; point lights fall off to 0 at their range. Defined once in [rendering-lighting.md](rendering-lighting.md). |
 | Ticks | Fixed 60 Hz. After N updates the world is at tick N. 64-bit ticks cross to JS as two uint32 (lo, hi). |
 | Memory | Renderers consume packets before returning; nothing keeps a borrowed buffer. The browser bridge copies (`byte[]` → `Uint8Array`) in G0; there is no zero-copy claim. |
 

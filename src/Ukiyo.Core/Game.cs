@@ -26,6 +26,12 @@ public interface IGame
 {
     string Name { get; }
 
+    /// <summary>
+    /// Rendering profile the game is written for. The runtime initializes the renderer with it and rejects data from a
+    /// higher profile. Games that do not override it stay on <see cref="RenderProfile.G0Unlit"/> and keep their bytes.
+    /// </summary>
+    RenderProfile Profile => RenderProfile.G0Unlit;
+
     /// <summary>Create resources and initial state. Runs once, before the first tick.</summary>
     void Initialize(GameContext context);
 
@@ -146,6 +152,9 @@ public sealed class FrameBuilder
 
     public Vector4 ClearColor { get; set; } = new(0.02f, 0.02f, 0.025f, 1f);
 
+    /// <summary>G1Lit: ambient and up to 8 lights for lit materials this frame. Leave null in unlit games.</summary>
+    public SceneLighting? Lighting { get; set; }
+
     public void Draw(ResourceHandle mesh, ResourceHandle material, Matrix4x4 world) => _instances.Add(new RenderInstance(mesh, material, world));
 
     public void DrawSprite(in SpriteInstance sprite) => _sprites.Add(sprite);
@@ -159,7 +168,7 @@ public sealed class FrameBuilder
         _sprites.Add(new SpriteInstance(sprite.Texture, SpriteSpace.Screen, topLeft, size, Vector2.Zero, 0f, sprite.Uv, tint ?? Vector4.One, layer));
 
     internal RenderPacket Build(uint sequence, long tick, RenderExtent viewport) =>
-        new(sequence, tick, viewport, ClearColor, Camera, [.. _instances]) { Camera2D = Camera2D, Sprites = [.. _sprites] };
+        new(sequence, tick, viewport, ClearColor, Camera, [.. _instances]) { Camera2D = Camera2D, Sprites = [.. _sprites], Lighting = Lighting is { } lighting ? lighting with { Lights = [.. lighting.Lights] } : null };
 
     /// <summary>Camera at <paramref name="position"/> looking at <paramref name="target"/> (right-handed, +Y up, looks down local -Z).</summary>
     public static CameraState LookAt(Vector3 position, Vector3 target, float fieldOfViewY, float near, float far)

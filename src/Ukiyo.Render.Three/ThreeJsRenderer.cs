@@ -23,6 +23,7 @@ public sealed partial class ThreeJsRenderer(string canvasId) : IRenderer, IRende
 
     public ValueTask InitializeAsync(RenderConfiguration configuration, CancellationToken cancellationToken)
     {
+        RenderValidation.RequireImplemented(configuration.Profile, RenderProfile.G1Lit, "ThreeJsRenderer");
         var info = JsonDocument.Parse(Call(() => JsInitialize(canvasId))).RootElement;
         Capabilities = new RenderCapabilities(
             "ThreeJsRenderer",
@@ -41,6 +42,7 @@ public sealed partial class ThreeJsRenderer(string canvasId) : IRenderer, IRende
     public void ApplyResources(ResourceBatch resources)
     {
         RequireReady();
+        RenderValidation.RequireProfile(Capabilities.Profile, resources);
         var bytes = PacketCodec.Encode(resources);
         BytesSent += bytes.Length;
         Call(() => JsApplyResources(bytes));
@@ -58,6 +60,7 @@ public sealed partial class ThreeJsRenderer(string canvasId) : IRenderer, IRende
     public void Render(RenderPacket packet)
     {
         RequireReady();
+        RenderValidation.RequireProfile(Capabilities.Profile, packet);
         var bytes = PacketCodec.Encode(packet);
         BytesSent += bytes.Length;
         var presentedTick = Call(() => JsRender(bytes));

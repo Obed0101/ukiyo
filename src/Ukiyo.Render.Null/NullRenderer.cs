@@ -2,19 +2,25 @@ namespace Ukiyo.Rendering.Null;
 
 /// <summary>
 /// Full renderer lifecycle with no device, window or graphics library. Validates every batch and packet and
-/// tracks logical resources. It has no images, so it does not implement <see cref="IRenderCapture"/>.
+/// tracks logical resources. It has no images, so it does not implement <see cref="IRenderCapture"/>. It implements
+/// every profile up to G1Lit: lit data is checked exactly like a drawing renderer checks it (profile, normals,
+/// lighting section) and counted, never drawn.
 /// </summary>
 public sealed class NullRenderer : IRenderer
 {
+    private const RenderProfile HighestProfile = RenderProfile.G1Lit;
+
     private readonly ResourceTable<MeshData> _meshes = new();
     private readonly ResourceTable<MaterialData> _materials = new();
     private readonly ResourceTable<TextureData> _textures = new();
     private bool _initialized;
     private bool _disposed;
 
-    public RenderCapabilities Capabilities { get; } = new("NullRenderer", "None", "none", RenderProfile.G0Unlit, SupportsCapture: false) { SupportsSprites = true };
+    public RenderCapabilities Capabilities { get; private set; } = new("NullRenderer", "None", "none", RenderProfile.G0Unlit, SupportsCapture: false) { SupportsSprites = true };
 
     public long FramesRendered { get; private set; }
+
+    public long LightsSubmitted { get; private set; }
 
     public long InstancesSubmitted { get; private set; }
 
@@ -33,6 +39,8 @@ public sealed class NullRenderer : IRenderer
     public ValueTask InitializeAsync(RenderConfiguration configuration, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        RenderValidation.RequireImplemented(configuration.Profile, HighestProfile, "NullRenderer");
+        Capabilities = Capabilities with { Profile = configuration.Profile };
         Extent = configuration.InitialExtent;
         _initialized = true;
         return ValueTask.CompletedTask;
@@ -42,6 +50,7 @@ public sealed class NullRenderer : IRenderer
     {
         RequireReady();
         RenderValidation.Validate(resources);
+        RenderValidation.RequireProfile(Capabilities.Profile, resources);
         foreach (var command in resources.Commands)
         {
             switch (command.Kind)
@@ -78,10 +87,10 @@ public sealed class NullRenderer : IRenderer
     {
         RequireReady();
         RenderValidation.Validate(packet);
+        RenderValidation.RequireProfile(Capabilities.Profile, packet);
         foreach (var instance in packet.Instances)
         {
-            _meshes.Get(instance.Mesh);
-            _materials.Get(instance.Material);
+            RenderValidation.RequireLitInputs(_meshes.Get(instance.Mesh).Normals is not null, _materials.Get(instance.Material), packet, instance);
         }
 
         foreach (var sprite in packet.Sprites)
@@ -92,6 +101,7 @@ public sealed class NullRenderer : IRenderer
         FramesRendered++;
         InstancesSubmitted += packet.Instances.Count;
         SpritesSubmitted += packet.Sprites.Count;
+        LightsSubmitted += packet.Lighting?.Lights.Count ?? 0;
         LastPacket = packet;
     }
 

@@ -11,6 +11,9 @@ public static class RenderValidation
     public const int MaxSprites = 1 << 16;
     public const int MaxTextureSize = 4096;
 
+    /// <summary>G1Lit light list limit per frame. Fixed so every shader can use a constant-size uniform array.</summary>
+    public const int MaxLights = 8;
+
     public static void Validate(TextureData texture)
     {
         if (texture.Width is <= 0 or > MaxTextureSize || texture.Height is <= 0 or > MaxTextureSize)
@@ -80,6 +83,129 @@ public static class RenderValidation
             {
                 throw new RenderException(RenderErrorCode.OutOfRange, $"index {index} >= vertex count {mesh.Vertices.Length}");
             }
+        }
+
+        if (mesh.Normals is { } normals)
+        {
+            if (normals.Length != mesh.Vertices.Length)
+            {
+                throw new RenderException(RenderErrorCode.OutOfRange, $"mesh has {normals.Length} normals for {mesh.Vertices.Length} vertices");
+            }
+
+            foreach (var normal in normals)
+            {
+                RequireFinite(normal, "vertex normal");
+                if (normal == Vector3.Zero)
+                {
+                    throw new RenderException(RenderErrorCode.OutOfRange, "vertex normal has zero length");
+                }
+            }
+        }
+    }
+
+    public static void Validate(SceneLighting lighting)
+    {
+        RequireFinite(lighting.Ambient, "ambient light");
+        RequireNonNegative(lighting.Ambient, "ambient light");
+        if (lighting.Lights.Count > MaxLights)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{lighting.Lights.Count} lights exceed {MaxLights}");
+        }
+
+        foreach (var light in lighting.Lights)
+        {
+            Validate(light);
+        }
+    }
+
+    public static void Validate(Light light)
+    {
+        RequireFinite(light.PositionOrDirection, "light position/direction");
+        RequireFinite(light.Color, "light color");
+        RequireFinite(new Vector3(light.Intensity, light.Range, 0f), "light intensity/range");
+        RequireNonNegative(light.Color, "light color");
+        if (light.Intensity < 0)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"light intensity {light.Intensity} is negative");
+        }
+
+        switch (light.Kind)
+        {
+            case LightKind.Directional:
+                if (light.PositionOrDirection == Vector3.Zero || light.Range != 0)
+                {
+                    throw new RenderException(RenderErrorCode.OutOfRange, $"directional light needs a non-zero direction and range 0, got {light.PositionOrDirection} range {light.Range}");
+                }
+
+                break;
+            case LightKind.Point:
+                if (!(light.Range > 0))
+                {
+                    throw new RenderException(RenderErrorCode.OutOfRange, $"point light range {light.Range} must be positive");
+                }
+
+                break;
+            default:
+                throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown light kind {(byte)light.Kind}");
+        }
+    }
+
+    /// <summary>True when the batch carries G1Lit data (normals or lit materials).</summary>
+    public static bool UsesLighting(ResourceBatch batch)
+    {
+        foreach (var command in batch.Commands)
+        {
+            if (command.Mesh?.Normals is not null || command.Material?.Lit == true)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>Rejects G1Lit data on a renderer (or game) running a lower profile, instead of drawing it unlit.</summary>
+    public static void RequireProfile(RenderProfile active, ResourceBatch batch)
+    {
+        if (!active.Includes(RenderProfile.G1Lit) && UsesLighting(batch))
+        {
+            throw new RenderException(RenderErrorCode.UnsupportedFeature, $"resources with normals or lit materials need profile {RenderProfile.G1Lit}; the renderer runs {active}");
+        }
+    }
+
+    public static void RequireProfile(RenderProfile active, RenderPacket packet)
+    {
+        if (!active.Includes(RenderProfile.G1Lit) && packet.Lighting is not null)
+        {
+            throw new RenderException(RenderErrorCode.UnsupportedFeature, $"a lighting section needs profile {RenderProfile.G1Lit}; the renderer runs {active}");
+        }
+    }
+
+    /// <summary>For InitializeAsync: the requested profile must be one this renderer implements.</summary>
+    public static void RequireImplemented(RenderProfile requested, RenderProfile highest, string renderer)
+    {
+        if (!RenderProfiles.IsDefined(requested) || !highest.Includes(requested))
+        {
+            throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{renderer} implements up to {highest}; profile {requested} was requested");
+        }
+    }
+
+    /// <summary>Draw-time check every renderer runs: a lit material needs mesh normals and a lighting section in the frame.</summary>
+    public static void RequireLitInputs(bool meshHasNormals, MaterialData material, RenderPacket packet, in RenderInstance instance)
+    {
+        if (!material.Lit)
+        {
+            return;
+        }
+
+        if (!meshHasNormals)
+        {
+            throw new RenderException(RenderErrorCode.InvalidPacket, $"lit material {instance.Material} drawn on mesh {instance.Mesh} without normals");
+        }
+
+        if (packet.Lighting is null)
+        {
+            throw new RenderException(RenderErrorCode.InvalidPacket, $"lit material {instance.Material} drawn in frame {packet.Sequence} without a lighting section");
         }
     }
 
@@ -153,6 +279,11 @@ public static class RenderValidation
         {
             Validate(sprite);
         }
+
+        if (packet.Lighting is { } lighting)
+        {
+            Validate(lighting);
+        }
     }
 
     public static void RequireKind(ResourceHandle handle, ResourceKind kind)
@@ -168,6 +299,14 @@ public static class RenderValidation
         if (!float.IsFinite(value.X) || !float.IsFinite(value.Y) || !float.IsFinite(value.Z))
         {
             throw new RenderException(RenderErrorCode.NonFiniteValue, $"{what} is not finite: {value}");
+        }
+    }
+
+    private static void RequireNonNegative(Vector3 value, string what)
+    {
+        if (value.X < 0 || value.Y < 0 || value.Z < 0)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{what} has a negative component: {value}");
         }
     }
 

@@ -43,7 +43,7 @@
     </PropertyGroup>
     <Error Condition="!Exists('$(UkiyoAdapterDir)node_modules/three/build/three.module.js')" Text="three is not installed. Run: (cd web/three-adapter &amp;&amp; bun install)" />
     <ItemGroup>
-      <_UkiyoAdapter Include="$(UkiyoAdapterDir)protocol.js;$(UkiyoAdapterDir)ukiyo-three.js;$(UkiyoAdapterDir)sprite-geometry.js;$(UkiyoAdapterDir)ukiyo-host.js" />
+      <_UkiyoAdapter Include="$(UkiyoAdapterDir)protocol.js;$(UkiyoAdapterDir)ukiyo-three.js;$(UkiyoAdapterDir)sprite-geometry.js;$(UkiyoAdapterDir)lit-material.js;$(UkiyoAdapterDir)ukiyo-host.js" />
       <_UkiyoThree Include="$(UkiyoAdapterDir)node_modules/three/build/three.module.js;$(UkiyoAdapterDir)node_modules/three/build/three.core.js" />
     </ItemGroup>
     <Copy SourceFiles="@(_UkiyoAdapter)" DestinationFolder="wwwroot/lib/" SkipUnchangedFiles="true" />

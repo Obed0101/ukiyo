@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>lit-cube-headless</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.LitCube</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+  </ItemGroup>
+</Project>

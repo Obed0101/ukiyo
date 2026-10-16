@@ -6,6 +6,7 @@ namespace Ukiyo.Rendering.Software;
 /// Deterministic CPU rasterizer. Same camera math, winding, culling and sprite geometry as the GPU renderers, so an
 /// agent gets real frames with no window, GPU or browser. It is a reference, not a performance path: meshes are
 /// clipped against the near plane only, there is no MSAA, and sprites use affine UVs (they are screen-aligned quads).
+/// Lit materials (G1Lit) are shaded per pixel with <see cref="LightingMath.Shade"/>, the model the shaders copy.
 /// </summary>
 public sealed class SoftwareRenderer : IRenderer, IRenderCapture
 {
@@ -19,13 +20,18 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     private bool _initialized;
     private bool _disposed;
 
-    public RenderCapabilities Capabilities { get; } = new("SoftwareRenderer", "CPU", "managed rasterizer", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true };
+    /// <summary>The CPU renderer is the pixel reference for headless captures, so it implements G1Lit with the shared <see cref="LightingMath"/>.</summary>
+    private const RenderProfile HighestProfile = RenderProfile.G1Lit;
+
+    public RenderCapabilities Capabilities { get; private set; } = new("SoftwareRenderer", "CPU", "managed rasterizer", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true };
 
     public long FramesRendered { get; private set; }
 
     public ValueTask InitializeAsync(RenderConfiguration configuration, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        RenderValidation.RequireImplemented(configuration.Profile, HighestProfile, "SoftwareRenderer");
+        Capabilities = Capabilities with { Profile = configuration.Profile };
         _initialized = true;
         Resize(configuration.InitialExtent);
         return ValueTask.CompletedTask;
@@ -35,6 +41,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     {
         RequireReady();
         RenderValidation.Validate(resources);
+        RenderValidation.RequireProfile(Capabilities.Profile, resources);
         foreach (var command in resources.Commands)
         {
             switch (command.Kind)
@@ -74,6 +81,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     {
         RequireReady();
         RenderValidation.Validate(packet);
+        RenderValidation.RequireProfile(Capabilities.Profile, packet);
         if (_extent.IsEmpty)
         {
             return;
@@ -90,7 +98,10 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         var viewProjection = ViewProjection(packet.Camera, _extent.Width / (float)_extent.Height);
         foreach (var instance in packet.Instances)
         {
-            DrawMesh(_meshes.Get(instance.Mesh), _materials.Get(instance.Material), instance.World * viewProjection);
+            var mesh = _meshes.Get(instance.Mesh);
+            var material = _materials.Get(instance.Material);
+            RenderValidation.RequireLitInputs(mesh.Normals is not null, material, packet, instance);
+            DrawMesh(mesh, material, instance.World, viewProjection, material.Lit ? packet.Lighting : null);
         }
 
         Span<SpriteVertex> quad = stackalloc SpriteVertex[4];
@@ -146,15 +157,20 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         return view * Matrix4x4.CreatePerspectiveFieldOfView(camera.FieldOfViewY, aspect, camera.NearPlane, camera.FarPlane);
     }
 
-    private void DrawMesh(MeshData mesh, MaterialData material, Matrix4x4 mvp)
+    /// <param name="lighting">Set for lit materials: world position and normal are interpolated and shaded per pixel.</param>
+    private void DrawMesh(MeshData mesh, MaterialData material, Matrix4x4 world, Matrix4x4 viewProjection, SceneLighting? lighting)
     {
+        var mvp = world * viewProjection;
+        var normalMatrix = lighting is null ? default : LightingMath.NormalMatrix(world);
         var clip = new ClipVertex[mesh.Vertices.Length];
         for (var i = 0; i < clip.Length; i++)
         {
             var v = mesh.Vertices[i];
             var tint = material.UseVertexColors ? v.Color : Vector3.One;
             var color = tint * new Vector3(material.BaseColor.X, material.BaseColor.Y, material.BaseColor.Z);
-            clip[i] = new ClipVertex(Vector4.Transform(new Vector4(v.Position, 1f), mvp), color);
+            clip[i] = lighting is null
+                ? new ClipVertex(Vector4.Transform(new Vector4(v.Position, 1f), mvp), color, default, default)
+                : new ClipVertex(Vector4.Transform(new Vector4(v.Position, 1f), mvp), color, Vector3.Transform(v.Position, world), Vector3.TransformNormal(mesh.Normals![i], normalMatrix));
         }
 
         Span<ClipVertex> polygon = stackalloc ClipVertex[4];
@@ -163,7 +179,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
             var count = ClipNear(clip[mesh.Indices[t]], clip[mesh.Indices[t + 1]], clip[mesh.Indices[t + 2]], polygon);
             for (var k = 1; k + 1 < count; k++)
             {
-                DrawTriangle(polygon[0], polygon[k], polygon[k + 1]);
+                DrawTriangle(polygon[0], polygon[k], polygon[k + 1], lighting);
             }
         }
     }
@@ -187,14 +203,18 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
             if (currentInside != nextInside)
             {
                 var t = current.Position.Z / (current.Position.Z - next.Position.Z);
-                output[count++] = new ClipVertex(Vector4.Lerp(current.Position, next.Position, t), Vector3.Lerp(current.Color, next.Color, t));
+                output[count++] = new ClipVertex(
+                    Vector4.Lerp(current.Position, next.Position, t),
+                    Vector3.Lerp(current.Color, next.Color, t),
+                    Vector3.Lerp(current.World, next.World, t),
+                    Vector3.Lerp(current.Normal, next.Normal, t));
             }
         }
 
         return count;
     }
 
-    private void DrawTriangle(ClipVertex a, ClipVertex b, ClipVertex c)
+    private void DrawTriangle(ClipVertex a, ClipVertex b, ClipVertex c, SceneLighting? lighting)
     {
         if (a.Position.W <= 0 || b.Position.W <= 0 || c.Position.W <= 0)
         {
@@ -254,6 +274,13 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
                 var pw2 = w2 * invW.Z;
                 var sum = pw0 + pw1 + pw2;
                 var color = (a.Color * pw0 + b.Color * pw1 + c.Color * pw2) / sum;
+                if (lighting is not null)
+                {
+                    var world = (a.World * pw0 + b.World * pw1 + c.World * pw2) / sum;
+                    var normal = (a.Normal * pw0 + b.Normal * pw1 + c.Normal * pw2) / sum;
+                    color = LightingMath.Shade(color, normal, world, lighting);
+                }
+
                 _color[pixel * 3] = color.X;
                 _color[pixel * 3 + 1] = color.Y;
                 _color[pixel * 3 + 2] = color.Z;
@@ -322,7 +349,8 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         }
     }
 
-    private readonly record struct ClipVertex(Vector4 Position, Vector3 Color);
+    /// <summary>Clip-space position, linear albedo and, for lit draws, world position and world normal.</summary>
+    private readonly record struct ClipVertex(Vector4 Position, Vector3 Color, Vector3 World, Vector3 Normal);
 
     /// <summary>Texture decoded once to linear RGBA floats. Sampling clamps to the edge, like the GPU samplers.</summary>
     private sealed class LinearTexture

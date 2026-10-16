@@ -21,6 +21,20 @@ public static class PacketCodec
     /// <summary>Frame flag: a 2D section (camera + sprites) follows the instances. Absent, the bytes are exactly v1 G0.</summary>
     public const ushort FlagSprites = 0x1;
 
+    /// <summary>Frame flag (G1Lit): a lighting section (ambient + lights) follows the 2D section, or the instances without one.</summary>
+    public const ushort FlagLighting = 0x2;
+
+    public const int LightingHeaderSize = 16;    // f32 x 3 ambient + u32 light count
+    public const int LightSize = 40;             // u32 kind, f32 x 3 vector, f32 x 3 color, f32 intensity, f32 range, u32 pad
+
+    /// <summary>Wire command id of CreateMesh with per-vertex normals (G1Lit). Commands 1-4 keep their v1 bytes.</summary>
+    public const byte CreateMeshWithNormalsCommand = 5;
+    public const int VertexWithNormalSize = 36;  // position, color, normal (f32 x 9)
+
+    /// <summary>CreateMaterial flag bits. Unknown bits fail with InvalidPacket.</summary>
+    public const uint MaterialVertexColors = 0x1;
+    public const uint MaterialLit = 0x2;
+
     public static byte[] Encode(ResourceBatch batch)
     {
         RenderValidation.Validate(batch);
@@ -29,7 +43,7 @@ public static class PacketCodec
         {
             size += 12 + command.Kind switch
             {
-                ResourceCommandKind.CreateMesh => 8 + command.Mesh!.Vertices.Length * VertexPositionColor.SizeInBytes + command.Mesh.Indices.Length * 4,
+                ResourceCommandKind.CreateMesh => 8 + command.Mesh!.Vertices.Length * (command.Mesh.Normals is null ? VertexPositionColor.SizeInBytes : VertexWithNormalSize) + command.Mesh.Indices.Length * 4,
                 ResourceCommandKind.CreateMaterial => 20,
                 ResourceCommandKind.CreateTexture => 12 + command.Texture!.Rgba.Length,
                 _ => 0,
@@ -44,7 +58,8 @@ public static class PacketCodec
         writer.U32((uint)size);
         foreach (var command in batch.Commands)
         {
-            writer.U8((byte)command.Kind);
+            var normals = command.Kind == ResourceCommandKind.CreateMesh ? command.Mesh!.Normals : null;
+            writer.U8(normals is null ? (byte)command.Kind : CreateMeshWithNormalsCommand);
             writer.U8((byte)command.Handle.Kind);
             writer.U16(0);
             writer.U32(command.Handle.Index);
@@ -54,10 +69,14 @@ public static class PacketCodec
                 var mesh = command.Mesh!;
                 writer.U32((uint)mesh.Vertices.Length);
                 writer.U32((uint)mesh.Indices.Length);
-                foreach (var vertex in mesh.Vertices)
+                for (var v = 0; v < mesh.Vertices.Length; v++)
                 {
-                    writer.Vec3(vertex.Position);
-                    writer.Vec3(vertex.Color);
+                    writer.Vec3(mesh.Vertices[v].Position);
+                    writer.Vec3(mesh.Vertices[v].Color);
+                    if (normals is not null)
+                    {
+                        writer.Vec3(normals[v]);
+                    }
                 }
 
                 foreach (var index in mesh.Indices)
@@ -68,7 +87,7 @@ public static class PacketCodec
             else if (command.Kind == ResourceCommandKind.CreateMaterial)
             {
                 writer.Vec4(command.Material!.BaseColor);
-                writer.U32(command.Material.UseVertexColors ? 1u : 0u);
+                writer.U32((command.Material.UseVertexColors ? MaterialVertexColors : 0u) | (command.Material.Lit ? MaterialLit : 0u));
             }
             else if (command.Kind == ResourceCommandKind.CreateTexture)
             {
@@ -87,16 +106,22 @@ public static class PacketCodec
     {
         RenderValidation.Validate(packet);
         var hasSprites = packet.Sprites.Count > 0;
+        var lighting = packet.Lighting;
         var size = HeaderSize + 16 + 16 + 40 + 4 + packet.Instances.Count * InstanceSize;
         if (hasSprites)
         {
             size += Camera2DSize + 4 + packet.Sprites.Count * SpriteSize;
         }
 
+        if (lighting is not null)
+        {
+            size += LightingHeaderSize + lighting.Lights.Count * LightSize;
+        }
+
         var writer = new Writer(size);
         writer.U32(FrameMagic);
         writer.U16(Version);
-        writer.U16(hasSprites ? FlagSprites : (ushort)0);
+        writer.U16((ushort)((hasSprites ? FlagSprites : 0) | (lighting is not null ? FlagLighting : 0)));
         writer.U32(packet.Sequence);
         writer.U32((uint)size);
         writer.U32((uint)(packet.Tick & 0xFFFFFFFF));
@@ -141,6 +166,21 @@ public static class PacketCodec
             }
         }
 
+        if (lighting is not null)
+        {
+            writer.Vec3(lighting.Ambient);
+            writer.U32((uint)lighting.Lights.Count);
+            foreach (var light in lighting.Lights)
+            {
+                writer.U32((uint)light.Kind);
+                writer.Vec3(light.PositionOrDirection);
+                writer.Vec3(light.Color);
+                writer.F32(light.Intensity);
+                writer.F32(light.Range);
+                writer.U32(0);
+            }
+        }
+
         return writer.Finish();
     }
 
@@ -153,7 +193,9 @@ public static class PacketCodec
         var commands = new List<ResourceCommand>((int)Math.Min(count, 4096));
         for (var i = 0; i < count; i++)
         {
-            var kind = (ResourceCommandKind)reader.U8();
+            var wire = reader.U8();
+            var withNormals = wire == CreateMeshWithNormalsCommand;
+            var kind = withNormals ? ResourceCommandKind.CreateMesh : (ResourceCommandKind)wire;
             var resourceKind = (ResourceKind)reader.U8();
             reader.U16();
             var handle = new ResourceHandle(resourceKind, reader.U32(), reader.U32());
@@ -163,9 +205,14 @@ public static class PacketCodec
                     var vertexCount = reader.Count(RenderValidation.MaxVertices, "vertex");
                     var indexCount = reader.Count(RenderValidation.MaxIndices, "index");
                     var vertices = new VertexPositionColor[vertexCount];
+                    var normals = withNormals ? new Vector3[vertexCount] : null;
                     for (var v = 0; v < vertexCount; v++)
                     {
                         vertices[v] = new VertexPositionColor(reader.Vec3(), reader.Vec3());
+                        if (normals is not null)
+                        {
+                            normals[v] = reader.Vec3();
+                        }
                     }
 
                     var indices = new uint[indexCount];
@@ -174,10 +221,17 @@ public static class PacketCodec
                         indices[n] = reader.U32();
                     }
 
-                    commands.Add(ResourceCommand.CreateMesh(handle, new MeshData(vertices, indices)));
+                    commands.Add(ResourceCommand.CreateMesh(handle, new MeshData(vertices, indices) { Normals = normals }));
                     break;
                 case ResourceCommandKind.CreateMaterial:
-                    commands.Add(ResourceCommand.CreateMaterial(handle, new MaterialData(reader.Vec4(), reader.U32() != 0)));
+                    var baseColor = reader.Vec4();
+                    var flags = reader.U32();
+                    if ((flags & ~(MaterialVertexColors | MaterialLit)) != 0)
+                    {
+                        throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown material flags 0x{flags:X8}");
+                    }
+
+                    commands.Add(ResourceCommand.CreateMaterial(handle, new MaterialData(baseColor, (flags & MaterialVertexColors) != 0) { Lit = (flags & MaterialLit) != 0 }));
                     break;
                 case ResourceCommandKind.CreateTexture:
                     var width = reader.Count(RenderValidation.MaxTextureSize, "texture width");
@@ -189,7 +243,7 @@ public static class PacketCodec
                     commands.Add(ResourceCommand.Destroy(handle));
                     break;
                 default:
-                    throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown resource command {(byte)kind}");
+                    throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown resource command {wire}");
             }
         }
 
@@ -202,7 +256,7 @@ public static class PacketCodec
     public static RenderPacket DecodeFrame(ReadOnlySpan<byte> data)
     {
         var reader = new Reader(data);
-        var flags = reader.Header(FrameMagic, allowedFlags: FlagSprites);
+        var flags = reader.Header(FrameMagic, allowedFlags: FlagSprites | FlagLighting);
         var sequence = reader.U32();
         reader.ExpectLength();
         var tick = (long)(reader.U32() | ((ulong)reader.U32() << 32));
@@ -237,8 +291,29 @@ public static class PacketCodec
             }
         }
 
+        SceneLighting? lighting = null;
+        if ((flags & FlagLighting) != 0)
+        {
+            var ambient = reader.Vec3();
+            var lightCount = reader.Count(RenderValidation.MaxLights, "light");
+            var lights = new Light[lightCount];
+            for (var i = 0; i < lightCount; i++)
+            {
+                var kind = reader.U32();
+                if (kind is not ((uint)LightKind.Directional or (uint)LightKind.Point))
+                {
+                    throw new RenderException(RenderErrorCode.InvalidPacket, $"unknown light kind {kind}");
+                }
+
+                lights[i] = new Light((LightKind)kind, reader.Vec3(), reader.Vec3(), reader.F32(), reader.F32());
+                reader.U32();
+            }
+
+            lighting = new SceneLighting(ambient, lights);
+        }
+
         reader.RequireEnd();
-        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances) { Camera2D = camera2D, Sprites = sprites };
+        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances) { Camera2D = camera2D, Sprites = sprites, Lighting = lighting };
         RenderValidation.Validate(packet);
         return packet;
     }
