@@ -22,6 +22,12 @@
     <Project Path="samples/LanternRun/Headless/LanternRun.Headless.csproj" />
     <Project Path="samples/LanternRun/Desktop/LanternRun.Desktop.csproj" />
     <Project Path="samples/LanternRun/Browser/LanternRun.Browser.csproj" />
+    <Project Path="samples/TexturedQuad/Headless/TexturedQuad.Headless.csproj" />
+    <Project Path="samples/TexturedQuad/Desktop/TexturedQuad.Desktop.csproj" />
+    <Project Path="samples/TexturedQuad/Browser/TexturedQuad.Browser.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/Ukiyo.Import/Ukiyo.Import.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ukiyo.Tests/Ukiyo.Tests.csproj" />

@@ -1,0 +1,7 @@
+{
+  "class": "QuadArt",
+  "namespace": "Ukiyo.Samples.TexturedQuad",
+  "output": "../Shared/gen/QuadArt.g.cs",
+  "inputs": ["wisp_float.png", "glass.png"],
+  "extrude": 1
+}

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>textured-quad-web</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.TexturedQuad</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UkiyoBrowserHost>true</UkiyoBrowserHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Recursive so imported art (Shared/gen/*.g.cs) is compiled and hashed into the source identity too. -->
+    <UkiyoSharedSource Include="../Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Browser/Ukiyo.Platform.Browser.csproj" />
+    <SupportedPlatform Include="browser" />
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>browser</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>
