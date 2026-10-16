@@ -52,7 +52,7 @@ export type CliHints = {
   switches?: Record<string, { set: Record<string, JsonValue>; description: string }>;
   /** Values for properties the command line leaves unset, applied before the schema's own defaults. */
   defaults?: Record<string, JsonValue>;
-  /** structuredContent keys listing files the tool writes to a temp dir; `--out DIR` copies them into DIR. */
+  /** structuredContent keys whose strings (a path, a list, or objects holding paths) are files the tool writes to a temp dir; `--out DIR` copies them into DIR. */
   outputs?: string[];
 };
 

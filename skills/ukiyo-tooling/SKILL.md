@@ -43,7 +43,7 @@ export default tool;                                                       // or
 - Paths from arguments go through `insideRoot(root, path)`; never read or write outside the repository except the
   documented state dirs (`~/.ukiyo/live`, `~/.ukiyo/studio`).
 - Long work uses `runProcess` from engine.ts with a timeout and the abort signal. Parse host output by its documented
-  line formats (`parseHeadless`: `snapshot`, `capture`, `audio`, `patches`), never by scraping prose.
+  line formats (`parseHeadless`: `snapshot`, `capture`, `capture-pass`, `audio`, `patches`), never by scraping prose.
 - Shapes shared by several tools are exported once and reused: `inputEventSchema` and `patchSchema` (tools/run.ts)
   serve `ukiyo_run`, `ukiyo_capture` and `ukiyo_live`. The engine stays the judge: a schema only tells agents the
   shape; a scene patch's prefabs, ranges and ticks are refused by the engine with its typed `[SCENE:Code]` message,
@@ -55,7 +55,7 @@ export default tool;                                                       // or
   comma-separated, objects and arrays of objects as JSON files, then `validate()` with the tool's own schema. A new
   tool module is a new command and gets its `--help` block from its schema; add optional `cli` hints
   (`CliHints`: `positional`, `switches`, `defaults`, `outputs`) only when the derived spelling reads badly, as
-  `ukiyo_import` (`import [--check] [specs…]`) and `ukiyo_capture` (`--out DIR` copies `captures`) do. stdout is the
+  `ukiyo_import` (`import [--check] [specs…]`) and `ukiyo_capture` (`--out DIR` copies every path under `captures` and `passes`) do. stdout is the
   `structuredContent` JSON, `[UKIYO]: …` errors on stderr; exit 2 for usage errors (including `ToolInputError`),
   exit 1 for tool failures (an `isError` result still prints its structured result). Tests: test/cli-tools.test.ts.
   The golden transcript `tools/mcp/test/golden/cli-flow.txt` records `--help` and a scaffold → run → capture →

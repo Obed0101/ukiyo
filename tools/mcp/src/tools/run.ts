@@ -1,7 +1,7 @@
 import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { dotnetCommand, findGame, hostProject, insideRoot, parseHeadless, runProcess, tail, type HeadlessOutput } from "../engine.ts";
+import { dotnetCommand, findGame, hostProject, insideRoot, parseHeadless, runProcess, tail, type HeadlessOutput, type ProcessResult } from "../engine.ts";
 import { png, text, ToolInputError, type Content, type JsonSchema, type Tool, type ToolContext, type ToolResult } from "../protocol.ts";
 
 export const inputEventSchema: JsonSchema = {
@@ -137,6 +137,24 @@ export function patchReport(output: HeadlessOutput, patches: PatchRef[] | null):
   };
 }
 
+/**
+ * The structured result of a headless run, before the patch report. `passes` (per checkpoint, each camera alone)
+ * appears only for multi-camera games; a single-camera result has exactly the keys it always had.
+ */
+export function headlessSummary(game: string, result: Pick<ProcessResult, "code" | "timedOut" | "ms">, output: HeadlessOutput): Record<string, unknown> {
+  return {
+    game,
+    exitCode: result.code,
+    timedOut: result.timedOut,
+    ms: result.ms,
+    snapshots: output.snapshots,
+    captures: output.captures,
+    ...(output.passes.length > 0 ? { passes: output.passes } : {}),
+    audio: output.audio,
+    info: output.info,
+  };
+}
+
 /** Runs a game's headless host. With capture=true the CPU renderer draws every checkpoint to PNG. */
 export async function runHeadless(args: Record<string, unknown>, context: ToolContext, capture: boolean): Promise<ToolResult> {
   const game = findGame(context.root, String(args.game));
@@ -158,16 +176,7 @@ export async function runHeadless(args: Record<string, unknown>, context: ToolCo
   context.log("info", "headless.start", { game: game.name, checkpoints, capture, patches: patchLog?.patches?.length });
   const result = await runProcess(command, cliArgs, { cwd: context.root, env, timeoutMs: Number(args.timeoutSeconds) * 1000, signal: context.signal });
   const output = parseHeadless(result.stdout);
-  const summary: Record<string, unknown> = {
-    game: game.name,
-    exitCode: result.code,
-    timedOut: result.timedOut,
-    ms: result.ms,
-    snapshots: output.snapshots,
-    captures: output.captures,
-    audio: output.audio,
-    info: output.info,
-  };
+  const summary = headlessSummary(game.name, result, output);
   if (patchLog) {
     // A refused log stops the host before tick 0 with "[HEADLESS]: --patches <path>: [SCENE:Code]: …" on stderr.
     const refusal = result.stderr.split("\n").find((line) => line.startsWith("[HEADLESS]: --patches "));
@@ -185,6 +194,11 @@ export async function runHeadless(args: Record<string, unknown>, context: ToolCo
   const content: Content[] = [text(JSON.stringify(summary, null, 2))];
   for (const path of output.captures.slice(-6)) {
     content.push(text(`frame ${path} (CPU renderer: same geometry and colors as wgpu/three, no MSAA)`));
+    content.push(png(readFileSync(path)));
+  }
+  // Every pass of the last checkpoint as an image; earlier checkpoints' passes are listed in `passes` by path.
+  for (const { pass, primary, path } of output.passes.at(-1)?.passes ?? []) {
+    content.push(text(`pass ${pass}${primary ? " (primary)" : ""} alone at its rect size ${path} (CPU renderer)`));
     content.push(png(readFileSync(path)));
   }
   return { content, structuredContent: summary };

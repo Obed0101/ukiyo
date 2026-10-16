@@ -20,7 +20,7 @@ Start a game: `dotnet run --project games/<Name>/Hosts/Desktop` (or `samples/Lan
 | `pause` / `resume` | stop or continue the simulation (the window keeps drawing) |
 | `step` + `ticks` | advance exactly N ticks while paused |
 | `snapshot` | the game's snapshot JSON at the current tick |
-| `capture` | the real frame from the GPU (wgpu → Metal) as PNG. Optional `"pass"`: a pass id or `"primary"` for one camera of a multi-camera game alone at its rect size (the response adds `pass`, `passes`, `primaryPass`) |
+| `capture` | the real frame from the GPU (wgpu → Metal) as PNG, every camera composed. Optional `pass` (integer ≥ 0): one camera of a multi-camera game alone at its rect size; the result adds `pass`, `passes` (how many the frame has) and `primaryPass`. A pass the frame does not have is an `isError` result with `[RENDER:OutOfRange]` (structured `code: "RENDER:OutOfRange"`). The bridge itself also takes `"pass":"primary"` (what the Studio uses); the tool takes ids |
 | `input` + `events` | queue key/pointer events (same JSON as input scripts, without `tick`); they apply on the next tick |
 | `record` + `on` | start recording the player's input; `on:false` stops and returns it as an input script |
 | `patch` + `patch` | submit one scene patch (games with a `SceneRegistry`): `queued` for a later tick, `applied` when its tick is the current one; refusals return the typed `[SCENE:Code]` message |
@@ -39,6 +39,7 @@ bun tools/mcp/src/cli.ts live status --pid 123
 bun tools/mcp/src/cli.ts live pause --pid 123
 bun tools/mcp/src/cli.ts live step --pid 123 --ticks 60
 bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
+bun tools/mcp/src/cli.ts live capture --pid 123 --pass 1 --out minimap.png   # one camera of a multi-camera game
 bun tools/mcp/src/cli.ts live input --pid 123 --events events.json
 bun tools/mcp/src/cli.ts live record --pid 123 --on true
 bun tools/mcp/src/cli.ts live record --pid 123 --on false --out input.json
@@ -56,6 +57,10 @@ a fresh runtime requires the same prior state/input history and viewport.
 - Reproduce a bug a human hit: `record on` → the human plays → `record off` → save the script → replay it headless with
   `ukiyo_run {"input": …}` → fix → replay again → turn the replay into a test (ukiyo-testing).
 - Inspect a moment: `pause` → `step 1` repeatedly → `snapshot` / `capture` at each tick.
+- Check one camera of a multi-camera game (minimap, split screen; docs/rendering-passes.md): `pause` → `capture`
+  (composed: where each view lands) → `capture` with `pass: 0` (its `passes` says how many there are) → `pass: 1`, …
+  (what each camera sees, including what a later pass covers). Compare with headless `ukiyo_capture`, whose `passes`
+  lists the same cameras from the CPU renderer; GPU and CPU images are different evidence, say which one you show.
 - Drive a menu: `pause`, `input` Enter down, `step 1`, `input` Enter up, `step 1`, `capture`.
 - Try content on the running game: `pause` → `status` (tick T) → `patch` with `"tick": T` (applies now) → `snapshot` /
   `capture` → `resume`. A running game advances 60 ticks a second: patching without pausing needs `tick` = the

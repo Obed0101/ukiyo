@@ -11,8 +11,8 @@ Evidence, from cheapest to strongest. Say which ones you ran; do not upgrade one
 |---|---|---|
 | Unit/integration tests | logic, physics, UI, protocol | `ukiyo_test` / `dotnet test tests/Ukiyo.Tests` |
 | Headless snapshots | behavior over time with scripted input | `ukiyo_run` / `--checkpoints … --input …` |
-| CPU frame capture | what is drawn (geometry, colors, sprites, UI) | `ukiyo_capture` / `--capture <dir>` |
-| Live GPU capture | the real Metal frame of a running build | `ukiyo_live {"action":"capture"}` |
+| CPU frame capture | what is drawn (geometry, colors, sprites, UI); multi-camera games also each camera alone (`passes`) | `ukiyo_capture` / `--capture <dir>` |
+| Live GPU capture | the real Metal frame of a running build, or one camera with `pass` | `ukiyo_live {"action":"capture"}` / `{"action":"capture","pass":1}` |
 | Parity | wgpu, Three.js and headless agree | `scripts/g0.sh` (needs a Mac with a GPU and a browser) |
 
 ## A game test
@@ -53,8 +53,12 @@ corner). Prefer a few well-chosen pixels over whole-image hashes, which break on
 
 Multi-camera games: `runtime.CaptureAsync(pass: k)` returns pass k alone at its rect size (`runtime.PassCount`,
 `runtime.PrimaryPass`, `runtime.LastFrame` describe the frame); assert on the pass image for what that camera sees and
-on the whole frame for where it lands. Headless `--capture` writes `…-pass-K.png` next to each frame, and
-`scripts/g1passes.sh` compares every pass across CPU, Metal and WebGL2 (`PassTests` has the patterns).
+on the whole frame for where it lands. Headless `--capture` writes `…-pass-K.png` next to each frame (and a
+`capture-pass K primary=true|false <path>` line); `ukiyo_capture` returns them per checkpoint as
+`passes: [{"tick","frame","passes":[{"pass","primary","path"}]}]` (no `passes` key for single-camera games), and
+`bun tools/mcp/src/cli.ts capture Minimap --checkpoints 0,60 --out DIR` copies frames and pass PNGs into DIR. On a
+running build, `ukiyo_live {"action":"capture","pass":K}` is the same camera from the GPU. `scripts/g1passes.sh`
+compares every pass across CPU, Metal and WebGL2 (`PassTests` has the patterns).
 
 ## Scenes and patches in tests
 

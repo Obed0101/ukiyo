@@ -35,7 +35,8 @@ always plus the pass checks), and per-pass capture reuses the single-camera capt
   capturing while a frame's passes are still arriving is `InvalidPacket`.
 
 Hosts write per-pass files next to the whole frame only for multi-camera frames: headless `headless-tick-NNNNNN-pass-K.png`
-(and a `capture-pass K primary=true|false <path>` line, which tools reading `capture <path>` lines ignore), desktop
+(and a `capture-pass K primary=true|false <path>` line, which `ukiyo_capture` returns as `passes` and older readers
+of `capture <path>` lines ignore), desktop
 `desktop-tick-NNNNNN-pass-K.png`, browser evidence a `"passes"` array and `"primaryPass"` per capture.
 
 ## Game API
