@@ -168,6 +168,7 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".json"), snapshot);
             _out.WriteLine($"snapshot {snapshot}");
             _out.WriteLine($"capture {png}");
+            await WritePassCaptures(runtime, renderer, Path.ChangeExtension(png, null));
         }
 
         _out.WriteLine($"[ukiyo] software frames={renderer.FramesRendered} size={options.Extent.Width}x{options.Extent.Height}");
@@ -216,5 +217,25 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
     {
         _errors.WriteLine($"[HEADLESS]: --patches {path}: {message}");
         return PatchLogRefused;
+    }
+
+    /// <summary>
+    /// Multi-camera frames also get one PNG per pass (<c>…-pass-K.png</c>, the pass alone at its rect size) and a
+    /// <c>capture-pass K primary=true|false {path}</c> line. Single-camera games write exactly what they always did.
+    /// </summary>
+    private async Task WritePassCaptures(GameRuntime runtime, SoftwareRenderer renderer, string stem)
+    {
+        if (runtime.LastFrame is not [{ Pass: not null }, ..])
+        {
+            return;
+        }
+
+        for (var pass = 0; pass < runtime.PassCount; pass++)
+        {
+            var capture = await renderer.CaptureAsync(new CaptureRequest(runtime.Tick) { Pass = pass }, CancellationToken.None);
+            var path = $"{stem}-pass-{pass}.png";
+            await File.WriteAllBytesAsync(path, capture.Png);
+            _out.WriteLine($"capture-pass {pass} primary={(pass == runtime.PrimaryPass ? "true" : "false")} {path}");
+        }
     }
 }

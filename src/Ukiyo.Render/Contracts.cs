@@ -63,6 +63,12 @@ public sealed record RenderCapabilities(string RendererName, string Backend, str
 {
     /// <summary>Textures and the 2D sprite layer. A packet with sprites fails on a renderer without it.</summary>
     public bool SupportsSprites { get; init; }
+
+    /// <summary>
+    /// Multi-camera frames (packets with a <see cref="FramePass"/>). The runtime refuses a frame with passes on a renderer
+    /// without it (UnsupportedFeature) instead of letting every pass draw over the whole buffer.
+    /// </summary>
+    public bool SupportsPasses { get; init; }
 }
 
 /// <summary>Vertex layout for <see cref="RenderProfile.G0Unlit"/>: position (xyz) and linear color (rgb), 24 bytes.</summary>
@@ -165,6 +171,26 @@ public readonly record struct SpriteInstance(
     public static readonly Vector4 FullUv = new(0, 0, 1, 1);
 }
 
+/// <summary>Rectangle in drawing-buffer pixels: origin top-left, +Y down (the same space as screen sprites).</summary>
+public readonly record struct PassRect(int X, int Y, int Width, int Height)
+{
+    public static PassRect Covering(RenderExtent extent) => new(0, 0, Math.Max(0, extent.Width), Math.Max(0, extent.Height));
+}
+
+/// <summary>
+/// One camera pass of a multi-camera frame (docs/rendering-passes.md). A frame of <see cref="Count"/> passes is sent as
+/// that many consecutive packets (sequence s, s+1, …; ids 0, 1, …; same tick, count, primary and drawing buffer). Each
+/// pass draws exactly like a single-camera frame whose drawing buffer is <see cref="Rect"/>'s size, placed at its
+/// position; passes compose in id order over a buffer cleared to pass 0's clear color. <see cref="PrimaryId"/> marks
+/// the pass tools show as the game view (inspector preview); it does not change what is drawn.
+/// </summary>
+public readonly record struct FramePass(int Id, int Count, int PrimaryId, PassRect Rect)
+{
+    public bool IsPrimary => Id == PrimaryId;
+
+    public bool IsLast => Id == Count - 1;
+}
+
 /// <summary>One frame of presentation data. Contains no gameplay logic; renderers must copy what they keep.</summary>
 public sealed record RenderPacket(uint Sequence, long Tick, RenderExtent Viewport, Vector4 ClearColor, CameraState Camera, IReadOnlyList<RenderInstance> Instances)
 {
@@ -174,6 +200,12 @@ public sealed record RenderPacket(uint Sequence, long Tick, RenderExtent Viewpor
 
     /// <summary>G1Lit lighting for lit materials. Null keeps the frame in the G0 format (no lighting section).</summary>
     public SceneLighting? Lighting { get; init; }
+
+    /// <summary>
+    /// Set when this packet is one pass of a multi-camera frame. Null is a single-camera frame covering the whole drawing
+    /// buffer, in the exact format it always had (no pass section).
+    /// </summary>
+    public FramePass? Pass { get; init; }
 }
 
 public enum ResourceCommandKind : byte
@@ -214,7 +246,16 @@ public enum CaptureStatus
     UnsupportedCapture = 2,
 }
 
-public sealed record CaptureRequest(long Tick);
+/// <summary>
+/// Capture of the last frame, which must be at <see cref="Tick"/> and complete. <see cref="Pass"/> null is the whole
+/// drawing buffer as presented (every pass composed). <see cref="Pass"/> = k is pass k's own image at its rect size,
+/// before later passes drew over it: the same pixels a single-camera frame of that size would produce. A single-camera
+/// frame is its own pass 0.
+/// </summary>
+public sealed record CaptureRequest(long Tick)
+{
+    public int? Pass { get; init; }
+}
 
 /// <summary>PNG bytes of what the renderer presented. Renderers without images return <see cref="CaptureStatus.UnsupportedCapture"/>.</summary>
 public sealed record CaptureResult(CaptureStatus Status, byte[] Png, int Width, int Height, string Backend)

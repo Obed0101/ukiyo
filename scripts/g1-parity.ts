@@ -24,10 +24,13 @@ const dom = readFileSync(join(dir, "web-dom.html"), "utf8");
 const match = dom.match(/<script type="application\/json" id="ukiyo-evidence">([\s\S]*?)<\/script>/);
 if (!match) throw new Error("[PARITY]: web evidence not found in DOM dump");
 mkdirSync(join(dir, "web"), { recursive: true });
-const web: Snapshot[] = JSON.parse(match[1]!).captures.map((c: { tick: number; png: string; snapshot: Snapshot }) => {
+type WebCapture = { tick: number; png: string; snapshot: Snapshot; passes?: { pass: number; png: string }[] };
+const web: Snapshot[] = JSON.parse(match[1]!).captures.map((c: WebCapture) => {
   const name = `web-tick-${String(c.tick).padStart(6, "0")}`;
   writeFileSync(join(dir, "web", `${name}.png`), Buffer.from(c.png, "base64"));
   writeFileSync(join(dir, "web", `${name}.json`), JSON.stringify(c.snapshot));
+  // Multi-camera frames also carry each pass alone (docs/rendering-passes.md); same names as the other hosts write.
+  for (const p of c.passes ?? []) writeFileSync(join(dir, "web", `${name}-pass-${p.pass}.png`), Buffer.from(p.png, "base64"));
   return c.snapshot;
 });
 

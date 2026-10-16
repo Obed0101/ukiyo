@@ -222,6 +222,17 @@ public sealed unsafe class DesktopHost(DesktopOptions options) : IPlatformHost
             File.WriteAllText(Path.Combine(directory, $"desktop-tick-{tick:D6}.json"), snapshot);
             Console.WriteLine($"snapshot {snapshot}");
             Console.WriteLine($"[ukiyo] captured {path} {capture.Width}x{capture.Height} backend={capture.Backend}");
+            if (runtime.LastFrame is [{ Pass: not null }, ..])
+            {
+                // Multi-camera frames: each pass alone at its rect size, read back from the GPU like the whole frame.
+                for (var pass = 0; pass < runtime.PassCount; pass++)
+                {
+                    var passCapture = Synchronously(renderer.CaptureAsync(new CaptureRequest(tick) { Pass = pass }, CancellationToken.None), "pass capture");
+                    var passPath = Path.Combine(directory, $"desktop-tick-{tick:D6}-pass-{pass}.png");
+                    File.WriteAllBytes(passPath, passCapture.Png);
+                    Console.WriteLine($"[ukiyo] captured pass {pass}{(pass == runtime.PrimaryPass ? " (primary)" : "")} {passPath} {passCapture.Width}x{passCapture.Height} backend={passCapture.Backend}");
+                }
+            }
         }
 
         return 0;

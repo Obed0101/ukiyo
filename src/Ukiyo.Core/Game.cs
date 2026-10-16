@@ -152,14 +152,65 @@ public sealed class GameContext
     }
 }
 
-/// <summary>Collects presentation data for one frame.</summary>
+/// <summary>
+/// Collects presentation data for one frame. The builder the game receives is the frame's first camera (pass 0); more
+/// cameras (a minimap, split screen) are added with <see cref="AddPass"/>, each with its own camera, clear color,
+/// lighting, meshes and sprites (docs/rendering-passes.md). A game that never adds a pass or sets <see cref="Rect"/>
+/// produces the single-camera packet it always did.
+/// </summary>
 public sealed class FrameBuilder
 {
     private readonly List<RenderInstance> _instances = [];
     private readonly List<SpriteInstance> _sprites = [];
+    private readonly List<FrameBuilder>? _extraPasses;
 
-    /// <summary>Drawing-buffer size of the frame being built. Screen-space sprites and UI lay out against it.</summary>
-    public RenderExtent Viewport { get; internal set; }
+    public FrameBuilder()
+    {
+        _extraPasses = [];
+    }
+
+    private FrameBuilder(RenderExtent drawingBuffer, PassRect rect)
+    {
+        DrawingBuffer = drawingBuffer;
+        Rect = rect;
+    }
+
+    /// <summary>Drawing-buffer size of the whole frame, in pixels. Pass rects are laid out against it.</summary>
+    public RenderExtent DrawingBuffer { get; internal set; }
+
+    /// <summary>
+    /// Size this camera draws into: its <see cref="Rect"/> or, without one, the whole drawing buffer. Screen-space sprites
+    /// and UI lay out against it (pass-local pixels, origin at the rect's top-left).
+    /// </summary>
+    public RenderExtent Viewport => Rect is { } rect ? new RenderExtent(rect.Width, rect.Height, DrawingBuffer.PixelRatio) : DrawingBuffer;
+
+    /// <summary>Where this camera lands in the drawing buffer (pixels, top-left origin). Null covers the whole buffer.</summary>
+    public PassRect? Rect { get; set; }
+
+    /// <summary>
+    /// Index of the primary pass (0 = this builder, 1 = the first <see cref="AddPass"/>, …): the view tools show as the
+    /// game (inspector preview, dev bridge <c>capture</c> with <c>"pass":"primary"</c>). It does not change drawing.
+    /// Only the frame's first builder has it.
+    /// </summary>
+    public int PrimaryPass { get; set; }
+
+    /// <summary>
+    /// Adds a camera pass drawn after the ones before it, into <paramref name="rect"/>. Returns its builder; it starts
+    /// with the same defaults as a new frame (nothing is inherited, lighting included). At most
+    /// <see cref="RenderValidation.MaxPasses"/> passes per frame; one more fails with OutOfRange.
+    /// </summary>
+    public FrameBuilder AddPass(PassRect rect)
+    {
+        var passes = _extraPasses ?? throw new InvalidOperationException("[FRAME]: passes are added to the frame's first builder, not to another pass");
+        if (passes.Count + 1 >= RenderValidation.MaxPasses)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"a frame has at most {RenderValidation.MaxPasses} passes");
+        }
+
+        var pass = new FrameBuilder(DrawingBuffer, rect);
+        passes.Add(pass);
+        return pass;
+    }
 
     public CameraState Camera { get; set; } = new(new Vector3(0, 0, 5), Quaternion.Identity, MathF.PI / 3, 0.1f, 100f);
 
@@ -183,8 +234,37 @@ public sealed class FrameBuilder
     public void DrawScreenSprite(SpriteFrame sprite, Vector2 topLeft, Vector2 size, int layer = 0, Vector4? tint = null) =>
         _sprites.Add(new SpriteInstance(sprite.Texture, SpriteSpace.Screen, topLeft, size, Vector2.Zero, 0f, sprite.Uv, tint ?? Vector4.One, layer));
 
-    internal RenderPacket Build(uint sequence, long tick, RenderExtent viewport) =>
-        new(sequence, tick, viewport, ClearColor, Camera, [.. _instances]) { Camera2D = Camera2D, Sprites = [.. _sprites], Lighting = Lighting is { } lighting ? lighting with { Lights = [.. lighting.Lights] } : null };
+    /// <summary>
+    /// One packet per pass, in pass order, with consecutive sequence numbers starting after <paramref name="sequence"/>
+    /// (which is advanced). Without passes, a rect or a primary other than 0, the single packet has no pass section.
+    /// </summary>
+    internal RenderPacket[] Build(ref uint sequence, long tick, RenderExtent viewport)
+    {
+        var extra = _extraPasses ?? throw new InvalidOperationException("[FRAME]: only the frame's first builder builds packets");
+        if (extra.Count == 0 && Rect is null && PrimaryPass == 0)
+        {
+            return [Packet(++sequence, tick, viewport, pass: null)];
+        }
+
+        var count = extra.Count + 1;
+        var packets = new RenderPacket[count];
+        for (var id = 0; id < count; id++)
+        {
+            var builder = id == 0 ? this : extra[id - 1];
+            packets[id] = builder.Packet(++sequence, tick, viewport, new FramePass(id, count, PrimaryPass, builder.Rect ?? PassRect.Covering(viewport)));
+        }
+
+        return packets;
+    }
+
+    private RenderPacket Packet(uint sequence, long tick, RenderExtent viewport, FramePass? pass) =>
+        new(sequence, tick, viewport, ClearColor, Camera, [.. _instances])
+        {
+            Camera2D = Camera2D,
+            Sprites = [.. _sprites],
+            Lighting = Lighting is { } lighting ? lighting with { Lights = [.. lighting.Lights] } : null,
+            Pass = pass,
+        };
 
     /// <summary>Camera at <paramref name="position"/> looking at <paramref name="target"/> (right-handed, +Y up, looks down local -Z).</summary>
     public static CameraState LookAt(Vector3 position, Vector3 target, float fieldOfViewY, float near, float far)

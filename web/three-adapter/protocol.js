@@ -14,6 +14,9 @@ export const MAX_TEXTURE_SIZE = 4096;
 export const FLAG_SPRITES = 0x1;
 export const FLAG_LIGHTING = 0x2;
 export const MAX_LIGHTS = 8;
+// Multi-camera frames (docs/rendering-passes.md): the packet is one pass; a 32-byte pass section follows every other one.
+export const FLAG_PASSES = 0x4;
+export const MAX_PASSES = 4;
 
 // Wire command 5 is CreateMesh with per-vertex normals (G1Lit); it decodes to a CreateMesh command with hasNormals.
 export const CommandKind = Object.freeze({ CreateMesh: 1, CreateMaterial: 2, Destroy: 3, CreateTexture: 4, CreateMeshWithNormals: 5 });
@@ -165,7 +168,7 @@ export function decodeResources(bytes) {
 /** Decodes one frame packet. The 64-bit tick is combined from (lo, hi) as a BigInt, then exposed as a safe Number. */
 export function decodeFrame(bytes) {
   const r = new Reader(bytes);
-  const flags = r.header(FRAME_MAGIC, FLAG_SPRITES | FLAG_LIGHTING);
+  const flags = r.header(FRAME_MAGIC, FLAG_SPRITES | FLAG_LIGHTING | FLAG_PASSES);
   const sequence = r.u32();
   r.expectLength();
   const tick = BigInt(r.u32()) | (BigInt(r.u32()) << 32n);
@@ -205,9 +208,81 @@ export function decodeFrame(bytes) {
     }
   }
   const lighting = flags & FLAG_LIGHTING ? readLighting(r) : null;
+  const pass = flags & FLAG_PASSES ? readPass(r, viewport) : null;
   r.end();
-  return { sequence, tick: Number(tick), viewport, clearColor, camera, instances, camera2D, sprites, lighting };
+  return { sequence, tick: Number(tick), viewport, clearColor, camera, instances, camera2D, sprites, lighting, pass };
 }
+
+/** Pass section; the same checks as RenderValidation.Validate(FramePass, drawing buffer) in C#. */
+function readPass(r, viewport) {
+  const id = r.u32();
+  const count = r.u32();
+  const primary = r.u32();
+  r.u32();
+  const pass = { id, count, primary, x: r.u32(), y: r.u32(), width: r.u32(), height: r.u32() };
+  if (count < 1 || count > MAX_PASSES) throw new RenderError("OutOfRange", `pass count ${count} outside 1..${MAX_PASSES}`);
+  if (id >= count || primary >= count) throw new RenderError("OutOfRange", `pass id ${id} or primary ${primary} outside 0..${count - 1}`);
+  // u32 values above int32 are negative in C#; both sides reject them.
+  if ([pass.x, pass.y, pass.width, pass.height].some((v) => v > 0x7fffffff)) throw new RenderError("OutOfRange", `pass ${id} rect has a negative value`);
+  if (viewport.width > 0 && viewport.height > 0) requirePassInside(pass, viewport.width, viewport.height);
+  return pass;
+}
+
+/** The rect must be at least 1×1 and inside the drawing buffer (RenderValidation.RequirePassInside). */
+export function requirePassInside(pass, width, height) {
+  if (pass.width < 1 || pass.height < 1 || pass.x + pass.width > width || pass.y + pass.height > height) {
+    throw new RenderError("OutOfRange", `pass ${pass.id} rect ${pass.x},${pass.y} ${pass.width}x${pass.height} is empty or outside the ${width}x${height} drawing buffer`);
+  }
+}
+
+/**
+ * Frame assembly rules, mirroring PassSequencer in src/Ukiyo.Render/Passes.cs: a frame without a pass section is
+ * complete; a multi-camera frame is passes 0, 1, … as consecutive packets (sequence + 1, same tick, count, primary and
+ * drawing buffer). accept() returns true when the frame is complete and throws InvalidPacket on anything else.
+ */
+export class PassSequencer {
+  constructor() {
+    this.openFrame = null;
+  }
+
+  get open() {
+    return this.openFrame !== null;
+  }
+
+  accept(frame) {
+    const pass = frame.pass;
+    const open = this.openFrame;
+    if (open) {
+      const expected = open.pass;
+      if (!pass || pass.id !== expected.id + 1 || frame.sequence !== open.sequence + 1 || frame.tick !== open.tick
+        || pass.count !== expected.count || pass.primary !== expected.primary
+        || frame.viewport.width !== open.viewport.width || frame.viewport.height !== open.viewport.height) {
+        this.openFrame = null;
+        throw new RenderError("InvalidPacket", `frame of ${expected.count} passes at tick ${open.tick} expects pass ${expected.id + 1} (sequence ${open.sequence + 1}) next; got ${describe(frame)}`);
+      }
+    } else if (pass && pass.id !== 0) {
+      throw new RenderError("InvalidPacket", `pass ${pass.id} of ${pass.count} without the passes before it (${describe(frame)})`);
+    }
+    if (!pass || pass.id === pass.count - 1) {
+      this.openFrame = null;
+      return true;
+    }
+    this.openFrame = frame;
+    return false;
+  }
+
+  abort() {
+    this.openFrame = null;
+  }
+
+  requireComplete() {
+    if (this.openFrame) throw new RenderError("InvalidPacket", `capture while the frame at tick ${this.openFrame.tick} is incomplete (pass ${this.openFrame.pass.id} of ${this.openFrame.pass.count} received)`);
+  }
+}
+
+const describe = (frame) => (frame.pass
+  ? `pass ${frame.pass.id} of ${frame.pass.count} (sequence ${frame.sequence}, tick ${frame.tick})`
+  : `a single-camera packet (sequence ${frame.sequence}, tick ${frame.tick})`);
 
 /** G1Lit lighting section; the same limits and checks as RenderValidation.Validate(SceneLighting) in C#. */
 function readLighting(r) {

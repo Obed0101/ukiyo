@@ -84,6 +84,24 @@ Unlit materials still draw flat in a lit frame. A lit material on a mesh without
 Sample: `samples/LitCube`. Pixel parity: faces with constant lighting match exactly across renderers; light gradients
 (point lights) may differ by 1/255 where rounding falls differently.
 
+## Several cameras (minimap, split screen)
+
+```csharp
+// Extract: the builder you get is pass 0 (primary by default). Add up to 3 more passes.
+frame.Camera = chase; frame.Lighting = sun; DrawWorld(frame);
+var map = frame.AddPass(new PassRect(x, y, side, side));       // drawing-buffer pixels, from frame.DrawingBuffer
+map.Camera = topDown; map.ClearColor = dark; map.Lighting = overhead; DrawWorld(map);
+map.DrawScreenSprite(bar, Vector2.Zero, new Vector2(map.Viewport.Width, 3));   // pass-local pixels
+frame.PrimaryPass = 0;                                          // what inspectors and "primary" captures show
+```
+
+Each pass is a full view: nothing is inherited (camera, clear color, lighting, draws). Inside its rect a pass draws like
+a whole frame of that size (`Viewport` is the rect's size); later passes draw over earlier ones; pixels no rect covers
+keep pass 0's clear color. At most 4 passes (`OutOfRange`), rects inside the drawing buffer (`OutOfRange`). Captures:
+`runtime.CaptureAsync()` is the composed frame, `runtime.CaptureAsync(pass: k)` pass k alone at its rect size; headless
+`--capture` also writes `headless-tick-NNNNNN-pass-K.png` for multi-camera frames. Sample: `samples/Minimap`; model:
+docs/rendering-passes.md.
+
 ## Renderers
 
 | Renderer | Where | Capture |
@@ -93,7 +111,7 @@ Sample: `samples/LitCube`. Pixel parity: faces with constant lighting match exac
 | `SoftwareRenderer` | headless `--capture`, tests | yes (CPU, no MSAA) |
 | `NullRenderer` | headless default, tests | no |
 
-`renderer.Capabilities` says what a backend supports (`SupportsCapture`, `SupportsSprites`, `Profile`). The runtime throws
+`renderer.Capabilities` says what a backend supports (`SupportsCapture`, `SupportsSprites`, `SupportsPasses`, `Profile`). The runtime throws
 `RenderException(UnsupportedFeature)` instead of silently dropping features a backend lacks.
 
 ## Changing the protocol

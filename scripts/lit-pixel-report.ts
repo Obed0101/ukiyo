@@ -47,11 +47,19 @@ function compare(referencePath: string, targetPath: string): Stats | string {
 const INTERIOR_TOLERANCE = 1;
 let failures = 0;
 const rows = ["| Tick | Pair | Size | Max Δ | Pixels Δ>0 | Edge px (max Δ) | Interior px (max Δ) | Δ=0 / 1 / 2 / ≥3 |", "|---|---|---|---|---|---|---|---|"];
-const ticks = readdirSync(join(dir, "headless")).filter((f) => f.endsWith(".png")).map((f) => Number(f.match(/(\d+)\.png$/)![1])).sort((a, b) => a - b);
-const png = (folder: string, target: string, tick: number) => join(dir, folder, `${target}-tick-${String(tick).padStart(6, "0")}.png`);
-for (const tick of ticks) {
+// Every CPU capture is compared: whole frames (headless-tick-NNNNNN.png) and, for multi-camera frames, each pass alone
+// (headless-tick-NNNNNN-pass-K.png). A target missing any of them fails.
+const captures = readdirSync(join(dir, "headless"))
+  .map((f) => f.match(/^headless-tick-(\d+)(?:-pass-(\d+))?\.png$/))
+  .filter((m): m is RegExpMatchArray => m !== null)
+  .map((m) => ({ tick: Number(m[1]), pass: m[2] === undefined ? undefined : Number(m[2]) }))
+  .sort((a, b) => a.tick - b.tick || (a.pass ?? -1) - (b.pass ?? -1));
+const png = (folder: string, target: string, c: { tick: number; pass?: number }) =>
+  join(dir, folder, `${target}-tick-${String(c.tick).padStart(6, "0")}${c.pass === undefined ? "" : `-pass-${c.pass}`}.png`);
+for (const capture of captures) {
+  const tick = capture.pass === undefined ? `${capture.tick}` : `${capture.tick} · pass ${capture.pass}`;
   for (const [target, reference] of [["web", "headless"], ["desktop", "headless-desktop-size"]] as const) {
-    const t = png(target, target, tick), r = png(reference, "headless", tick);
+    const t = png(target, target, capture), r = png(reference, "headless", capture);
     if (!existsSync(t) || !existsSync(r)) { failures++; rows.push(`| ${tick} | CPU vs ${target} | – | missing | | | | |`); continue; }
     const s = compare(r, t);
     if (typeof s === "string") { failures++; rows.push(`| ${tick} | CPU vs ${target} | ${s} | size mismatch | | | | |`); continue; }

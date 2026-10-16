@@ -33,7 +33,9 @@
     <Project Path="samples/ImportedMesh/Headless/ImportedMesh.Headless.csproj" />
     <Project Path="samples/ImportedMesh/Desktop/ImportedMesh.Desktop.csproj" />
     <Project Path="samples/ImportedMesh/Browser/ImportedMesh.Browser.csproj" />
-  </Folder>
+    <Project Path="samples/Minimap/Headless/Minimap.Headless.csproj" />
+    <Project Path="samples/Minimap/Desktop/Minimap.Desktop.csproj" />
+    <Project Path="samples/Minimap/Browser/Minimap.Browser.csproj" />  </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Ukiyo.Import/Ukiyo.Import.csproj" />
   </Folder>
