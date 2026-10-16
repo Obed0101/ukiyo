@@ -1,5 +1,4 @@
 using System.Numerics;
-using Ukiyo.Physics;
 using Ukiyo.Rendering;
 
 namespace Ukiyo.Samples.Minimap;
@@ -129,10 +128,10 @@ public sealed class MinimapGame : IGame
         for (var i = 0; i < Pillars.Length; i++)
         {
             var (position, height, _) = Pillars[i];
-            pass.Draw(_cube, _pillarMaterials[i], Matrix4x4.CreateScale(0.7f, height, 0.7f) * Matrix4x4.CreateTranslation(position + new Vector3(0f, height * 0.5f, 0f)));
+            pass.Draw(_cube, _pillarMaterials[i], DetMath.Compose(new Vector3(0.7f, height, 0.7f), Quaternion.Identity, position + new Vector3(0f, height * 0.5f, 0f)));
         }
 
-        pass.Draw(_cube, _roverMaterial, Matrix4x4.CreateScale(RoverHalfSize * 2f) * Matrix4x4.CreateFromQuaternion(_heading) * Matrix4x4.CreateTranslation(_rover));
+        pass.Draw(_cube, _roverMaterial, DetMath.Compose(new Vector3(RoverHalfSize * 2f), _heading, _rover));
     }
 
     /// <summary>Four bars along the pass's own edges: screen sprites are in pass-local pixels, origin at its top-left.</summary>
@@ -162,7 +161,7 @@ public sealed class MinimapGame : IGame
 
         void Face(Vector3 normal, Vector3 up)
         {
-            var right = Vector3.Cross(up, normal);
+            var right = DetMath.Cross(up, normal);
             var center = normal * 0.5f;
             var topLeft = center - right * 0.5f + up * 0.5f;
             var start = (uint)vertices.Count;

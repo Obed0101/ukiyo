@@ -21,7 +21,7 @@ public static class SpriteGeometry
             throw new ArgumentException("[SPRITE]: destination needs 4 vertices", nameof(destination));
         }
 
-        var (sin, cos) = MathF.SinCos(sprite.Rotation);
+        var (sin, cos) = DetMath.SinCos(sprite.Rotation);
         var pixelsPerUnit = viewport.Height / camera.ViewHeight;
         for (var i = 0; i < 4; i++)
         {
@@ -85,13 +85,24 @@ public static class SpriteGeometry
     }
 }
 
-/// <summary>sRGB transfer functions (IEC 61966-2-1) used by CPU paths; GPU paths use *Srgb formats.</summary>
+/// <summary>
+/// sRGB transfer functions (IEC 61966-2-1) used by CPU paths (captures, texture decode, UI theme colors); GPU paths use
+/// *Srgb formats. Both directions go through <see cref="DetMath.Pow"/>, never libm, so a CPU frame has the same bytes on
+/// every machine (the golden CLI transcript pins one by SHA-256).
+/// </summary>
 public static class ColorSpace
 {
     private static readonly float[] SrgbToLinearTable = BuildTable();
 
+    /// <summary>[k] = the smallest linear value that <see cref="Encode"/> turns into byte k (k = 1…255); [0] = 0.</summary>
+    private static readonly float[] EncodeThresholds = BuildThresholds();
+
     public static float SrgbToLinear(byte value) => SrgbToLinearTable[value];
 
+    /// <summary>
+    /// round(255 · sRGB(value)), clamped. Looked up in <see cref="EncodeThresholds"/> (a binary search over 255 floats)
+    /// instead of evaluating pow per channel; tests check it against <see cref="Encode"/> for every float in (0, 1).
+    /// </summary>
     public static byte LinearToSrgb(float value)
     {
         if (!(value > 0))
@@ -104,7 +115,28 @@ public static class ColorSpace
             return 255;
         }
 
-        var encoded = value <= 0.0031308f ? value * 12.92f : 1.055f * MathF.Pow(value, 1f / 2.4f) - 0.055f;
+        var low = 0;
+        var high = 255;
+        while (low < high)
+        {
+            var middle = (low + high + 1) >> 1;
+            if (EncodeThresholds[middle] <= value)
+            {
+                low = middle;
+            }
+            else
+            {
+                high = middle - 1;
+            }
+        }
+
+        return (byte)low;
+    }
+
+    /// <summary>The definition <see cref="LinearToSrgb"/> tabulates, for 0 &lt; value &lt; 1 (slower: one pow per call).</summary>
+    public static byte Encode(float value)
+    {
+        var encoded = value <= 0.0031308f ? value * 12.92f : 1.055f * DetMath.Pow(value, 1f / 2.4f) - 0.055f;
         return (byte)MathF.Round(encoded * 255f);
     }
 
@@ -114,9 +146,37 @@ public static class ColorSpace
         for (var i = 0; i < 256; i++)
         {
             var c = i / 255f;
-            table[i] = c <= 0.04045f ? c / 12.92f : MathF.Pow((c + 0.055f) / 1.055f, 2.4f);
+            table[i] = c <= 0.04045f ? c / 12.92f : DetMath.Pow((c + 0.055f) / 1.055f, 2.4f);
         }
 
         return table;
+    }
+
+    /// <summary>Bisection over the bit patterns of the floats in (0, 1), which are ordered like the floats themselves.</summary>
+    private static float[] BuildThresholds()
+    {
+        const int one = 0x3F80_0000;
+        var thresholds = new float[256];
+        for (var k = 1; k < 256; k++)
+        {
+            var low = 1;
+            var high = one;
+            while (low < high)
+            {
+                var middle = low + (high - low) / 2;
+                if (Encode(BitConverter.Int32BitsToSingle(middle)) >= k)
+                {
+                    high = middle;
+                }
+                else
+                {
+                    low = middle + 1;
+                }
+            }
+
+            thresholds[k] = BitConverter.Int32BitsToSingle(low);
+        }
+
+        return thresholds;
     }
 }

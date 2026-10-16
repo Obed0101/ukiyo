@@ -9,8 +9,11 @@ namespace Ukiyo.Samples.RotatingCube;
 /// </summary>
 public sealed class CubeGame : IGame
 {
-    /// <summary>Rotation law: constant angular speed around a fixed tilted axis. Change these and every target changes.</summary>
-    public static readonly Vector3 RotationAxis = Vector3.Normalize(new Vector3(0.35f, 1f, 0.2f));
+    /// <summary>
+    /// Rotation law: constant angular speed around a fixed tilted axis. Change these and every target changes. Built with
+    /// <see cref="DetMath"/> (no libm sin/cos, no SIMD dot product), so every target computes the same bits.
+    /// </summary>
+    public static readonly Vector3 RotationAxis = DetMath.Normalize(new Vector3(0.35f, 1f, 0.2f));
     public const float RadiansPerSecond = 0.9f;
     public const float HalfSize = 0.5f;
 
@@ -21,7 +24,7 @@ public sealed class CubeGame : IGame
     public string Name => "RotatingCube";
 
     public static Quaternion ExpectedRotation(long tick) =>
-        Quaternion.CreateFromAxisAngle(RotationAxis, RadiansPerSecond * (float)(tick * Simulation.TickSeconds));
+        DetMath.AxisAngle(RotationAxis, RadiansPerSecond * (float)(tick * Simulation.TickSeconds));
 
     public void Initialize(GameContext context)
     {
@@ -65,7 +68,7 @@ public sealed class CubeGame : IGame
 
         void Face(Vector3 normal, Vector3 up, Vector3 color)
         {
-            var right = Vector3.Cross(up, normal);
+            var right = DetMath.Cross(up, normal);
             var center = normal * HalfSize;
             Quad(center - right * HalfSize + up * HalfSize, right * (2 * HalfSize), -up * (2 * HalfSize), color);
         }

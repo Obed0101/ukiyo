@@ -143,7 +143,7 @@ $ ukiyo status
       "profile": {
         "profile": "G1Lit",
         "basis": "source",
-        "declaredAt": "samples/ImportedMesh/Shared/ImportedMeshGame.cs:41"
+        "declaredAt": "samples/ImportedMesh/Shared/ImportedMeshGame.cs:40"
       },
       "scenes": {
         "registry": false,
@@ -193,7 +193,7 @@ $ ukiyo status
       "profile": {
         "profile": "G1Lit",
         "basis": "source",
-        "declaredAt": "samples/LitCube/Shared/LitCubeGame.cs:40"
+        "declaredAt": "samples/LitCube/Shared/LitCubeGame.cs:39"
       },
       "scenes": {
         "registry": false,
@@ -214,7 +214,7 @@ $ ukiyo status
       "profile": {
         "profile": "G1Lit",
         "basis": "source",
-        "declaredAt": "samples/Minimap/Shared/MinimapGame.cs:56"
+        "declaredAt": "samples/Minimap/Shared/MinimapGame.cs:55"
       },
       "scenes": {
         "registry": false,

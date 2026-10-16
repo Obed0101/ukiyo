@@ -22,6 +22,8 @@
     <Compile Include="../../samples/ImportedMesh/Shared/ImportedMeshGame.cs" Link="Shared/ImportedMeshGame.cs" />
     <Compile Include="../../samples/ImportedMesh/Shared/gen/SceneMeshes.g.cs" Link="Shared/gen/SceneMeshes.g.cs" />
     <Compile Include="../../samples/Minimap/Shared/MinimapGame.cs" Link="Shared/MinimapGame.cs" />
+    <!-- The game every scaffold starts from (templates/game, namespace Ukiyo.Games.MyGame): pinned by SnapshotGoldenTests. -->
+    <Compile Include="../../templates/game/Shared/Game.cs" Link="Shared/MyGameTemplate/Game.cs" />
 
     <ProjectReference Include="../../src/Ukiyo.Core/Ukiyo.Core.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />

@@ -13,8 +13,8 @@ public readonly record struct RaycastHit(Body2D Body, Vector2 Point, Vector2 Nor
 /// <summary>
 /// Deterministic 2D rigid-body world: fixed step, sort-and-sweep broad phase, sequential impulses with friction and
 /// restitution, positional correction, sensors with enter/exit events, raycasts and overlap queries. Bodies are always
-/// processed in creation order and trigonometry goes through <see cref="DetMath"/>, so the same inputs give the same
-/// bits on every target. Step it from <c>IGame.Update</c> with <see cref="Simulation.TickSecondsF"/>.
+/// processed in creation order and trigonometry, dot products and normalization go through <see cref="DetMath"/> (no
+/// libm, no SIMD reductions), so the same inputs give the same bits on every target. Step it from <c>IGame.Update</c> with <see cref="Simulation.TickSecondsF"/>.
 /// </summary>
 public sealed class PhysicsWorld2D
 {
@@ -163,12 +163,12 @@ public sealed class PhysicsWorld2D
     /// <summary>Closest body hit by a ray. <paramref name="direction"/> need not be normalized.</summary>
     public RaycastHit? Raycast(Vector2 origin, Vector2 direction, float maxDistance, uint mask = uint.MaxValue, bool includeSensors = false)
     {
-        if (direction.LengthSquared() == 0 || !(maxDistance > 0))
+        if (DetMath.LengthSquared(direction) == 0 || !(maxDistance > 0))
         {
             return null;
         }
 
-        var dir = Vector2.Normalize(direction);
+        var dir = DetMath.Normalize(direction);
         RaycastHit? best = null;
         foreach (var body in _bodies)
         {
@@ -292,14 +292,14 @@ public sealed class PhysicsWorld2D
 
     private void MarkGround(Body2D a, Body2D b, Vector2 normal)
     {
-        var up = Gravity.LengthSquared() > 0 ? -Vector2.Normalize(Gravity) : Vector2.UnitY;
-        if (a.Type == BodyType.Dynamic && Vector2.Dot(-normal, up) > GroundCosine)
+        var up = DetMath.LengthSquared(Gravity) > 0 ? -DetMath.Normalize(Gravity) : Vector2.UnitY;
+        if (a.Type == BodyType.Dynamic && DetMath.Dot(-normal, up) > GroundCosine)
         {
             a.IsGrounded = true;
             a.GroundNormal = -normal;
         }
 
-        if (b.Type == BodyType.Dynamic && Vector2.Dot(normal, up) > GroundCosine)
+        if (b.Type == BodyType.Dynamic && DetMath.Dot(normal, up) > GroundCosine)
         {
             b.IsGrounded = true;
             b.GroundNormal = normal;
@@ -350,8 +350,8 @@ public sealed class PhysicsWorld2D
         if (shape.IsCircle)
         {
             var m = origin - shape.Center;
-            var b = Vector2.Dot(m, dir);
-            var c = m.LengthSquared() - shape.Radius * shape.Radius;
+            var b = DetMath.Dot(m, dir);
+            var c = DetMath.LengthSquared(m) - shape.Radius * shape.Radius;
             if (c > 0 && b > 0)
             {
                 return false;
@@ -365,7 +365,7 @@ public sealed class PhysicsWorld2D
 
             distance = MathF.Max(0, -b - MathF.Sqrt(discriminant));
             var hit = origin + dir * distance;
-            normal = hit == shape.Center ? -dir : Vector2.Normalize(hit - shape.Center);
+            normal = hit == shape.Center ? -dir : DetMath.Normalize(hit - shape.Center);
             return true;
         }
 
@@ -444,7 +444,7 @@ public sealed class PhysicsWorld2D
             var rtB = DetMath.Cross(rB, tangent);
             var kNormal = a.InverseMass + b.InverseMass + a.InverseInertia * rnA * rnA + b.InverseInertia * rnB * rnB;
             var kTangent = a.InverseMass + b.InverseMass + a.InverseInertia * rtA * rtA + b.InverseInertia * rtB * rtB;
-            var relative = Vector2.Dot(RelativeVelocity(a, b, rA, rB), normal);
+            var relative = DetMath.Dot(RelativeVelocity(a, b, rA, rB), normal);
             return new SolverContact
             {
                 _a = a,
@@ -464,14 +464,14 @@ public sealed class PhysicsWorld2D
         {
             var tangent = new Vector2(-_normal.Y, _normal.X);
             var dv = RelativeVelocity(_a, _b, _rA, _rB);
-            var tangentLambda = -Vector2.Dot(dv, tangent) * _tangentMass;
+            var tangentLambda = -DetMath.Dot(dv, tangent) * _tangentMass;
             var maxFriction = _friction * _normalImpulse;
             var newTangent = Math.Clamp(_tangentImpulse + tangentLambda, -maxFriction, maxFriction);
             Apply(tangent * (newTangent - _tangentImpulse));
             _tangentImpulse = newTangent;
 
             dv = RelativeVelocity(_a, _b, _rA, _rB);
-            var normalLambda = (-Vector2.Dot(dv, _normal) + _bounce) * _normalMass;
+            var normalLambda = (-DetMath.Dot(dv, _normal) + _bounce) * _normalMass;
             var newNormal = MathF.Max(_normalImpulse + normalLambda, 0);
             Apply(_normal * (newNormal - _normalImpulse));
             _normalImpulse = newNormal;

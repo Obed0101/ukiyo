@@ -47,12 +47,18 @@ public interface IGame
 
 public readonly record struct EntityPose(Vector3 Position, Quaternion Rotation, Vector3 Scale)
 {
-    public Matrix4x4 ToMatrix() =>
-        Matrix4x4.CreateScale(Scale) * Matrix4x4.CreateFromQuaternion(Rotation) * Matrix4x4.CreateTranslation(Position);
+    /// <summary><c>scale * rotation * translation</c> through <see cref="DetMath.Compose"/>: the same bits on every CPU.</summary>
+    public Matrix4x4 ToMatrix() => DetMath.Compose(Scale, Rotation, Position);
 
-    /// <summary>A 2D pose: position on the XY plane, rotation around +Z (counter-clockwise), uniform scale.</summary>
-    public static EntityPose Planar(Vector2 position, float rotation = 0f, float scale = 1f) =>
-        new(new Vector3(position, 0f), Quaternion.CreateFromAxisAngle(Vector3.UnitZ, rotation), new Vector3(scale));
+    /// <summary>
+    /// A 2D pose: position on the XY plane, rotation around +Z (counter-clockwise), uniform scale. The half-angle comes
+    /// from <see cref="DetMath.SinCos"/>, not libm, because physics bodies report their pose through it into snapshots.
+    /// </summary>
+    public static EntityPose Planar(Vector2 position, float rotation = 0f, float scale = 1f)
+    {
+        var (sin, cos) = DetMath.SinCos(rotation * 0.5f);
+        return new(new Vector3(position, 0f), new Quaternion(0f, 0f, sin, cos), new Vector3(scale));
+    }
 }
 
 /// <summary>Poses by entity name plus named numeric values (score, health, state ids) that agents can assert on.</summary>
@@ -318,8 +324,6 @@ public sealed class FrameBuilder
         }
 
         var length = MathF.Sqrt(x * x + y * y + z * z + w * w);
-        return new Quaternion(PositiveZero(x / length), PositiveZero(y / length), PositiveZero(z / length), PositiveZero(w / length));
+        return new Quaternion(DetMath.PositiveZero(x / length), DetMath.PositiveZero(y / length), DetMath.PositiveZero(z / length), DetMath.PositiveZero(w / length));
     }
-
-    private static float PositiveZero(float value) => value == 0f ? 0f : value;
 }

@@ -144,7 +144,8 @@ public sealed class ${name}Game : IGame
 
     public GameSnapshot Snapshot(long tick) => new(tick, new Dictionary<string, EntityPose> { ["quad"] = Pose });
 
-    private EntityPose Pose => new(Vector3.Zero, Quaternion.CreateFromAxisAngle(Vector3.UnitY, _yaw), Vector3.One);
+    // DetMath, not Quaternion.CreateFromAxisAngle: libm sin/cos differ per OS, and the pose is in every snapshot.
+    private EntityPose Pose => new(Vector3.Zero, DetMath.AxisAngle(Vector3.UnitY, _yaw), Vector3.One);
 }
 `;
 

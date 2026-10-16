@@ -1,4 +1,5 @@
 using System.Numerics;
+using Ukiyo.Rendering;
 
 namespace Ukiyo.UI;
 
@@ -39,15 +40,10 @@ public sealed record UiTheme
     /// <summary>Screen-sprite layer of the UI; game HUD art below it, cursors above it.</summary>
     public int Layer { get; init; } = 1000;
 
+    /// <summary>Linear RGBA of a 0xRRGGBB color: the sRGB decode table, so UI tints in packets are the same bits everywhere.</summary>
     public static Vector4 Srgb(int rgb, float alpha = 1f) => new(
-        Decode((rgb >> 16) & 0xFF),
-        Decode((rgb >> 8) & 0xFF),
-        Decode(rgb & 0xFF),
+        ColorSpace.SrgbToLinear((byte)(rgb >> 16)),
+        ColorSpace.SrgbToLinear((byte)(rgb >> 8)),
+        ColorSpace.SrgbToLinear((byte)rgb),
         alpha);
-
-    private static float Decode(int channel)
-    {
-        var c = channel / 255f;
-        return c <= 0.04045f ? c / 12.92f : MathF.Pow((c + 0.055f) / 1.055f, 2.4f);
-    }
 }

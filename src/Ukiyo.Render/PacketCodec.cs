@@ -361,7 +361,9 @@ public static class PacketCodec
         public void U8(byte value) => _buffer[_offset++] = value;
         public void U16(ushort value) { BinaryPrimitives.WriteUInt16LittleEndian(_buffer.AsSpan(_offset), value); _offset += 2; }
         public void U32(uint value) { BinaryPrimitives.WriteUInt32LittleEndian(_buffer.AsSpan(_offset), value); _offset += 4; }
-        public void F32(float value) { BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(_offset), value); _offset += 4; }
+        // Every float, including mesh vertices, goes out with −0 written as +0 (docs/protocol.md): the same value with
+        // a different sign bit, depending on how the CPU summed it, must not make two hosts' packets differ.
+        public void F32(float value) { BinaryPrimitives.WriteSingleLittleEndian(_buffer.AsSpan(_offset), DetMath.PositiveZero(value)); _offset += 4; }
         public void Vec3(Vector3 v) { F32(v.X); F32(v.Y); F32(v.Z); }
         public void Vec4(Vector4 v) { F32(v.X); F32(v.Y); F32(v.Z); F32(v.W); }
         public void Bytes(ReadOnlySpan<byte> data) { data.CopyTo(_buffer.AsSpan(_offset)); _offset += data.Length; }

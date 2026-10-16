@@ -117,7 +117,7 @@ internal static class Collision2D
     {
         var delta = b.Center - a.Center;
         var radius = a.Radius + b.Radius;
-        var distanceSquared = delta.LengthSquared();
+        var distanceSquared = DetMath.LengthSquared(delta);
         if (distanceSquared >= radius * radius)
         {
             return false;
@@ -133,7 +133,7 @@ internal static class Collision2D
     {
         var local = DetMath.RotateInverse(circle.Center - box.Center, box.Sin, box.Cos);
         var h = box.HalfExtents;
-        var clamped = Vector2.Clamp(local, -h, h);
+        var clamped = new Vector2(Math.Clamp(local.X, -h.X, h.X), Math.Clamp(local.Y, -h.Y, h.Y));
         var inside = clamped == local;
         if (inside)
         {
@@ -159,7 +159,7 @@ internal static class Collision2D
         }
 
         var offset = local - clamped;
-        var distanceSquared = offset.LengthSquared();
+        var distanceSquared = DetMath.LengthSquared(offset);
         if (distanceSquared >= circle.Radius * circle.Radius)
         {
             return false;
@@ -206,7 +206,7 @@ internal static class Collision2D
         var minDot = float.MaxValue;
         for (var i = 0; i < 4; i++)
         {
-            var dot = Vector2.Dot(normal, incNormals[i]);
+            var dot = DetMath.Dot(normal, incNormals[i]);
             if (dot < minDot)
             {
                 minDot = dot;
@@ -217,16 +217,16 @@ internal static class Collision2D
         Span<Vector2> incident = [incVertices[incEdge], incVertices[(incEdge + 1) % 4]];
         var v1 = refVertices[refEdge];
         var v2 = refVertices[(refEdge + 1) % 4];
-        var tangent = Vector2.Normalize(v2 - v1);
+        var tangent = DetMath.Normalize(v2 - v1);
 
         Span<Vector2> clipped = stackalloc Vector2[2];
-        if (Clip(incident, clipped, -tangent, -Vector2.Dot(tangent, v1)) < 2)
+        if (Clip(incident, clipped, -tangent, -DetMath.Dot(tangent, v1)) < 2)
         {
             return false;
         }
 
         Span<Vector2> clipped2 = stackalloc Vector2[2];
-        if (Clip(clipped, clipped2, tangent, Vector2.Dot(tangent, v2)) < 2)
+        if (Clip(clipped, clipped2, tangent, DetMath.Dot(tangent, v2)) < 2)
         {
             return false;
         }
@@ -234,7 +234,7 @@ internal static class Collision2D
         manifold.Normal = flip ? -normal : normal;
         for (var i = 0; i < 2; i++)
         {
-            var separation = Vector2.Dot(normal, clipped2[i] - v1);
+            var separation = DetMath.Dot(normal, clipped2[i] - v1);
             if (separation <= 0)
             {
                 manifold.Add(clipped2[i], -separation);
@@ -254,7 +254,7 @@ internal static class Collision2D
             var min = float.MaxValue;
             for (var j = 0; j < 4; j++)
             {
-                min = MathF.Min(min, Vector2.Dot(normals[i], other[j] - vertices[i]));
+                min = MathF.Min(min, DetMath.Dot(normals[i], other[j] - vertices[i]));
             }
 
             if (min > best)
@@ -271,8 +271,8 @@ internal static class Collision2D
     private static int Clip(ReadOnlySpan<Vector2> input, Span<Vector2> output, Vector2 normal, float offset)
     {
         var count = 0;
-        var d0 = Vector2.Dot(normal, input[0]) - offset;
-        var d1 = Vector2.Dot(normal, input[1]) - offset;
+        var d0 = DetMath.Dot(normal, input[0]) - offset;
+        var d1 = DetMath.Dot(normal, input[1]) - offset;
         if (d0 <= 0)
         {
             output[count++] = input[0];
