@@ -15,10 +15,11 @@ using Ukiyo.UI;
 
 namespace Ukiyo.Games.${name};
 
-/// <summary>${name}: a 2D starting point with a sprite, a physics body, input and a HUD. Replace freely.</summary>
+/// <summary>${name}: a 2D starting point with a sprite, a physics body, input, a HUD and one scene. Replace freely.</summary>
 public sealed class ${name}Game : IGame
 {
     private readonly PhysicsWorld2D _world = new() { Gravity = new Vector2(0, -30f) };
+    private SceneRegistry<Body2D> _scenes = null!;
     private GameUi _ui = null!;
     private SpriteFrame _hero;
     private Body2D _player = null!;
@@ -48,6 +49,17 @@ public sealed class ${name}Game : IGame
         _player = _world.AddBox("player", BodyType.Dynamic, new Vector2(0, 2), new Vector2(0.8f, 0.9f));
         _player.FixedRotation = true;
         _player.Friction = 0;
+
+        // Scenes: a prefab is a function that builds an entity; a scene is data (here in code, or JSON from
+        // Shared/assets via RegisterJson). Loads and patches apply between ticks (skill ukiyo-core).
+        _scenes = new SceneRegistry<Body2D>(context);
+        _scenes.Register(new Prefab<Body2D>("crate", args => _world.AddBox(args.Id, BodyType.Dynamic, new Vector2(args.Position.X, args.Position.Y), new Vector2(args.Float("size"))))
+        {
+            Parameters = [new PrefabParameter("size", 0.25, 2, 0.6)],
+            Dispose = body => _world.Remove(body),
+        });
+        _scenes.Register(new SceneData("start", [new EntityData("crate1", "crate", new Vector3(3, 1, 0))]));
+        _scenes.LoadScene("start");
     }
 
     public void Update(in TickInfo tick)
@@ -74,6 +86,11 @@ public sealed class ${name}Game : IGame
         frame.ClearColor = new Vector4(0.01f, 0.012f, 0.02f, 1f);
         frame.Camera2D = new Camera2D(new Vector2(_player.Position.X, 3f), 10f);
         frame.DrawSprite(_hero, _player.Position, Vector2.One);
+        foreach (var crate in _scenes.Entities)
+        {
+            frame.DrawSprite(_hero, crate.Instance.Position, new Vector2(crate.Args.Float("size")), tint: new Vector4(0.85f, 0.26f, 0.18f, 1f));
+        }
+
         _ui.Draw(frame);
     }
 

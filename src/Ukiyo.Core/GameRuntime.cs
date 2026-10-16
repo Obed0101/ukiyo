@@ -122,6 +122,7 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         Viewport = configuration.InitialExtent;
         await renderer.InitializeAsync(configuration, cancellationToken);
         Game.Initialize(_context);
+        _context.Scenes?.AtBoundary(Tick);
         FlushResources();
         var caps = renderer.Capabilities;
         Console.WriteLine($"[ukiyo] renderer={caps.RendererName} backend={caps.Backend} device=\"{caps.Device}\" profile={caps.Profile} capture={caps.SupportsCapture}");
@@ -144,11 +145,13 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     public void Step(int ticks)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(ticks);
+        var scenes = _context.Scenes;
         for (var i = 0; i < ticks; i++)
         {
             Script?.Feed(Tick, Input);
             var input = Input.Latch(Tick, Viewport);
             _sounds.Begin(Tick);
+            scenes?.BeginUpdate(Tick);
             Game.Update(new TickInfo(Tick, Simulation.TickSeconds) { Input = input, Audio = _sounds });
             foreach (var sound in _sounds.Events)
             {
@@ -158,8 +161,25 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
 
             Audio?.EndTick(Tick);
             Tick++;
+
+            // Tick boundary: scene loads requested during the tick and patches due at the new tick apply here, so a
+            // snapshot at tick N already shows them and Update(N) runs on the changed world.
+            scenes?.AtBoundary(Tick);
         }
     }
+
+    /// <summary>Whether the game created a <see cref="SceneRegistry{TEntity}"/> (and so accepts patches).</summary>
+    public bool HasScenes => _context.Scenes is not null;
+
+    /// <summary>Active scene and patch history, or null for a game without scenes.</summary>
+    public SceneState? SceneState => _context.Scenes?.State();
+
+    /// <summary>
+    /// Submits a patch to the game's scene registry: applied at the boundary before tick <c>patch.Tick</c> (now, when
+    /// paused exactly there). The one entry point for tests, the dev bridge, agent tools and reload.
+    /// </summary>
+    public void SubmitPatch(ScenePatch patch) =>
+        (_context.Scenes ?? throw new InvalidOperationException($"[RUNTIME]: {Game.Name} has no SceneRegistry, so it cannot take patches")).Submit(patch);
 
     public void StepTo(long tick)
     {
@@ -199,7 +219,11 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         return await capture.CaptureAsync(new CaptureRequest(Tick), cancellationToken);
     }
 
-    public GameSnapshot Snapshot() => Game.Snapshot(Tick);
+    public GameSnapshot Snapshot()
+    {
+        var snapshot = Game.Snapshot(Tick);
+        return _context.Scenes is { } scenes ? snapshot with { Scene = scenes.State() } : snapshot;
+    }
 
     public string SnapshotJson() => SnapshotWriter.Write(Snapshot(), Source, Renderer.Capabilities);
 
@@ -254,10 +278,54 @@ public static class SnapshotWriter
                 json.WriteEndObject();
             }
 
+            if (snapshot.Scene is { } scene)
+            {
+                WriteScene(json, scene);
+            }
+
             json.WriteEndObject();
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    /// <summary>Only games with scenes get this key, so snapshots of every other game stay byte-identical.</summary>
+    private static void WriteScene(Utf8JsonWriter json, SceneState scene)
+    {
+        json.WriteStartObject("scene");
+        if (scene.Active is null)
+        {
+            json.WriteNull("active");
+        }
+        else
+        {
+            json.WriteString("active", scene.Active);
+        }
+
+        json.WriteNumber("loadedAt", scene.LoadedAt);
+        json.WriteStartArray("patches");
+        foreach (var patch in scene.Applied)
+        {
+            json.WriteStartObject();
+            json.WriteString("id", patch.Id);
+            json.WriteNumber("tick", patch.Tick);
+            json.WriteEndObject();
+        }
+
+        json.WriteEndArray();
+        json.WriteStartArray("rejected");
+        foreach (var rejection in scene.Rejected)
+        {
+            json.WriteStartObject();
+            json.WriteString("id", rejection.Id);
+            json.WriteNumber("tick", rejection.Tick);
+            json.WriteString("code", rejection.Code.ToString());
+            json.WriteString("message", rejection.Message);
+            json.WriteEndObject();
+        }
+
+        json.WriteEndArray();
+        json.WriteEndObject();
     }
 
     private static void WriteArray(Utf8JsonWriter json, string name, params float[] values)

@@ -47,6 +47,31 @@ public sealed class MyGame : IGame
   match across machines.
 - Same code + same input script ⇒ same snapshot JSON. Tests assert exactly that.
 
+## Scenes, prefabs and patches (opt-in)
+
+For worlds built from content: prefabs are functions, scenes are data, and changes arrive as patches applied between
+ticks. Full format and rules: `docs/scenes-patches.md`; example: `samples/SceneHop`; the 2d `ukiyo_new_game` template uses it.
+
+```csharp
+_scenes = new SceneRegistry<Mote>(context);                       // in Initialize; one per game
+_scenes.Register(new Prefab<Mote>("lantern", args => new Mote(args.Position, args.Float("glow")))
+    { Parameters = [new PrefabParameter("glow", 0, 1, 1)], Dispose = m => …, Retarget = (m, args) => … });
+_scenes.RegisterJson(context.Assets.ReadText("scenes/meadow.json")); // validated now: bad content fails at start
+_scenes.LoadScene("meadow");                                       // live at tick 0
+// Update: foreach (var e in _scenes.Entities) … e.Id, e.Args, e.Instance; LoadScene("cavern") → live next tick
+```
+
+- Register prefabs before scenes. Scene JSON: `{"name","bounds"?,"entities":[{"id","prefab","position":[x,y(,z)],"values"?}]}`;
+  unknown fields, unknown prefabs/parameters, out-of-range values or positions outside `bounds` throw
+  `SceneException` (`[SCENE:Code]`, `SceneErrorCode`).
+- Patches: `runtime.SubmitPatch(ScenePatch.Parse(json))` with
+  `{"id","tick","scene"?,"ops":[{"op":"spawn","id","prefab","position","values"?},{"op":"dispose","id"},{"op":"retarget","id","position"?,"values"?}]}`.
+  Applied at the boundary before `tick` (now, if paused exactly there), whole or not at all. Past ticks, unknown
+  prefabs/parameters and out-of-range values throw at submit; missing entities, bounds and the `scene` guard are
+  checked at the tick and land in `RejectedPatches`. Game code may submit for `tick.Tick + 1`, never the running tick.
+- Snapshots of games with a registry carry `"scene":{"active","loadedAt","patches":[{"id","tick"}],"rejected":[…]}`.
+  Same input script + same patch log ⇒ same snapshots.
+
 ## Resources
 
 `GameContext` returns handles: `CreateMesh(MeshData)`, `CreateMaterial(MaterialData)`, `CreateTexture(TextureData)`,

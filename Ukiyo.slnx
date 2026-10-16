@@ -22,6 +22,7 @@
     <Project Path="samples/LanternRun/Headless/LanternRun.Headless.csproj" />
     <Project Path="samples/LanternRun/Desktop/LanternRun.Desktop.csproj" />
     <Project Path="samples/LanternRun/Browser/LanternRun.Browser.csproj" />
+    <Project Path="samples/SceneHop/Headless/SceneHop.Headless.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Ukiyo.Tests/Ukiyo.Tests.csproj" />

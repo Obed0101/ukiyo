@@ -15,7 +15,8 @@ Data flows one way — game → `RenderPacket` → renderer — and every bounda
 src/Ukiyo.Render           contracts every renderer implements: IRenderer, IRenderCapture, RenderPacket,
                            ResourceBatch, handles, RenderValidation, PacketCodec (binary protocol v1), PNG, SpriteGeometry
 src/Ukiyo.Core             IGame, GameRuntime (fixed 60 Hz, Step/AdvanceTime/RenderFrame/Capture), GameContext,
-                           FrameBuilder, snapshots, input, sprites, audio contract, DevHooks, IPlatformHost
+                           FrameBuilder, snapshots, input, sprites, audio contract, DevHooks, IPlatformHost,
+                           SceneRegistry + ScenePatch (docs/scenes-patches.md)
 src/Ukiyo.Physics|UI|Audio optional systems; depend on Core, never on a host or renderer
 src/Ukiyo.Render.*         Null · Software (CPU) · Wgpu (P/Invoke to wgpu-native) · Three (JSImport to web/three-adapter)
 src/Ukiyo.Platform.*       Headless · Desktop (SDL3) · Browser (WASM): own the loop, events, audio device, dev session

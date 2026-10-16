@@ -7,8 +7,9 @@ description: Use when starting a new ukiyo game or prototype from an idea — sc
 
 1. **Scaffold.** `ukiyo_new_game {"name":"SkyLantern","template":"2d"}` creates `games/SkyLantern/` with
    `Shared/Program.cs`, `Shared/SkyLanternGame.cs`, `Shared/assets/`, and Headless, Desktop (dev bridge on) and Browser
-   hosts, and adds them to `Ukiyo.slnx`. The 2d template has a sprite, a physics body, arrow/WASD movement, jump and a
-   HUD label; 3d has a mesh turned by the arrow keys.
+   hosts, and adds them to `Ukiyo.slnx`. The 2d template has a sprite, a physics body, arrow/WASD movement, jump, a
+   HUD label and a `SceneRegistry` with one prefab (`crate`) and one scene (`start`), the place to grow levels and
+   accept patches (ukiyo-core, `docs/scenes-patches.md`); 3d has a mesh turned by the arrow keys.
 2. **Prove the skeleton.** `ukiyo_run {"game":"SkyLantern"}` (it builds and ticks), then `ukiyo_capture`.
 3. **Make the core loop playable before anything else.** One verb (jump, shoot, place), one goal, one failure.
    Keep everything in `Shared/` and split files by responsibility (`Player.cs`, `Level.cs`, `Hud.cs`) as it grows.

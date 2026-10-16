@@ -53,6 +53,9 @@ public readonly record struct EntityPose(Vector3 Position, Quaternion Rotation, 
 public sealed record GameSnapshot(long Tick, IReadOnlyDictionary<string, EntityPose> Entities)
 {
     public IReadOnlyDictionary<string, double> Values { get; init; } = new Dictionary<string, double>();
+
+    /// <summary>Active scene and patch history. Filled in by the runtime for games with a <see cref="SceneRegistry{TEntity}"/>; null otherwise.</summary>
+    public SceneState? Scene { get; init; }
 }
 
 /// <summary>Resource creation for games. Handles are allocated here; uploads are queued and flushed once.</summary>
@@ -69,6 +72,19 @@ public sealed class GameContext
 
     /// <summary>Files embedded from the game's <c>Shared/assets</c> folder; identical on every target.</summary>
     public GameAssets Assets { get; }
+
+    /// <summary>The game's scene registry, attached by its constructor. One per game.</summary>
+    internal ISceneDirector? Scenes { get; private set; }
+
+    internal void UseScenes(ISceneDirector scenes)
+    {
+        if (Scenes is not null)
+        {
+            throw new InvalidOperationException("[SCENE]: this game already has a SceneRegistry; create one per game");
+        }
+
+        Scenes = scenes;
+    }
 
     public ResourceHandle CreateMesh(MeshData mesh)
     {
