@@ -72,9 +72,13 @@ const captures = readdirSync(join(dir, "headless"))
   .sort((a, b) => a.tick - b.tick || (a.pass ?? -1) - (b.pass ?? -1));
 const png = (folder: string, prefix: string, c: { tick: number; pass?: number }) =>
   join(dir, folder, `${prefix}-tick-${String(c.tick).padStart(6, "0")}${c.pass === undefined ? "" : `-pass-${c.pass}`}.png`);
+// "web-gpu" is the optional real-GPU browser leg (WEB_GPU=1 in the gate scripts, captures written by g1-parity.ts):
+// the same build and canvas size as "web", so it shares the CPU reference and its edge masks.
+const webGpu = process.env.WEB_GPU === "1" || existsSync(join(dir, "web-gpu"));
+const pairs: (readonly [string, string])[] = [["web", "headless"], ...(webGpu ? [["web-gpu", "headless"] as const] : []), ["desktop", "headless-desktop-size"]];
 for (const capture of captures) {
   const tick = capture.pass === undefined ? `${capture.tick}` : `${capture.tick} · pass ${capture.pass}`;
-  for (const [target, reference] of [["web", "headless"], ["desktop", "headless-desktop-size"]] as const) {
+  for (const [target, reference] of pairs) {
     const t = png(target, target, capture), r = png(reference, "headless", capture), m = png(`${reference}-edges`, "edges", capture);
     const missing = [t, r, m].filter((p) => !existsSync(p));
     if (missing.length) { failures++; rows.push(`| ${tick} | CPU vs ${target} | – | missing ${missing.join(", ")} | | | | | | | |`); continue; }

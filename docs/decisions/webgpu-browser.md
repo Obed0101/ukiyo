@@ -134,7 +134,9 @@ this machine, but it loads the larger `three.webgpu.js` build.
   updates. Parity work is already done: the v flip and the opaque canvas.
 - **Real-GPU browser capture** needs no WebGPU: headless Chrome on this Mac uses Metal for WebGL2 once the SwiftShader
   flags are dropped. The WebGL2 frames then match the CPU within the same 1/255 as the desktop. Adding that leg to
-  `g1.sh` is a separate, small change. It was not made here.
+  `g1.sh` is a separate, small change. It was not made here. (Made later in UKIYO-41: `WEB_GPU=1` adds the leg
+  `web-gpu` to `g0.sh`, `g1.sh`, `g1lit.sh` and `g1passes.sh`; results in
+  [rendering-lighting.md](../rendering-lighting.md#real-gpu-browser-leg--2026-10-16-ukiyo-41).)
 
 ## What would change the decision
 

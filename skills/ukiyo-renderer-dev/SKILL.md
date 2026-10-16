@@ -67,6 +67,9 @@ there once; renderers do not reimplement it differently.
   background, another draw or triangles of one mesh that are not neighbors on one smooth sheet (no shared edge, and no
   shared vertex whose closed fan faces the camera). Interior tolerance is Δ ≤ 1 + floor(G/16), G = the reference's
   local gradient. Keep the map debug-only: null by default, never changes a frame.
+- The default browser leg is WebGL2 on SwiftShader (CPU). `WEB_GPU=1` (g0.sh, g1.sh, g1lit.sh, g1passes.sh) adds the
+  same build on the real GPU as target `web-gpu` (headless Chrome, ANGLE Metal), held to the same gates; the leg
+  fails unless the page's evidence reports the Apple GPU (`"device"`, from `UNMASKED_RENDERER_WEBGL`).
 
 ## Multi-camera passes
 

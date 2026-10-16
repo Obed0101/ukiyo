@@ -13,7 +13,7 @@ Evidence, from cheapest to strongest. Say which ones you ran; do not upgrade one
 | Headless snapshots | behavior over time with scripted input | `ukiyo_run` / `--checkpoints … --input …` |
 | CPU frame capture | what is drawn (geometry, colors, sprites, UI); multi-camera games also each camera alone (`passes`) | `ukiyo_capture` / `--capture <dir>` |
 | Live GPU capture | the real Metal frame of a running build, or one camera with `pass` | `ukiyo_live {"action":"capture"}` / `{"action":"capture","pass":1}` |
-| Parity | wgpu, Three.js and headless agree | `scripts/g0.sh` (needs a Mac with a GPU and a browser) |
+| Parity | wgpu, Three.js and headless agree | `scripts/g0.sh` (needs a Mac with a GPU and a browser); browser on SwiftShader by default, `WEB_GPU=1` adds it on the real GPU (`web-gpu`) |
 
 ## A game test
 

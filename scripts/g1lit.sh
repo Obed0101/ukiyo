@@ -5,6 +5,8 @@
 # scripts/lit-pixel-report.ts. SAMPLE=RotatingCube gives the
 # unlit G0 baseline for the same comparison. Opens a window briefly; it must be visible on the active desktop or
 # macOS never presents a frame. Evidence: artifacts/evidence-g1lit (or artifacts/evidence-g1lit-<sample>).
+# WEB_GPU=1 adds the target "web-gpu": the same published build in headless Chrome on the real GPU (WebGL2 through
+# ANGLE Metal; the leg fails unless the page reports the Apple GPU), compared like "web". Default off (CI has no GPU).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -38,6 +40,11 @@ fi
 step "$SAMPLE web (WASM + three.js, WebGL2)"
 rm -rf "$WEB" && dotnet publish "$HOSTS/Browser" -c Release -o "$WEB" -nologo -v q
 scripts/web-evidence.sh "$WEB/wwwroot" "$EV/web-dom.html" "$PORT" "checkpoints=$CHECKPOINTS&fixed=1"
+if [ "${WEB_GPU:-0}" = 1 ]; then
+  step "$SAMPLE web on the real GPU (WebGL2 through ANGLE Metal)"
+  WEB_EVIDENCE_GL=metal scripts/web-evidence.sh "$WEB/wwwroot" "$EV/web-gpu-dom.html" "$PORT" "checkpoints=$CHECKPOINTS&fixed=1" \
+    || { WEB_GPU_FAILED=1; echo "[g1lit] real-GPU web leg failed; the parity step reports it"; }
+fi
 
 step "parity"
 # Snapshots, source hashes and backends must pass in g1-parity.ts. Its whole-image pixel rows are informational here:
@@ -46,4 +53,5 @@ step "parity"
 bun scripts/g1-parity.ts "$EV" | tee "$EV/parity.log" || true
 if grep -E '\| FAIL \|' "$EV/parity.log" | grep -v ' pixels headless≈'; then PARITY_FAILED=1; fi
 bun scripts/lit-pixel-report.ts "$EV" || PARITY_FAILED=1
+[ -z "${WEB_GPU_FAILED:-}" ] || PARITY_FAILED=1
 exit "${PARITY_FAILED:-0}"

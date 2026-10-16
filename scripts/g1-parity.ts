@@ -2,6 +2,7 @@
 // named value) at the same checkpoints across headless (CPU capture), desktop (Metal) and web (WebGL2), all driven by
 // the same input script, the shared-source identity, and the captured pixels wherever two hosts drew the same size.
 // Usage: bun scripts/g1-parity.ts <evidence-dir>   (expects headless.log, desktop/*.json, web-dom.html)
+// A web-gpu-dom.html (the real-GPU browser leg, WEB_GPU=1) adds the target "web-gpu"; with WEB_GPU=1 it is required.
 import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { inflateSync } from "node:zlib";
@@ -20,19 +21,38 @@ const headless: Snapshot[] = readFileSync(join(dir, "headless.log"), "utf8")
 const desktop: Snapshot[] = existsSync(join(dir, "desktop"))
   ? readdirSync(join(dir, "desktop")).filter((f) => f.endsWith(".json")).sort().map((f) => JSON.parse(readFileSync(join(dir, "desktop", f), "utf8")))
   : [];
-const dom = readFileSync(join(dir, "web-dom.html"), "utf8");
-const match = dom.match(/<script type="application\/json" id="ukiyo-evidence">([\s\S]*?)<\/script>/);
-if (!match) throw new Error("[PARITY]: web evidence not found in DOM dump");
-mkdirSync(join(dir, "web"), { recursive: true });
 type WebCapture = { tick: number; png: string; snapshot: Snapshot; passes?: { pass: number; png: string }[] };
-const web: Snapshot[] = JSON.parse(match[1]!).captures.map((c: WebCapture) => {
-  const name = `web-tick-${String(c.tick).padStart(6, "0")}`;
-  writeFileSync(join(dir, "web", `${name}.png`), Buffer.from(c.png, "base64"));
-  writeFileSync(join(dir, "web", `${name}.json`), JSON.stringify(c.snapshot));
-  // Multi-camera frames also carry each pass alone (docs/rendering-passes.md); same names as the other hosts write.
-  for (const p of c.passes ?? []) writeFileSync(join(dir, "web", `${name}-pass-${p.pass}.png`), Buffer.from(p.png, "base64"));
-  return c.snapshot;
-});
+type WebEvidence = { device?: string; captures: WebCapture[] };
+/**
+ * Reads a browser leg's DOM dump and writes its captures as <target>/<target>-tick-NNNNNN[.png|.json|-pass-K.png].
+ * Undefined when the dump is missing or holds no evidence.
+ */
+function readWeb(file: string, target: string): { device: string; snapshots: Snapshot[] } | undefined {
+  if (!existsSync(join(dir, file))) return undefined;
+  const dom = readFileSync(join(dir, file), "utf8");
+  const match = dom.match(/<script type="application\/json" id="ukiyo-evidence">([\s\S]*?)<\/script>/);
+  if (!match) return undefined;
+  mkdirSync(join(dir, target), { recursive: true });
+  const evidence: WebEvidence = JSON.parse(match[1]!);
+  const snapshots = evidence.captures.map((c) => {
+    const name = `${target}-tick-${String(c.tick).padStart(6, "0")}`;
+    writeFileSync(join(dir, target, `${name}.png`), Buffer.from(c.png, "base64"));
+    writeFileSync(join(dir, target, `${name}.json`), JSON.stringify(c.snapshot));
+    // Multi-camera frames also carry each pass alone (docs/rendering-passes.md); same names as the other hosts write.
+    for (const p of c.passes ?? []) writeFileSync(join(dir, target, `${name}-pass-${p.pass}.png`), Buffer.from(p.png, "base64"));
+    return c.snapshot;
+  });
+  return { device: evidence.device ?? "not reported", snapshots };
+}
+const webLeg = readWeb("web-dom.html", "web");
+if (!webLeg) throw new Error("[PARITY]: web evidence not found in web-dom.html");
+const web = webLeg.snapshots;
+// Optional real-GPU browser leg (WEB_GPU=1 in the gate scripts): the same build in Chrome on ANGLE Metal.
+const webGpuRequired = process.env.WEB_GPU === "1";
+const webGpuLeg = readWeb("web-gpu-dom.html", "web-gpu");
+const webGpu = webGpuLeg?.snapshots ?? [];
+/** ANGLE's Metal backend on an Apple GPU; SwiftShader (the CPU implementation) never counts as a real GPU. */
+const isAppleGpu = (device: string) => device.includes("Metal Renderer: Apple") && !/swiftshader/i.test(device);
 
 /** Largest absolute difference over every number two snapshots share, plus anything only one of them has. */
 function compare(a: Snapshot, b: Snapshot): { delta: number; missing: string[] } {
@@ -63,9 +83,13 @@ const check = (name: string, ok: boolean, detail: string) => {
 };
 
 const hash = (s: Snapshot) => JSON.stringify(s.source);
-const others = { desktop, web };
+const others: Record<string, Snapshot[]> = { desktop, web, ...(webGpuLeg ? { "web-gpu": webGpu } : {}) };
 check("desktop evidence present", desktop.length > 0, desktop.length ? `${desktop.length} checkpoints` : "no desktop/*.json (window not visible?)");
-check("shared source hashes identical", [desktop[0], web[0]].every((s) => !s || hash(s) === hash(headless[0]!)),
+if (webGpuRequired || webGpuLeg) {
+  check("web-gpu evidence present", webGpu.length > 0, webGpuLeg ? `${webGpu.length} checkpoints` : "no web-gpu-dom.html (real-GPU leg failed?)");
+  check("web-gpu ran on the Apple GPU", isAppleGpu(webGpuLeg?.device ?? ""), `device="${webGpuLeg?.device ?? "not run"}"`);
+}
+check("shared source hashes identical", [desktop[0], web[0], webGpu[0]].every((s) => !s || hash(s) === hash(headless[0]!)),
   Object.entries(headless[0]!.source).map(([f, h]) => `${f}=${h.slice(0, 12)}`).join(" "));
 
 for (const tick of headless.map((s) => s.tick)) {
@@ -129,7 +153,7 @@ function comparePixels(a: string, b: string): { same: boolean; detail: string } 
 // The desktop window is sized by the display's scale factor, so g1.sh renders a second CPU reference at that size.
 const png = (folder: string, target: string, tick: number) => join(dir, folder, `${target}-tick-${String(tick).padStart(6, "0")}.png`);
 for (const tick of headless.map((s) => s.tick)) {
-  for (const [target, reference] of [["web", "headless"], ["desktop", "headless-desktop-size"]] as const) {
+  for (const [target, reference] of [["web", "headless"], ["web-gpu", "headless"], ["desktop", "headless-desktop-size"]] as const) {
     if (!existsSync(png(target, target, tick))) continue;
     if (!existsSync(png(reference, "headless", tick))) { check(`tick ${tick} pixels headless≈${target}`, false, `no CPU reference in ${reference}/`); continue; }
     const result = comparePixels(png(reference, "headless", tick), png(target, target, tick));
@@ -139,8 +163,10 @@ for (const tick of headless.map((s) => s.tick)) {
 
 const moved = new Set(headless.map((s) => JSON.stringify(s.entities))).size > 1;
 check("the input script changed the world", moved, `${new Set(headless.map((s) => JSON.stringify(s.entities))).size} distinct entity states over ${headless.length} checkpoints`);
-check("backends reported", (desktop[0]?.backend ?? "Metal") === "Metal" && web[0]!.backend.startsWith("WebGL") && headless[0]!.backend === "CPU",
-  `headless=${headless[0]!.backend} desktop=${desktop[0]?.backend ?? "not run"} web=${web[0]!.backend}`);
+check("backends reported", (desktop[0]?.backend ?? "Metal") === "Metal" && web[0]!.backend.startsWith("WebGL") && headless[0]!.backend === "CPU"
+  && (webGpu[0]?.backend ?? "WebGL").startsWith("WebGL"),
+  `headless=${headless[0]!.backend} desktop=${desktop[0]?.backend ?? "not run"} web=${web[0]!.backend} ("${webLeg.device}")`
+  + (webGpuLeg ? ` web-gpu=${webGpu[0]?.backend ?? "none"} ("${webGpuLeg.device}")` : ""));
 
 const report = ["| Check | Result | Detail |", "|---|---|---|", ...rows].join("\n");
 writeFileSync(join(dir, "parity.md"), `${report}\n`);
