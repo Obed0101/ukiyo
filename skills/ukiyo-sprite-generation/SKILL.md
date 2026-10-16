@@ -53,6 +53,13 @@ frame.DrawSprite(_run.At(_tick - _runStart), _player.Position, new Vector2(1, 1)
 
 Then `ukiyo_capture` to see it in the game.
 
+`SpriteSheet.Load` decodes the PNG at startup, which is fine while iterating. To ship, write the art to
+`games/<Game>/art/` instead (`"outDir":"games/LanternRun/art"` on the tools above) and import it: an
+`art/fox.import.json` listing `fox_run.png` and `fox_idle.png`, then
+`dotnet run --project tools/Ukiyo.Import -- games/LanternRun/art` and `_fox = FoxArt.Load(context)`. The importer packs
+its own atlas (with edge extrusion), so `ukiyo_sprite_sheet` is not needed for imported art. See ukiyo-sprites and
+docs/assets.md.
+
 ## Getting good results
 
 - Describe one subject, side view, and keep the description identical between strips of the same character.

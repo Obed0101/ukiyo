@@ -144,9 +144,10 @@ const extraReferences = (template: Template) =>
     <ProjectReference Include="../../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />`
     : "";
 
+// Recursive so imported art (Shared/gen/*.g.cs from tools/Ukiyo.Import) is compiled and hashed like the game code.
 const shared = `
-    <UkiyoSharedSource Include="../Shared/*.cs" />
-    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />`;
+    <UkiyoSharedSource Include="../Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />`;
 
 function hostProject(name: string, host: Host, template: Template): string {
   const kebab = name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();

@@ -12,6 +12,9 @@
     <Compile Include="../../samples/RotatingCube/Shared/CubeGame.cs" Link="Shared/CubeGame.cs" />
     <Compile Include="../../samples/LanternRun/Shared/LanternRunGame.cs" Link="Shared/LanternRunGame.cs" />
     <Compile Include="../../samples/LanternRun/Shared/LanternArt.cs" Link="Shared/LanternArt.cs" />
+    <Compile Include="../../samples/TexturedQuad/Shared/TexturedQuadGame.cs" Link="Shared/TexturedQuadGame.cs" />
+    <Compile Include="../../samples/TexturedQuad/Shared/gen/QuadArt.g.cs" Link="Shared/gen/QuadArt.g.cs" />
+    <ProjectReference Include="../../tools/Ukiyo.Import/Ukiyo.Import.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Core/Ukiyo.Core.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
     <ProjectReference Include="../../src/Ukiyo.UI/Ukiyo.UI.csproj" />

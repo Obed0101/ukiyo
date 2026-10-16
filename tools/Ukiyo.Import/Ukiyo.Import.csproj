@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Dev-time asset importer: PNG (+ atlas JSON) → packed atlas → generated C# linked into a game's shared source.
+    Runs on development machines only; games never reference it. Reuses the engine's PngDecoder so imported pixels
+    are exactly what a runtime decode would have produced.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>ukiyo-import</AssemblyName>
+    <RootNamespace>Ukiyo.Import</RootNamespace>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../src/Ukiyo.Render/Ukiyo.Render.csproj" />
+  </ItemGroup>
+</Project>

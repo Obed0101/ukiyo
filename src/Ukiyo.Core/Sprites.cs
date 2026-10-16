@@ -34,6 +34,12 @@ public sealed record SpriteAnimation(string Name, IReadOnlyList<SpriteFrame> Fra
         !Loop && ticksSinceStart * FramesPerSecond / Simulation.TickRate >= Frames.Count;
 }
 
+/// <summary>A named rectangle of an atlas image, in pixels from its top-left corner (y down).</summary>
+public readonly record struct AtlasFrame(string Name, int X, int Y, int Width, int Height);
+
+/// <summary>A named sequence of atlas frames played at <see cref="FramesPerSecond"/>.</summary>
+public sealed record AtlasAnimation(string Name, IReadOnlyList<string> Frames, float FramesPerSecond, bool Loop = true);
+
 /// <summary>
 /// A texture plus named frames and animations, loaded from the atlas JSON written by the ukiyo sprite tools:
 /// <c>{"image":"hero.png","frames":{"idle_0":{"x":0,"y":0,"w":16,"h":16}},"animations":{"idle":{"frames":["idle_0"],"fps":6,"loop":true}}}</c>.
@@ -69,7 +75,11 @@ public sealed class SpriteSheet
     public SpriteAnimation Animation(string name) =>
         _animations.TryGetValue(name, out var animation) ? animation : throw new KeyNotFoundException($"[SPRITE]: animation \"{name}\" not in sheet ({string.Join(", ", _animations.Keys)})");
 
-    /// <summary>Loads <c>{name}.png</c> and <c>{name}.json</c> from the game's embedded assets.</summary>
+    /// <summary>
+    /// Loads <c>{name}.png</c> and <c>{name}.json</c> from the game's embedded assets, decoding the PNG at runtime.
+    /// Shipped games should prefer an imported atlas (<c>tools/Ukiyo.Import</c>), whose generated <c>Load</c> builds the
+    /// same sheet from pixels compiled into the game, with no decoding and no file access.
+    /// </summary>
     public static SpriteSheet Load(GameContext context, string name, TextureFilter filter = TextureFilter.Nearest)
     {
         var png = context.Assets.Read($"{name}.png");
@@ -82,44 +92,63 @@ public sealed class SpriteSheet
     {
         using var document = JsonDocument.Parse(atlasJson);
         var root = document.RootElement;
-        var frames = new Dictionary<string, SpriteFrame>(StringComparer.Ordinal);
+        var frames = new List<AtlasFrame>();
         if (root.TryGetProperty("frames", out var framesElement))
         {
             foreach (var frame in framesElement.EnumerateObject())
             {
                 var rect = frame.Value;
-                var x = rect.GetProperty("x").GetInt32();
-                var y = rect.GetProperty("y").GetInt32();
-                var w = rect.GetProperty("w").GetInt32();
-                var h = rect.GetProperty("h").GetInt32();
-                if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > width || y + h > height)
-                {
-                    throw new InvalidDataException($"[SPRITE]: frame \"{frame.Name}\" ({x},{y},{w},{h}) is outside the {width}x{height} image");
-                }
-
-                frames[frame.Name] = SpriteFrame.FromPixels(texture, width, height, x, y, w, h);
+                frames.Add(new AtlasFrame(frame.Name, rect.GetProperty("x").GetInt32(), rect.GetProperty("y").GetInt32(), rect.GetProperty("w").GetInt32(), rect.GetProperty("h").GetInt32()));
             }
         }
 
-        var animations = new Dictionary<string, SpriteAnimation>(StringComparer.Ordinal);
+        var animations = new List<AtlasAnimation>();
         if (root.TryGetProperty("animations", out var animationsElement))
         {
             foreach (var animation in animationsElement.EnumerateObject())
             {
                 var names = animation.Value.GetProperty("frames").EnumerateArray().Select(n => n.GetString() ?? "").ToArray();
-                var sequence = names.Select(n => frames.TryGetValue(n, out var f) ? f : throw new InvalidDataException($"[SPRITE]: animation \"{animation.Name}\" uses unknown frame \"{n}\"")).ToArray();
                 var fps = animation.Value.TryGetProperty("fps", out var fpsElement) ? fpsElement.GetSingle() : 8f;
                 var loop = !animation.Value.TryGetProperty("loop", out var loopElement) || loopElement.ValueKind != JsonValueKind.False;
-                if (!(fps > 0))
-                {
-                    throw new InvalidDataException($"[SPRITE]: animation \"{animation.Name}\" needs fps > 0");
-                }
-
-                animations[animation.Name] = new SpriteAnimation(animation.Name, sequence, fps, loop);
+                animations.Add(new AtlasAnimation(animation.Name, names, fps, loop));
             }
         }
 
-        return new SpriteSheet(texture, width, height, frames, animations);
+        return FromAtlas(texture, width, height, frames, animations);
+    }
+
+    /// <summary>
+    /// Builds a sheet from frame rectangles and animations already in memory: what generated atlas code calls, so a
+    /// game gets named frames and animations without parsing JSON at runtime. Same validation as <see cref="Parse"/>.
+    /// </summary>
+    public static SpriteSheet FromAtlas(ResourceHandle texture, int width, int height, IReadOnlyList<AtlasFrame> frames, IReadOnlyList<AtlasAnimation> animations)
+    {
+        ArgumentNullException.ThrowIfNull(frames);
+        ArgumentNullException.ThrowIfNull(animations);
+        var byName = new Dictionary<string, SpriteFrame>(StringComparer.Ordinal);
+        foreach (var (name, x, y, w, h) in frames)
+        {
+            if (x < 0 || y < 0 || w <= 0 || h <= 0 || x + w > width || y + h > height)
+            {
+                throw new InvalidDataException($"[SPRITE]: frame \"{name}\" ({x},{y},{w},{h}) is outside the {width}x{height} image");
+            }
+
+            byName[name] = SpriteFrame.FromPixels(texture, width, height, x, y, w, h);
+        }
+
+        var animationsByName = new Dictionary<string, SpriteAnimation>(StringComparer.Ordinal);
+        foreach (var animation in animations)
+        {
+            var sequence = animation.Frames.Select(n => byName.TryGetValue(n, out var f) ? f : throw new InvalidDataException($"[SPRITE]: animation \"{animation.Name}\" uses unknown frame \"{n}\"")).ToArray();
+            if (!(animation.FramesPerSecond > 0))
+            {
+                throw new InvalidDataException($"[SPRITE]: animation \"{animation.Name}\" needs fps > 0");
+            }
+
+            animationsByName[animation.Name] = new SpriteAnimation(animation.Name, sequence, animation.FramesPerSecond, animation.Loop);
+        }
+
+        return new SpriteSheet(texture, width, height, byName, animationsByName);
     }
 
     /// <summary>Cuts a uniform grid; frames are named <c>{prefix}_{index}</c> row by row.</summary>

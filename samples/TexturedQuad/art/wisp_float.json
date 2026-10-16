@@ -1,0 +1,58 @@
+{
+  "image": "wisp_float.png",
+  "frames": {
+    "wisp_float_0": {
+      "x": 0,
+      "y": 0,
+      "w": 18,
+      "h": 18
+    },
+    "wisp_float_1": {
+      "x": 18,
+      "y": 0,
+      "w": 18,
+      "h": 18
+    },
+    "wisp_float_2": {
+      "x": 36,
+      "y": 0,
+      "w": 18,
+      "h": 18
+    },
+    "wisp_float_3": {
+      "x": 54,
+      "y": 0,
+      "w": 18,
+      "h": 18
+    }
+  },
+  "animations": {
+    "wisp_float": {
+      "frames": [
+        "wisp_float_0",
+        "wisp_float_1",
+        "wisp_float_2",
+        "wisp_float_3"
+      ],
+      "fps": 6,
+      "loop": true
+    }
+  },
+  "meta": {
+    "generatedBy": "procedural",
+    "model": "mirror-v1",
+    "prompt": "A horizontal sprite strip of exactly 4 animation frames of a small paper lantern spirit floating, pixel art in the style of an ukiyo-e woodblock print: sumi ink black outlines, washi paper white, seal vermilion red accents, warm lantern orange and gold. The frames sit side by side in one row in equal-width cells, left to right in time order, same character, same size, same scale and same baseline in every cell, side view facing right. Flat solid pure magenta (#FF00FF) background everywhere, no grid lines, no gaps of another color, no floor, no shadow, no text, no numbers.",
+    "seed": 7,
+    "raw": ".ukiyo/sprites/wisp_float-2026-10-16T05-20-20-617Z.png",
+    "createdAt": "2026-10-16T05:20:20.642Z",
+    "palette": [
+      "#111214",
+      "#f2f0ea",
+      "#d8432e",
+      "#f08a3c",
+      "#e8b04a",
+      "#3a3d44",
+      "#26282d"
+    ]
+  }
+}
