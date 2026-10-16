@@ -1,0 +1,669 @@
+# ukiyo CLI golden transcript. Produced and compared by scripts/cli-flow.ts; rewrite with: bun scripts/cli-flow.ts --update
+# Normalized: <repo> = temporary repository copy, <out> = capture --out dir, <tmp> = TMPDIR of the CLI, <id> = mkdtemp suffix,
+# <ms> = durations, dotnet patch version, live sessions. JSON stdout is re-indented; stderr keeps only [UKIYO]: lines.
+
+$ ukiyo --help
+ukiyo CLI: the MCP tools without an MCP client.   bun tools/mcp/src/cli.ts <command> … (--help after a command: just that command)
+stdout: the tool's JSON result. stderr: logs and "[UKIYO]: …" errors. Exit 2: usage error (unknown command or option,
+missing argument, input the tool's schema refuses); exit 1: the tool failed (its JSON result, when it has one, is still
+on stdout). run and live exit 1 on every error.
+UKIYO_ROOT=<repo> selects the repository (default: the one this file is in), resolved like the MCP server. Give a real
+path (realpath): on macOS /tmp and the default temp dir are symlinks, a known build problem.
+ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch> [options]
+  --pid N           Required when more than one game is running
+  --ticks N         step: 0..36000 (default 1)
+  --events FILE     input: JSON array of key/pointer events
+  --on true|false   record: explicit start/stop
+  --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
+  --out FILE        capture: PNG; record: input script; others: result JSON
+Output files are created exclusively: existing files are never overwritten.
+ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
+  --checkpoints A,B,…   snapshot ticks (default 0,60,180,600)
+  --patches FILE        patch log: JSON array of patches, submitted before tick 0
+  --input FILE          input script: JSON array of events with ticks
+  --size WxH            drawing-buffer size (default 1280x720)
+Examples:
+  bun tools/mcp/src/cli.ts live list
+  bun tools/mcp/src/cli.ts live step --pid 123 --ticks 60
+  bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
+  bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json
+  bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches patches.json
+ukiyo capture <game> [options]   Capture frames (ukiyo_capture)
+  <game>                        Game folder name under games/ or samples/, e.g. LanternRun
+  --checkpoints A,B,…           Ticks (60 per second) at which to print a snapshot; default 60
+  --input FILE                  Scripted input fed tick by tick. Deterministic: the same script always gives the same snapshots; JSON array, passed inline
+  --patches FILE                Scene patch log, submitted in order before tick 0 (games with a SceneRegistry). Same log ⇒ same snapshots; JSON array, passed inline
+  --patch-log TEXT              Instead of `patches`: path (inside the repository) of a patch log file, a JSON array of patches
+  --size TEXT                   Drawing-buffer size, e.g. 640x360; default 640x360
+  --audio [true|false]          Mix every sound the run plays into a WAV and report duration, sound count, peak and RMS (silence is peak 0); default false
+  --timeout-seconds N           10..900; default 240
+  --out DIR                     copy captures into DIR (created; existing files are never overwritten)
+ukiyo import [specs…] [options]   Import assets (ukiyo_import)
+  <specs>                       Spec files or folders, repository-relative or absolute inside the repository
+  --check                       report stale outputs, write nothing (without it: run, regenerating them)
+  --game TEXT                   Game folder name under games/ or samples/; every *.import.json under it, e.g. TexturedQuad
+  --timeout-seconds N           For the importer build plus all specs; 10..900; default 300
+ukiyo new-game <name> [options]   Create a game (ukiyo_new_game)
+  <name>                        PascalCase, e.g. SkyLantern
+  --template 2d|3d              default 2d
+  --hosts A,B,…                 one of Headless|Desktop|Browser|Export.Desktop; default Headless,Desktop,Browser,Export.Desktop
+ukiyo skills <action> [options]   Engine skills (ukiyo_skills)
+  <action>                      one of list|install
+  --preset simple|balanced|complete|engine
+  --skills A,B,…
+  --target claude|agents|both   default both
+  --project-dir TEXT            Where to install, inside the repository. Default: the repository root
+ukiyo sound-generate <name> <preset> [options]   Create a sound effect (ukiyo_sound_generate)
+  <name>
+  <preset>                      one of blip|coin|jump|hit|explosion|powerup|laser
+  --seed N                      0..2147483647; default 1
+  --overrides FILE              JSON object, passed inline
+  --game TEXT
+  --out-dir TEXT
+ukiyo sprite-generate <name> <subject> [options]   Generate a sprite (ukiyo_sprite_generate)
+  <name>                        Asset and animation name, e.g. hero_run
+  <subject>                     What to draw, e.g. 'a small fox ronin with a straw hat'
+  --kind single|strip|tile      default single
+  --frames N                    Frames for kind=strip; 1..12; default 4
+  --action TEXT                 What the strip animates, e.g. 'running', 'idle breathing'; default walking
+  --style TEXT                  A style name from config/sprite-prompts.json or free text; default ukiyo
+  --provider auto|openai|gemini|procedural  default auto
+  --seed N                      0..2147483647; default 1
+  --game TEXT
+  --out-dir TEXT
+  --size N                      Frame size in pixels (square). 16 or 32 for characters; 4..256; default 16
+  --palette TEXT                A palette name from config/sprite-prompts.json (ukiyo, pico8, gameboy), comma-separated hex colors ("#111214,#F2F0EA,…"), or "auto" to extract colors from the image; default auto
+  --colors N                    Colors to extract when palette is auto; 2..64; default 12
+  --outline [true|false]        Add a 1-pixel outline in the darkest palette color (frame grows by 2); default true
+  --fps N                       0.5..60; default 8
+  --loop [true|false]           default true
+ukiyo sprite-process <input> <name> [options]   Pixelize an image (ukiyo_sprite_process)
+  <input>                       PNG path inside the repository
+  <name>
+  --frames N                    Equal-width frames laid out left to right in the input; 1..64; default 1
+  --tile [true|false]           Treat the input as a full-bleed tile (no background removal or crop); default false
+  --game TEXT
+  --out-dir TEXT
+  --size N                      Frame size in pixels (square). 16 or 32 for characters; 4..256; default 16
+  --palette TEXT                A palette name from config/sprite-prompts.json (ukiyo, pico8, gameboy), comma-separated hex colors ("#111214,#F2F0EA,…"), or "auto" to extract colors from the image; default auto
+  --colors N                    Colors to extract when palette is auto; 2..64; default 12
+  --outline [true|false]        Add a 1-pixel outline in the darkest palette color (frame grows by 2); default true
+  --fps N                       0.5..60; default 8
+  --loop [true|false]           default true
+ukiyo sprite-sheet <name> [options]   Pack a sprite atlas (ukiyo_sprite_sheet)
+  <name>
+  --inputs A,B,…                PNG paths inside the repository
+  --max-width N                 16..4096; default 512
+  --padding N                   0..8; default 1
+  --game TEXT
+  --out-dir TEXT
+ukiyo status [options]   Engine status (ukiyo_status)
+ukiyo studio <action> [options]   Studio (the person's view) (ukiyo_studio)
+  <action>                      one of list|check|compose|view|notify
+  --layout TEXT
+  --theme TEXT                  "auto" follows the system light/dark setting
+  --show A,B,…                  Panels to show in addition to the layout (they go to the dock row). Replaces the current list
+  --hide A,B,…                  Panels of the layout to hide. Replaces the current list
+  --panel-options FILE          Per-panel options, e.g. {"values":{"pin":["score","lives"]}}. null removes a panel's options; JSON object, passed inline
+  --text TEXT
+  --level info|success|warn|error  default info
+ukiyo test [options]   Run tests (ukiyo_test)
+  --suite dotnet|js|all         default dotnet
+  --filter TEXT                 dotnet test --filter expression (dotnet suite only)
+  --timeout-seconds N           10..1800; default 600
+Generic commands: required arguments are positional; lists are comma-separated (A,B); FILE options read a JSON file and
+pass its content inline; path values are passed as the tool takes them (repository-relative or absolute inside it).
+  bun tools/mcp/src/cli.ts new-game SkyLantern --template 2d --hosts Headless,Desktop
+  bun tools/mcp/src/cli.ts capture SkyLantern --checkpoints 0,60 --out frames
+  bun tools/mcp/src/cli.ts import --check samples/TexturedQuad
+exit 0
+
+$ ukiyo status
+{
+  "engine": {
+    "version": "0.0.1",
+    "root": "<repo>"
+  },
+  "toolchain": {
+    "dotnet": "10.0.<patch>",
+    "nativeLibraries": "missing: run scripts/fetch-native.sh for desktop hosts",
+    "three": "missing: (cd web/three-adapter && bun install) for browser hosts"
+  },
+  "games": [
+    {
+      "name": "ImportedMesh",
+      "dir": "samples/ImportedMesh",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G1Lit",
+        "basis": "source",
+        "declaredAt": "samples/ImportedMesh/Shared/ImportedMeshGame.cs:41"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": [
+          "samples/ImportedMesh/art/meshes.import.json"
+        ],
+        "check": {
+          "ran": false,
+          "reason": "not checked: the importer is not built; ukiyo_import {\"action\":\"check\",\"game\":\"ImportedMesh\"} builds it and checks"
+        }
+      }
+    },
+    {
+      "name": "LanternRun",
+      "dir": "samples/LanternRun",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
+      "name": "LitCube",
+      "dir": "samples/LitCube",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G1Lit",
+        "basis": "source",
+        "declaredAt": "samples/LitCube/Shared/LitCubeGame.cs:40"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
+      "name": "Minimap",
+      "dir": "samples/Minimap",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G1Lit",
+        "basis": "source",
+        "declaredAt": "samples/Minimap/Shared/MinimapGame.cs:56"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
+      "name": "RotatingCube",
+      "dir": "samples/RotatingCube",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Export.Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
+      "name": "SceneHop",
+      "dir": "samples/SceneHop",
+      "hosts": [
+        "Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": true,
+        "at": "samples/SceneHop/Shared/SceneHopGame.cs:44"
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
+      "name": "TexturedQuad",
+      "dir": "samples/TexturedQuad",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": [
+          "samples/TexturedQuad/art/quad.import.json"
+        ],
+        "check": {
+          "ran": false,
+          "reason": "not checked: the importer is not built; ukiyo_import {\"action\":\"check\",\"game\":\"TexturedQuad\"} builds it and checks"
+        }
+      }
+    }
+  ],
+  "notes": [
+    "profile and scenes come from each game's source, not from a run: the headless [ukiyo] renderer line shows the renderer's profile, not the game's."
+  ],
+  "skills": [
+    "ukiyo-audio",
+    "ukiyo-core",
+    "ukiyo-engine",
+    "ukiyo-hosts",
+    "ukiyo-input",
+    "ukiyo-live",
+    "ukiyo-new-game",
+    "ukiyo-physics",
+    "ukiyo-platform-dev",
+    "ukiyo-renderer-dev",
+    "ukiyo-rendering",
+    "ukiyo-scenes-assets",
+    "ukiyo-sprite-generation",
+    "ukiyo-sprites",
+    "ukiyo-studio",
+    "ukiyo-testing",
+    "ukiyo-tooling",
+    "ukiyo-ui"
+  ],
+  "live": "<live sessions on this machine>"
+}
+exit 0
+
+$ ukiyo new-game CiProbe --hosts Headless
+{
+  "name": "CiProbe",
+  "template": "2d",
+  "hosts": [
+    "Headless"
+  ],
+  "files": [
+    "games/CiProbe/Hosts/Headless/CiProbe.Headless.csproj",
+    "games/CiProbe/Platform/Browser/.gitkeep",
+    "games/CiProbe/Platform/Desktop/.gitkeep",
+    "games/CiProbe/Shared/Entities/.gitkeep",
+    "games/CiProbe/Shared/Game.cs",
+    "games/CiProbe/Shared/Lib/.gitkeep",
+    "games/CiProbe/Shared/Program.cs",
+    "games/CiProbe/Shared/Scenes/.gitkeep",
+    "games/CiProbe/Shared/Systems/.gitkeep",
+    "games/CiProbe/Shared/assets/.gitkeep",
+    "games/CiProbe/Shared/gen/.gitkeep"
+  ]
+}
+exit 0
+
+$ ukiyo run CiProbe --checkpoints 0,60
+{
+  "game": "CiProbe",
+  "exitCode": 0,
+  "timedOut": false,
+  "ms": "<ms>",
+  "snapshots": [
+    {
+      "tick": 0,
+      "renderer": "NullRenderer",
+      "backend": "None",
+      "source": {
+        "Game.cs": "72B4EF54FA20084CDCA2A7DA6E17B09C5A7CA20C097069B0025112B44F6D6534",
+        "Program.cs": "552E8A522DDAB20F59C29345BA31815D6E0B9953D3200ED689B8A21D09A68BCC"
+      },
+      "entities": {
+        "crate1": {
+          "position": [
+            3,
+            1,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "ground": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "player": {
+          "position": [
+            0,
+            2,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "values": {
+        "grounded": 0
+      },
+      "scene": {
+        "active": "start",
+        "loadedAt": 0,
+        "appliedCount": 0,
+        "appliedHash": "cbf29ce484222325",
+        "patches": [],
+        "rejectedCount": 0,
+        "rejectedHash": "cbf29ce484222325",
+        "rejected": []
+      }
+    },
+    {
+      "tick": 60,
+      "renderer": "NullRenderer",
+      "backend": "None",
+      "source": {
+        "Game.cs": "72B4EF54FA20084CDCA2A7DA6E17B09C5A7CA20C097069B0025112B44F6D6534",
+        "Program.cs": "552E8A522DDAB20F59C29345BA31815D6E0B9953D3200ED689B8A21D09A68BCC"
+      },
+      "entities": {
+        "crate1": {
+          "position": [
+            2.9999006,
+            0.29502586,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0.000046982066,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "ground": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "player": {
+          "position": [
+            0,
+            0.445,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "values": {
+        "grounded": 1
+      },
+      "scene": {
+        "active": "start",
+        "loadedAt": 0,
+        "appliedCount": 0,
+        "appliedHash": "cbf29ce484222325",
+        "patches": [],
+        "rejectedCount": 0,
+        "rejectedHash": "cbf29ce484222325",
+        "rejected": []
+      }
+    }
+  ],
+  "captures": [],
+  "audio": null,
+  "info": [
+    "[ukiyo] target=headless game=CiProbe Game.cs=72B4EF54FA20 Program.cs=552E8A522DDA",
+    "[ukiyo] renderer=NullRenderer backend=None device=\"none\" profile=G0Unlit capture=False",
+    "[ukiyo] null frames=2 instances=0 sprites=17 meshes=0 materials=0 textures=2"
+  ]
+}
+exit 0
+
+$ ukiyo capture CiProbe --checkpoints 0 --out <out>
+{
+  "game": "CiProbe",
+  "exitCode": 0,
+  "timedOut": false,
+  "ms": "<ms>",
+  "snapshots": [
+    {
+      "tick": 0,
+      "renderer": "SoftwareRenderer",
+      "backend": "CPU",
+      "source": {
+        "Game.cs": "72B4EF54FA20084CDCA2A7DA6E17B09C5A7CA20C097069B0025112B44F6D6534",
+        "Program.cs": "552E8A522DDAB20F59C29345BA31815D6E0B9953D3200ED689B8A21D09A68BCC"
+      },
+      "entities": {
+        "crate1": {
+          "position": [
+            3,
+            1,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "ground": {
+          "position": [
+            0,
+            -0.5,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        },
+        "player": {
+          "position": [
+            0,
+            2,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "scale": [
+            1,
+            1,
+            1
+          ]
+        }
+      },
+      "values": {
+        "grounded": 0
+      },
+      "scene": {
+        "active": "start",
+        "loadedAt": 0,
+        "appliedCount": 0,
+        "appliedHash": "cbf29ce484222325",
+        "patches": [],
+        "rejectedCount": 0,
+        "rejectedHash": "cbf29ce484222325",
+        "rejected": []
+      }
+    }
+  ],
+  "captures": [
+    "<out>/headless-tick-000000.png"
+  ],
+  "audio": null,
+  "info": [
+    "[ukiyo] target=headless game=CiProbe Game.cs=72B4EF54FA20 Program.cs=552E8A522DDA",
+    "[ukiyo] renderer=SoftwareRenderer backend=CPU device=\"managed rasterizer\" profile=G0Unlit capture=True",
+    "[ukiyo] software frames=1 size=640x360"
+  ],
+  "out": "<out>"
+}
+exit 0
+
+# frame <out>/headless-tick-000000.png
+bytes=12155 sha256=064bbf32970dd1a03bf34b69f4716c2bf61646fed1f4a5fc92cfb3033717d69e
+
+$ ukiyo import --check samples
+{
+  "action": "check",
+  "importer": "tools/Ukiyo.Import/bin/Debug/net10.0/ukiyo-import.dll",
+  "buildMs": "<ms>",
+  "specs": [
+    {
+      "spec": "samples/ImportedMesh/art/meshes.import.json",
+      "exitCode": 0,
+      "outputs": [
+        {
+          "state": "up-to-date",
+          "output": "samples/ImportedMesh/Shared/gen/SceneMeshes.g.cs",
+          "summary": "mesh importer v1, 2 meshes, 555 vertices, 996 triangles, content 4eaad4f35129",
+          "contentHash": "4eaad4f3512910407950c74a61eb18cc07d3bfba3e0f1e554dbf3831304c8fcf"
+        }
+      ],
+      "info": [],
+      "status": "up-to-date"
+    },
+    {
+      "spec": "samples/TexturedQuad/art/quad.import.json",
+      "exitCode": 0,
+      "outputs": [
+        {
+          "state": "up-to-date",
+          "output": "samples/TexturedQuad/Shared/gen/QuadArt.g.cs",
+          "summary": "60x40, 5 frames, 1 animations, content b2320091ad58",
+          "contentHash": "b2320091ad58f274a30c05593f15d26588e3f1ad2b6177869681512dedb0135e"
+        }
+      ],
+      "info": [],
+      "status": "up-to-date"
+    }
+  ],
+  "stale": [],
+  "errors": [],
+  "wrote": []
+}
+exit 0
+
+# rm -r games/ && restore Ukiyo.slnx (script step, then the CLI no longer finds CiProbe)
+games/ absent; Ukiyo.slnx identical to before new-game
+
+$ ukiyo run CiProbe --checkpoints 0
+stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: ImportedMesh, LanternRun, LitCube, Minimap, RotatingCube, SceneHop, TexturedQuad
+exit 1
