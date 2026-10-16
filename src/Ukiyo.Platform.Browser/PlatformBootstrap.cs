@@ -147,7 +147,30 @@ public sealed partial class BrowserHost(BrowserOptions options) : IPlatformHost
             .Append(",\"width\":").Append(capture.Width)
             .Append(",\"height\":").Append(capture.Height)
             .Append(",\"snapshot\":").Append(runtime.SnapshotJson())
-            .Append(",\"png\":\"").Append(Convert.ToBase64String(capture.Png)).Append("\"}");
+            .Append(",\"png\":\"").Append(Convert.ToBase64String(capture.Png)).Append('"');
+        AppendPassCaptures(json, runtime, renderer);
+        json.Append('}');
+    }
+
+    /// <summary>Multi-camera frames add "passes": each pass alone at its rect size. Single-camera evidence keeps its exact shape.</summary>
+    private static void AppendPassCaptures(StringBuilder json, GameRuntime runtime, ThreeJsRenderer renderer)
+    {
+        if (runtime.LastFrame is not [{ Pass: not null }, ..])
+        {
+            return;
+        }
+
+        json.Append(",\"primaryPass\":").Append(runtime.PrimaryPass).Append(",\"passes\":[");
+        for (var pass = 0; pass < runtime.PassCount; pass++)
+        {
+            var capture = renderer.CaptureAsync(new CaptureRequest(runtime.Tick) { Pass = pass }, CancellationToken.None).AsTask().GetAwaiter().GetResult();
+            json.Append(pass > 0 ? "," : "").Append("{\"pass\":").Append(pass)
+                .Append(",\"width\":").Append(capture.Width)
+                .Append(",\"height\":").Append(capture.Height)
+                .Append(",\"png\":\"").Append(Convert.ToBase64String(capture.Png)).Append("\"}");
+        }
+
+        json.Append(']');
     }
 
     private static RenderExtent CurrentExtent()

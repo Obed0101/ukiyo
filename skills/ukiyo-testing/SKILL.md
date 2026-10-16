@@ -50,6 +50,11 @@ it uses (Physics, UI).
 Decode with `PngDecoder.Decode(png)` and assert pixels at known positions (a sprite's center, the clear color in a
 corner). Prefer a few well-chosen pixels over whole-image hashes, which break on harmless changes.
 
+Multi-camera games: `runtime.CaptureAsync(pass: k)` returns pass k alone at its rect size (`runtime.PassCount`,
+`runtime.PrimaryPass`, `runtime.LastFrame` describe the frame); assert on the pass image for what that camera sees and
+on the whole frame for where it lands. Headless `--capture` writes `…-pass-K.png` next to each frame, and
+`scripts/g1passes.sh` compares every pass across CPU, Metal and WebGL2 (`PassTests` has the patterns).
+
 ## Scenes and patches in tests
 
 A game with a `SceneRegistry` reads its scene JSON from `context.Assets`, which in tests is the test assembly: embed

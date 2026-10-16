@@ -19,7 +19,7 @@ Start a game: `dotnet run --project games/<Name>/Desktop` (or `samples/LanternRu
 | `pause` / `resume` | stop or continue the simulation (the window keeps drawing) |
 | `step` + `ticks` | advance exactly N ticks while paused |
 | `snapshot` | the game's snapshot JSON at the current tick |
-| `capture` | the real frame from the GPU (wgpu → Metal) as PNG |
+| `capture` | the real frame from the GPU (wgpu → Metal) as PNG. Optional `"pass"`: a pass id or `"primary"` for one camera of a multi-camera game alone at its rect size (the response adds `pass`, `passes`, `primaryPass`) |
 | `input` + `events` | queue key/pointer events (same JSON as input scripts, without `tick`); they apply on the next tick |
 | `record` + `on` | start recording the player's input; `on:false` stops and returns it as an input script |
 

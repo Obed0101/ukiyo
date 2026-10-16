@@ -14,6 +14,58 @@ public static class RenderValidation
     /// <summary>G1Lit light list limit per frame. Fixed so every shader can use a constant-size uniform array.</summary>
     public const int MaxLights = 8;
 
+    /// <summary>Camera passes per frame (main view, minimap, split screen for up to four players).</summary>
+    public const int MaxPasses = 4;
+
+    /// <summary>
+    /// Pass ids, count, primary and rect. The rect must lie inside the drawing buffer and be at least 1×1; with an empty
+    /// drawing buffer (a minimized window) nothing is drawn, so only the ids and non-negative rect values are checked.
+    /// </summary>
+    public static void Validate(FramePass pass, RenderExtent drawingBuffer)
+    {
+        if (pass.Count is < 1 or > MaxPasses)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"pass count {pass.Count} outside 1..{MaxPasses}");
+        }
+
+        if (pass.Id < 0 || pass.Id >= pass.Count || pass.PrimaryId < 0 || pass.PrimaryId >= pass.Count)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"pass id {pass.Id} or primary {pass.PrimaryId} outside 0..{pass.Count - 1}");
+        }
+
+        var rect = pass.Rect;
+        if (rect.X < 0 || rect.Y < 0 || rect.Width < 0 || rect.Height < 0)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"pass {pass.Id} rect {rect} has a negative value");
+        }
+
+        if (drawingBuffer.IsEmpty)
+        {
+            return;
+        }
+
+        RequirePassInside(pass, drawingBuffer);
+    }
+
+    /// <summary>Renderers check the rect against their own drawing buffer too, which is what they write into.</summary>
+    public static void RequirePassInside(FramePass pass, RenderExtent drawingBuffer)
+    {
+        var rect = pass.Rect;
+        if (rect.Width < 1 || rect.Height < 1 || (long)rect.X + rect.Width > drawingBuffer.Width || (long)rect.Y + rect.Height > drawingBuffer.Height)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"pass {pass.Id} rect {rect} is empty or outside the {drawingBuffer.Width}x{drawingBuffer.Height} drawing buffer");
+        }
+    }
+
+    /// <summary>Capture of pass <paramref name="pass"/> on a frame with <paramref name="passCount"/> passes (1 for a single-camera frame).</summary>
+    public static void RequireCapturablePass(int? pass, int passCount)
+    {
+        if (pass is { } id && (id < 0 || id >= passCount))
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"capture of pass {id}, but the last frame has {passCount} pass(es)");
+        }
+    }
+
     public static void Validate(TextureData texture)
     {
         if (texture.Width is <= 0 or > MaxTextureSize || texture.Height is <= 0 or > MaxTextureSize)
@@ -283,6 +335,11 @@ public static class RenderValidation
         if (packet.Lighting is { } lighting)
         {
             Validate(lighting);
+        }
+
+        if (packet.Pass is { } pass)
+        {
+            Validate(pass, packet.Viewport);
         }
     }
 

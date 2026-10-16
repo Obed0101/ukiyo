@@ -153,6 +153,8 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
     private readonly ResourceTable<MaterialData> _materials = new();
     private readonly ResourceTable<GpuTexture> _textures = new();
     private nint _spriteShader, _spriteBindGroupLayout, _spritePipelineLayout, _spritePipeline, _spriteVertices;
+    private nint _rectClearVertices;
+    private GpuTexture? _whiteTexel;
     private nint _nearestSampler, _linearSampler;
     private readonly List<string> _deviceErrors = [];
     private GCHandle _self;
@@ -162,7 +164,10 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
     private nint _depthTexture, _depthView;
     private uint _surfaceFormat;
     private RenderExtent _extent;
-    private RenderPacket? _lastPacket;
+    private readonly PassSequencer _passes = new();
+    private readonly List<RenderPacket> _pendingPasses = [];
+    private readonly PassTarget?[] _passTargets = new PassTarget?[RenderValidation.MaxPasses];
+    private RenderPacket[]? _lastFrame;
     private bool _disposed;
 
     public WgpuRenderer(nint metalLayer)
@@ -175,7 +180,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         _metalLayer = metalLayer;
     }
 
-    public RenderCapabilities Capabilities { get; private set; } = new("WgpuRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true };
+    public RenderCapabilities Capabilities { get; private set; } = new("WgpuRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true, SupportsPasses = true };
 
     public long FramesPresented { get; private set; }
 
@@ -225,7 +230,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         CreatePipeline();
         CreateLitPipeline();
         CreateSpritePipeline();
-        Capabilities = new RenderCapabilities("WgpuRenderer", "Metal", $"{device} · wgpu-native {NativeVersion}", configuration.Profile, SupportsCapture: true) { SupportsSprites = true };
+        Capabilities = new RenderCapabilities("WgpuRenderer", "Metal", $"{device} · wgpu-native {NativeVersion}", configuration.Profile, SupportsCapture: true) { SupportsSprites = true, SupportsPasses = true };
         ThrowOnDeviceErrors("initialize");
         return ValueTask.CompletedTask;
     }
@@ -276,18 +281,28 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         ConfigureSurface();
     }
 
+    /// <summary>
+    /// Draws and presents a frame. A multi-camera frame is collected pass by pass (each checked on arrival) and drawn and
+    /// presented when its last pass arrives: one surface texture, one present, whatever the pass count.
+    /// </summary>
     public void Render(RenderPacket packet)
     {
         RequireDevice();
         RenderValidation.Validate(packet);
         RenderValidation.RequireProfile(Capabilities.Profile, packet);
-        _lastPacket = packet;
+        if (!AssembleFrame(packet))
+        {
+            return;
+        }
+
+        var frame = _lastFrame!;
         if (_extent.IsEmpty)
         {
             SkippedFrames++;
             return;
         }
 
+        var multiCamera = frame[0].Pass is not null;
         var surfaceTexture = default(SurfaceTexture);
         wgpuSurfaceGetCurrentTexture(_surface, &surfaceTexture);
         switch (surfaceTexture.Status)
@@ -318,7 +333,15 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         var view = Require(wgpuTextureCreateView(surfaceTexture.Texture, null), "surface view");
         try
         {
-            Encode(packet, view, _depthView, (uint)_extent.Width, (uint)_extent.Height, copy: null);
+            if (multiCamera)
+            {
+                ComposePasses(frame, view);
+            }
+            else
+            {
+                Encode(packet, view, _depthView, (uint)_extent.Width, (uint)_extent.Height);
+            }
+
             if (wgpuSurfacePresent(_surface) != WgpuConst.StatusSuccess)
             {
                 throw new RenderException(RenderErrorCode.BackendFailure, "wgpuSurfacePresent failed");
@@ -335,25 +358,75 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         ThrowOnDeviceErrors($"frame {packet.Sequence}");
     }
 
-    /// <summary>Re-renders the last packet into an offscreen texture of the same size and reads it back from the GPU.</summary>
+    /// <summary>
+    /// Re-renders the last frame offscreen and reads it back from the GPU: the whole drawing buffer (every pass composed
+    /// exactly as presented), or one pass alone at its rect size.
+    /// </summary>
     public ValueTask<CaptureResult> CaptureAsync(CaptureRequest request, CancellationToken cancellationToken)
     {
         RequireDevice();
-        var packet = _lastPacket ?? throw new RenderException(RenderErrorCode.NotInitialized, "capture requested before any frame");
-        if (packet.Tick != request.Tick)
+        _passes.RequireComplete();
+        var frame = _lastFrame ?? throw new RenderException(RenderErrorCode.NotInitialized, "capture requested before any frame");
+        if (frame[0].Tick != request.Tick)
         {
-            throw new RenderException(RenderErrorCode.OutOfRange, $"capture for tick {request.Tick} but last frame is tick {packet.Tick}");
+            throw new RenderException(RenderErrorCode.OutOfRange, $"capture for tick {request.Tick} but last frame is tick {frame[0].Tick}");
         }
 
+        RenderValidation.RequireCapturablePass(request.Pass, frame[0].Pass?.Count ?? 1);
+        if (request.Pass is { } id && frame[id].Pass is { } pass)
+        {
+            var passTarget = PassTargetFor(pass);
+            Encode(frame[id], passTarget.ColorView, passTarget.DepthView, passTarget.Width, passTarget.Height);
+            return ValueTask.FromResult(ReadBack(passTarget.Color, passTarget.Width, passTarget.Height));
+        }
+
+        var multiCamera = frame[0].Pass is not null;
         var width = (uint)_extent.Width;
         var height = (uint)_extent.Height;
-        var bytesPerRow = (width * 4 + 255) & ~255u;
         var target = CreateTexture(width, height, _surfaceFormat, WgpuConst.TextureUsageRenderAttachment | WgpuConst.TextureUsageCopySrc, "capture color");
         var targetView = Require(wgpuTextureCreateView(target, null), "capture view");
+        try
+        {
+            if (multiCamera)
+            {
+                ComposePasses(frame, targetView);
+            }
+            else
+            {
+                Encode(frame[0], targetView, _depthView, width, height);
+            }
+
+            return ValueTask.FromResult(ReadBack(target, width, height));
+        }
+        finally
+        {
+            wgpuTextureViewRelease(targetView);
+            wgpuTextureDestroy(target);
+            wgpuTextureRelease(target);
+        }
+    }
+
+    /// <summary>Copies a color texture of the surface format into a mapped buffer and encodes it as PNG (RGBA, opaque).</summary>
+    private CaptureResult ReadBack(nint texture, uint width, uint height)
+    {
+        var bytesPerRow = (width * 4 + 255) & ~255u;
         var readback = CreateBuffer((ulong)bytesPerRow * height, WgpuConst.BufferUsageMapRead | WgpuConst.BufferUsageCopyDst, "capture readback");
         try
         {
-            Encode(packet, targetView, _depthView, width, height, copy: (target, readback, bytesPerRow));
+            var encoder = Require(wgpuDeviceCreateCommandEncoder(_device, null), "readback encoder");
+            try
+            {
+                var source = new TexelCopyTextureInfo { Texture = texture, Aspect = WgpuConst.TextureAspectAll };
+                var destination = new TexelCopyBufferInfo { Buffer = readback, Layout = new TexelCopyBufferLayout { BytesPerRow = bytesPerRow, RowsPerImage = height } };
+                var size = new Extent3D { Width = width, Height = height, DepthOrArrayLayers = 1 };
+                wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &size);
+                Submit(encoder);
+            }
+            finally
+            {
+                wgpuCommandEncoderRelease(encoder);
+            }
+
             var status = WgpuConst.MapAsyncSuccess + 1;
             var callback = new BufferMapCallbackInfo
             {
@@ -390,16 +463,145 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
 
             wgpuBufferUnmap(readback);
             ThrowOnDeviceErrors("capture");
-            return ValueTask.FromResult(new CaptureResult(CaptureStatus.Captured, PngEncoder.EncodeRgba(rgba, (int)width, (int)height), (int)width, (int)height, "Metal"));
+            return new CaptureResult(CaptureStatus.Captured, PngEncoder.EncodeRgba(rgba, (int)width, (int)height), (int)width, (int)height, "Metal");
         }
         finally
         {
             wgpuBufferDestroy(readback);
             wgpuBufferRelease(readback);
-            wgpuTextureViewRelease(targetView);
-            wgpuTextureDestroy(target);
-            wgpuTextureRelease(target);
         }
+    }
+
+    /// <summary>
+    /// Collects multi-camera passes until the frame is complete. Returns true when <see cref="_lastFrame"/> holds a whole
+    /// frame to draw (a single-camera packet always is one). Each pass's handles are checked as it arrives.
+    /// </summary>
+    private bool AssembleFrame(RenderPacket packet)
+    {
+        var completesFrame = _passes.Accept(packet);
+        if (packet.Pass is not { } pass)
+        {
+            _lastFrame = [packet];
+            return true;
+        }
+
+        try
+        {
+            RequireDrawable(packet);
+        }
+        catch
+        {
+            _passes.Abort();
+            _pendingPasses.Clear();
+            throw;
+        }
+
+        if (pass.Id == 0)
+        {
+            _pendingPasses.Clear();
+        }
+
+        _pendingPasses.Add(packet);
+        if (!completesFrame)
+        {
+            return false;
+        }
+
+        _lastFrame = [.. _pendingPasses];
+        _pendingPasses.Clear();
+        return true;
+    }
+
+    /// <summary>The per-pass limits and handle checks <see cref="Encode"/> would hit, run when the pass arrives instead of with the last pass.</summary>
+    private void RequireDrawable(RenderPacket packet)
+    {
+        if (packet.Instances.Count > MaxInstancesPerFrame || packet.Sprites.Count > MaxSpritesPerFrame)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{packet.Instances.Count} instances / {packet.Sprites.Count} sprites exceed {MaxInstancesPerFrame} / {MaxSpritesPerFrame} per pass");
+        }
+
+        foreach (var instance in packet.Instances)
+        {
+            RenderValidation.RequireLitInputs(_meshes.Get(instance.Mesh).HasNormals, _materials.Get(instance.Material), packet, instance);
+        }
+
+        foreach (var sprite in packet.Sprites)
+        {
+            _textures.Get(sprite.Texture);
+        }
+    }
+
+    /// <summary>
+    /// Multi-camera frame into <paramref name="view"/> (the surface or a capture target of the drawing-buffer size), one
+    /// render pass per camera pass in pass order, with the rect as viewport and scissor. Pass 0 clears the whole buffer
+    /// to its clear color (pixels no rect covers keep it); later passes keep the frame and clear only their rect. Depth
+    /// is cleared for every pass. Metal surfaces in wgpu-native 29 are not copy destinations (usages 0x11), so passes are
+    /// drawn in place rather than copied in; viewport offsets are whole pixels, so coverage matches a pass drawn alone.
+    /// </summary>
+    private void ComposePasses(RenderPacket[] frame, nint view)
+    {
+        foreach (var packet in frame)
+        {
+            RenderValidation.RequirePassInside(packet.Pass!.Value, _extent);
+        }
+
+        foreach (var packet in frame)
+        {
+            var pass = packet.Pass!.Value;
+            Encode(packet, view, _depthView, (uint)pass.Rect.Width, (uint)pass.Rect.Height, placement: pass);
+        }
+    }
+
+    /// <summary>
+    /// Six vertices covering the viewport in the sprite layout, tinted with the pass's clear color at alpha 1: drawn with the
+    /// sprite pipeline and a white texel, straight-alpha blending gives exactly the clear color inside the scissor.
+    /// </summary>
+    private void WriteRectClear(Vector4 clear)
+    {
+        ReadOnlySpan<float> corners = [-1f, -1f, 1f, -1f, 1f, 1f, -1f, -1f, 1f, 1f, -1f, 1f];
+        var vertices = new float[6 * SpriteVertexFloats];
+        for (var i = 0; i < 6; i++)
+        {
+            var at = i * SpriteVertexFloats;
+            vertices[at] = corners[i * 2];
+            vertices[at + 1] = corners[i * 2 + 1];
+            vertices[at + 2] = 0.5f;
+            vertices[at + 3] = 0.5f;
+            vertices[at + 4] = clear.X;
+            vertices[at + 5] = clear.Y;
+            vertices[at + 6] = clear.Z;
+            vertices[at + 7] = 1f;
+        }
+
+        fixed (float* data = vertices)
+        {
+            wgpuQueueWriteBuffer(_queue, _rectClearVertices, 0, data, (nuint)(vertices.Length * sizeof(float)));
+        }
+    }
+
+    /// <summary>Color (surface format) and depth targets of one pass id for per-pass captures, recreated when the pass changes size.</summary>
+    private PassTarget PassTargetFor(FramePass pass)
+    {
+        var width = (uint)pass.Rect.Width;
+        var height = (uint)pass.Rect.Height;
+        if (_passTargets[pass.Id] is { } existing && existing.Width == width && existing.Height == height)
+        {
+            return existing;
+        }
+
+        _passTargets[pass.Id]?.Release();
+        var color = CreateTexture(width, height, _surfaceFormat, WgpuConst.TextureUsageRenderAttachment | WgpuConst.TextureUsageCopySrc, "pass color");
+        var depth = CreateTexture(width, height, WgpuConst.FormatDepth24Plus, WgpuConst.TextureUsageRenderAttachment, "pass depth");
+        var target = new PassTarget(color, Require(wgpuTextureCreateView(color, null), "pass color view"), depth, Require(wgpuTextureCreateView(depth, null), "pass depth view"), width, height);
+        _passTargets[pass.Id] = target;
+        return target;
+    }
+
+    private void Submit(nint encoder)
+    {
+        var commands = Require(wgpuCommandEncoderFinish(encoder, null), "command buffer");
+        wgpuQueueSubmit(_queue, 1, &commands);
+        wgpuCommandBufferRelease(commands);
     }
 
     public void Dispose()
@@ -426,12 +628,26 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
 
         Release(ref _spriteVertices, wgpuBufferRelease);
+        if (_rectClearVertices != 0)
+        {
+            wgpuBufferDestroy(_rectClearVertices);
+        }
+
+        Release(ref _rectClearVertices, wgpuBufferRelease);
+        _whiteTexel?.Release();
+        _whiteTexel = null;
         Release(ref _spritePipeline, wgpuRenderPipelineRelease);
         Release(ref _spritePipelineLayout, wgpuPipelineLayoutRelease);
         Release(ref _spriteBindGroupLayout, wgpuBindGroupLayoutRelease);
         Release(ref _spriteShader, wgpuShaderModuleRelease);
         Release(ref _nearestSampler, wgpuSamplerRelease);
         Release(ref _linearSampler, wgpuSamplerRelease);
+
+        for (var i = 0; i < _passTargets.Length; i++)
+        {
+            _passTargets[i]?.Release();
+            _passTargets[i] = null;
+        }
 
         ReleaseDepth();
         Release(ref _lightsBindGroup, wgpuBindGroupRelease);
@@ -474,7 +690,11 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
     }
 
-    private void Encode(RenderPacket packet, nint colorView, nint depthView, uint width, uint height, (nint Texture, nint Buffer, uint BytesPerRow)? copy)
+    /// <summary>
+    /// One camera that sees a <paramref name="width"/>×<paramref name="height"/> drawing buffer: a single-camera frame, a
+    /// pass drawn alone (captures) or, with <paramref name="placement"/>, a pass drawn at its rect inside the frame.
+    /// </summary>
+    private void Encode(RenderPacket packet, nint colorView, nint depthView, uint width, uint height, FramePass? placement = null)
     {
         if (packet.Instances.Count > MaxInstancesPerFrame)
         {
@@ -519,6 +739,11 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         WriteLights(packet.Lighting);
 
         var spriteBatches = WriteSpriteVertices(packet, width, height);
+        var clearsRectOnly = placement is { Id: > 0 };
+        if (clearsRectOnly)
+        {
+            WriteRectClear(packet.ClearColor);
+        }
 
         var encoder = Require(wgpuDeviceCreateCommandEncoder(_device, null), "command encoder");
         try
@@ -527,7 +752,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             {
                 View = colorView,
                 DepthSlice = WgpuConst.DepthSliceUndefined,
-                LoadOp = WgpuConst.LoadOpClear,
+                LoadOp = clearsRectOnly ? WgpuConst.LoadOpLoad : WgpuConst.LoadOpClear,
                 StoreOp = WgpuConst.StoreOpStore,
                 ClearValue = new Color { R = packet.ClearColor.X, G = packet.ClearColor.Y, B = packet.ClearColor.Z, A = packet.ClearColor.W },
             };
@@ -540,6 +765,20 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             };
             var passDescriptor = new RenderPassDescriptor { ColorAttachmentCount = 1, ColorAttachments = &color, DepthStencilAttachment = &depth };
             var pass = Require(wgpuCommandEncoderBeginRenderPass(encoder, &passDescriptor), "render pass");
+            if (placement is { Rect: var rect })
+            {
+                wgpuRenderPassEncoderSetViewport(pass, rect.X, rect.Y, rect.Width, rect.Height, 0f, 1f);
+                wgpuRenderPassEncoderSetScissorRect(pass, (uint)rect.X, (uint)rect.Y, (uint)rect.Width, (uint)rect.Height);
+            }
+
+            if (clearsRectOnly)
+            {
+                wgpuRenderPassEncoderSetPipeline(pass, _spritePipeline);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, _rectClearVertices, 0, WgpuConst.WholeSize);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, _whiteTexel!.BindGroup, 0, null);
+                wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
+            }
+
             // Submission order is kept; the pipeline switches only when consecutive instances differ in vertex layout.
             var boundLit = (bool?)null;
             foreach (var (mesh, offset) in draws)
@@ -574,17 +813,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
 
             wgpuRenderPassEncoderEnd(pass);
             wgpuRenderPassEncoderRelease(pass);
-            if (copy is { } c)
-            {
-                var source = new TexelCopyTextureInfo { Texture = c.Texture, Aspect = WgpuConst.TextureAspectAll };
-                var destination = new TexelCopyBufferInfo { Buffer = c.Buffer, Layout = new TexelCopyBufferLayout { BytesPerRow = c.BytesPerRow, RowsPerImage = height } };
-                var size = new Extent3D { Width = width, Height = height, DepthOrArrayLayers = 1 };
-                wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &size);
-            }
-
-            var commands = Require(wgpuCommandEncoderFinish(encoder, null), "command buffer");
-            wgpuQueueSubmit(_queue, 1, &commands);
-            wgpuCommandBufferRelease(commands);
+            Submit(encoder);
         }
         finally
         {
@@ -684,6 +913,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         _nearestSampler = CreateSampler(WgpuConst.FilterModeNearest, "nearest sampler");
         _linearSampler = CreateSampler(WgpuConst.FilterModeLinear, "linear sampler");
         _spriteVertices = CreateBuffer((ulong)(MaxSpritesPerFrame * 6 * SpriteVertexFloats * sizeof(float)), WgpuConst.BufferUsageVertex | WgpuConst.BufferUsageCopyDst, "sprite vertices");
+        _rectClearVertices = CreateBuffer(6 * SpriteVertexFloats * sizeof(float), WgpuConst.BufferUsageVertex | WgpuConst.BufferUsageCopyDst, "pass rect clear vertices");
 
         var vsEntry = Utf8("vs_sprite");
         var fsEntry = Utf8("fs_sprite");
@@ -724,6 +954,9 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             };
             _spritePipeline = Require(wgpuDeviceCreateRenderPipeline(_device, &descriptor), "sprite pipeline");
         }
+
+        // Multi-camera rect clears are a quad through this pipeline sampling one white texel.
+        _whiteTexel = UploadTexture(new TextureData(1, 1, [255, 255, 255, 255]));
     }
 
     private nint CreateSampler(uint filter, string label)
@@ -1220,6 +1453,25 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         public bool Done;
         public uint Status;
         public nint Handle;
+    }
+
+    /// <summary>Offscreen color (surface format, copy source) and depth of one pass at its rect size.</summary>
+    private sealed class PassTarget(nint color, nint colorView, nint depth, nint depthView, uint width, uint height)
+    {
+        public nint Color { get; private set; } = color;
+        public nint ColorView { get; private set; } = colorView;
+        public nint Depth { get; private set; } = depth;
+        public nint DepthView { get; private set; } = depthView;
+        public uint Width { get; } = width;
+        public uint Height { get; } = height;
+
+        public void Release()
+        {
+            if (ColorView != 0) { wgpuTextureViewRelease(ColorView); ColorView = 0; }
+            if (Color != 0) { wgpuTextureDestroy(Color); wgpuTextureRelease(Color); Color = 0; }
+            if (DepthView != 0) { wgpuTextureViewRelease(DepthView); DepthView = 0; }
+            if (Depth != 0) { wgpuTextureDestroy(Depth); wgpuTextureRelease(Depth); Depth = 0; }
+        }
     }
 
     private sealed class GpuTexture(nint texture, nint view, nint bindGroup)

@@ -171,4 +171,65 @@ public sealed class DevBridgeTests
 
         Assert.False(File.Exists(discovery));
     }
+
+    [Fact]
+    public async Task Bridge_capture_takes_a_pass_id_or_primary_for_multi_camera_games()
+    {
+        var extent = new RenderExtent(320, 200, 1f);
+        var runtime = new GameRuntime(new Ukiyo.Samples.Minimap.MinimapGame(), new SourceIdentity(new Dictionary<string, string>()));
+        using var renderer = new SoftwareRenderer();
+        await runtime.StartAsync(renderer, new RenderConfiguration("test", extent));
+        runtime.RenderFrame(extent);
+        using var session = DevBridgeServer.TryStart(runtime, "test") ?? throw new InvalidOperationException("dev bridge disabled by UKIYO_DEV_BRIDGE");
+        var server = (DevBridgeServer)session;
+        var discovery = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ukiyo", "live", $"{Environment.ProcessId}.json");
+        string token;
+        using (var file = JsonDocument.Parse(await File.ReadAllTextAsync(discovery)))
+        {
+            token = file.RootElement.GetProperty("token").GetString()!;
+        }
+
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.Port);
+        using var reader = new StreamReader(client.GetStream());
+        await using var writer = new StreamWriter(client.GetStream()) { AutoFlush = true, NewLine = "\n" };
+        long id = 0;
+        async Task<JsonElement> Capture(object? pass)
+        {
+            var request = new Dictionary<string, object> { ["id"] = ++id, ["cmd"] = "capture", ["token"] = token };
+            if (pass is not null)
+            {
+                request["pass"] = pass;
+            }
+
+            await writer.WriteLineAsync(JsonSerializer.Serialize(request));
+            var line = reader.ReadLineAsync();
+            var deadline = DateTime.UtcNow + AnswerTimeout;
+            while (!line.IsCompleted && DateTime.UtcNow < deadline)
+            {
+                session.Pump();
+                await Task.Delay(5);
+            }
+
+            Assert.True(line.IsCompleted, "no answer from the bridge");
+            return JsonDocument.Parse(await line ?? "{}").RootElement.Clone();
+        }
+
+        var map = Ukiyo.Samples.Minimap.MinimapGame.MinimapRect(extent);
+        var whole = (await Capture(null)).GetProperty("result");
+        Assert.Equal((320, 200), (whole.GetProperty("width").GetInt32(), whole.GetProperty("height").GetInt32()));
+        Assert.False(whole.TryGetProperty("pass", out _));
+
+        var primary = (await Capture("primary")).GetProperty("result");
+        Assert.Equal((0, 2, 0), (primary.GetProperty("pass").GetInt32(), primary.GetProperty("passes").GetInt32(), primary.GetProperty("primaryPass").GetInt32()));
+        Assert.Equal(320, primary.GetProperty("width").GetInt32());
+
+        var minimap = (await Capture(1)).GetProperty("result");
+        Assert.Equal((map.Width, map.Height), (minimap.GetProperty("width").GetInt32(), minimap.GetProperty("height").GetInt32()));
+
+        var missing = await Capture(2);
+        Assert.False(missing.GetProperty("ok").GetBoolean());
+        Assert.Contains("OutOfRange", missing.GetProperty("error").GetString());
+        Assert.False((await Capture("main")).GetProperty("ok").GetBoolean());
+    }
 }

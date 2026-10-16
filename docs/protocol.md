@@ -10,7 +10,7 @@ Little-endian, 4-byte aligned. Control data (capabilities, evidence) uses JSON; 
 |---|---|---|
 | 0 | u32 | magic: `0x42524B55` "UKRB" (resources) or `0x50524B55` "UKRP" (frame) |
 | 4 | u16 | version = 1 |
-| 6 | u16 | flags: resources 0; frame `0x1` = 2D section present, `0x2` = lighting section present (G1Lit). Unknown bits fail with `InvalidPacket`. |
+| 6 | u16 | flags: resources 0; frame `0x1` = 2D section present, `0x2` = lighting section present (G1Lit), `0x4` = pass section present (multi-camera). Unknown bits fail with `InvalidPacket`. |
 | 8 | u32 | command count (resources) or sequence (frame) |
 | 12 | u32 | total byte length; must equal the payload length |
 
@@ -86,17 +86,41 @@ Present only when the game set `FrameBuilder.Lighting`, so unlit frames stay byt
 Lights apply in packet order. The shading model is specified once in [rendering-lighting.md](rendering-lighting.md).
 A lit material drawn on a mesh without normals, or in a frame without this section, fails with `InvalidPacket`.
 
+### Pass section (flag `0x4`, multi-camera)
+
+Present only on the packets of a multi-camera frame, so single-camera frames stay byte-identical. Appended last, after
+every other section that is present (32 bytes, all `u32`):
+
+| Offset in section | Field |
+|---|---|
+| 0 | pass id, `0 … count − 1` |
+| 4 | pass count of the frame, `1 … 4` |
+| 8 | primary pass id, `< count`, the same in every pass of the frame |
+| 12 | padding |
+| 16, 20 | rect x, y: drawing-buffer pixels, origin top-left, +Y down |
+| 24, 28 | rect width, height: ≥ 1, and x + width ≤ viewport width, y + height ≤ viewport height |
+
+A frame of N passes is N consecutive packets: sequence s, s+1, …, ids 0, 1, … in order, same tick, count, primary and
+viewport (the drawing buffer). Anything else (a pass before pass 0, a skipped or repeated pass, a single-camera packet
+between passes) fails with `InvalidPacket`. Each pass packet is a complete frame description for its own camera:
+clear color, camera, instances, its own 2D section and its own lighting section. The model (rects, clears, draw order,
+captures) is specified in [rendering-passes.md](rendering-passes.md).
+
 ## Profiles
 
 `RenderProfile` is cumulative: `G0Unlit` (1) is everything above except command 5, material flag `0x2` and frame flag
 `0x2`; `G1Lit` (2) adds them. A game declares its profile (`IGame.Profile`, default `G0Unlit`) and the runtime
 initializes the renderer with it; `RenderCapabilities.Profile` reports the profile the renderer runs. G1Lit data sent
 to a renderer running G0Unlit, or a profile a renderer does not implement, fails with `UnsupportedFeature`.
+Multi-camera passes (frame flag `0x4`) are not tied to a profile: G0Unlit and G1Lit games can both use them; a renderer
+that does not declare `RenderCapabilities.SupportsPasses` gets `UnsupportedFeature` from the runtime instead.
 
 ## Limits and errors
 
 Vertices ≤ 2^20, indices ≤ 3·2^20 (multiple of 3), instances ≤ 2^16, sprites ≤ 2^16, texture side ≤ 4096, lights ≤ 8
-per frame (`RenderValidation.MaxLights`; more fail with `OutOfRange`, non-finite light values with `NonFiniteValue`). Any
+per frame (`RenderValidation.MaxLights`; more fail with `OutOfRange`, non-finite light values with `NonFiniteValue`),
+passes ≤ 4 per frame (`RenderValidation.MaxPasses`; a count of 0 or 5+, an id or primary ≥ count, or a rect that is
+empty or leaves the drawing buffer fail with `OutOfRange`; with an empty drawing buffer the rect is not checked). Any
 violation fails with a typed error; JS errors carry the prefix `[RENDER:<Code>]` and are mapped back to
 `RenderException` in C#:
 `InvalidPacket`, `UnsupportedVersion`, `TruncatedPayload`, `StaleHandle`, `UnknownHandle`, `WrongResourceKind`,

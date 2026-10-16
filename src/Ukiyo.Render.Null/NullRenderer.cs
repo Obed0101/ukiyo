@@ -13,14 +13,18 @@ public sealed class NullRenderer : IRenderer
     private readonly ResourceTable<MeshData> _meshes = new();
     private readonly ResourceTable<MaterialData> _materials = new();
     private readonly ResourceTable<TextureData> _textures = new();
+    private readonly PassSequencer _passes = new();
     private bool _initialized;
     private bool _disposed;
 
-    public RenderCapabilities Capabilities { get; private set; } = new("NullRenderer", "None", "none", RenderProfile.G0Unlit, SupportsCapture: false) { SupportsSprites = true };
+    public RenderCapabilities Capabilities { get; private set; } = new("NullRenderer", "None", "none", RenderProfile.G0Unlit, SupportsCapture: false) { SupportsSprites = true, SupportsPasses = true };
 
     public long FramesRendered { get; private set; }
 
     public long LightsSubmitted { get; private set; }
+
+    /// <summary>Pass packets of multi-camera frames. <see cref="FramesRendered"/> counts complete frames, so a two-pass frame adds one there and two here.</summary>
+    public long PassesRendered { get; private set; }
 
     public long InstancesSubmitted { get; private set; }
 
@@ -88,17 +92,36 @@ public sealed class NullRenderer : IRenderer
         RequireReady();
         RenderValidation.Validate(packet);
         RenderValidation.RequireProfile(Capabilities.Profile, packet);
-        foreach (var instance in packet.Instances)
+        var completesFrame = _passes.Accept(packet);
+        try
         {
-            RenderValidation.RequireLitInputs(_meshes.Get(instance.Mesh).Normals is not null, _materials.Get(instance.Material), packet, instance);
+            if (packet.Pass is { } pass && !Extent.IsEmpty)
+            {
+                RenderValidation.RequirePassInside(pass, Extent);
+            }
+
+            foreach (var instance in packet.Instances)
+            {
+                RenderValidation.RequireLitInputs(_meshes.Get(instance.Mesh).Normals is not null, _materials.Get(instance.Material), packet, instance);
+            }
+
+            foreach (var sprite in packet.Sprites)
+            {
+                _textures.Get(sprite.Texture);
+            }
+        }
+        catch
+        {
+            _passes.Abort();
+            throw;
         }
 
-        foreach (var sprite in packet.Sprites)
+        if (completesFrame)
         {
-            _textures.Get(sprite.Texture);
+            FramesRendered++;
         }
 
-        FramesRendered++;
+        PassesRendered += packet.Pass is null ? 0 : 1;
         InstancesSubmitted += packet.Instances.Count;
         SpritesSubmitted += packet.Sprites.Count;
         LightsSubmitted += packet.Lighting?.Lights.Count ?? 0;
