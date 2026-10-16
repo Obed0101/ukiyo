@@ -42,7 +42,8 @@ public sealed class MyGame : IGame
 ```
 
 - `Update` runs at a fixed 60 Hz (`Simulation.TickRate`, `Simulation.TickSecondsF`). After N updates the world is at tick N.
-- `Extract` may run 0..n times per tick. It must not change state.
+- `Extract` may run 0..n times per tick. It must not change state. In it, `frame.ClearColor` (linear RGBA `Vector4`),
+  `frame.Camera` and `frame.Camera2D` set the background and view; drawing itself is in ukiyo-rendering.
 - `Snapshot` is the machine-readable truth agents and tests compare: entity poses (`EntityPose`, `EntityPose.Planar(pos2, rot)`)
   plus named numbers in `Values` (score, state, lives…). Put every value you will want to assert on in it.
 

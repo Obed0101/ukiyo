@@ -20,7 +20,8 @@ games/<Name>/
 
 1. **Scaffold.** Either way gives the same layout.
    - Tool: `ukiyo_new_game {"name":"SkyLantern","template":"2d"}` creates `games/SkyLantern/` with all four hosts
-     (pass `hosts` for fewer) and adds them to `Ukiyo.slnx`. The 2d template has a sprite, a physics body,
+     (`template` defaults to `"2d"`; `hosts` is an array of `"Headless"`, `"Desktop"`, `"Browser"`, `"Export.Desktop"`,
+     default all four) and adds them to `Ukiyo.slnx`. The 2d template has a sprite, a physics body,
      arrow/WASD movement, jump, a HUD label and a `SceneRegistry` with one prefab (`crate`) and one scene (`start`),
      the place to grow levels and accept patches (ukiyo-core, `docs/scenes-patches.md`); 3d has a mesh turned by the
      arrow keys. The class is `SkyLanternGame` in `Shared/Game.cs`.

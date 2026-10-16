@@ -8,7 +8,7 @@ LitCube) keep `<game>/<Host>/` and still build. Nothing in `IGame` or the engine
 ```
 MyGame/
   Shared/                    compiled into EVERY host and hashed into the source identity; no #if, no host APIs
-    Program.cs               the only entry point; never edited after the copy
+    Program.cs               the only entry point; edited only by the rename and its one `new CubeGame()` line
     Game.cs                  the IGame (the template ships the G0 CubeGame verbatim)
     Scenes/                  prefabs, scene setup, SceneRegistry wiring (scene JSON itself goes in assets/scenes/)
     Entities/                entity types and their state
@@ -103,22 +103,33 @@ grep -rl --exclude-dir=bin --exclude-dir=obj -e MyGame -e my-game . | xargs sed 
 cd ../..
 ```
 
+`sed -i ''` is the macOS (BSD) form; with GNU sed on Linux write `sed -i` without the `''`.
+
 That is the whole rename: `MyGame` (namespace `Ukiyo.Games.MyGame`, `Name`, page title, project names) and `my-game`
 (assembly names) are the only template tokens; `grep -r -e MyGame -e my-game games/<Name>` must print nothing.
 `Program.cs` keeps creating `CubeGame`: rename the class in `Game.cs` and that one line together when you replace the
-cube. Then add the four hosts to `Ukiyo.slnx` (a `<Folder Name="/games/">` with
-`<Project Path="games/<Name>/Hosts/<Host>/<Name>.<Host>.csproj" />` each) and prove it:
+cube. Then add the four hosts to `Ukiyo.slnx` inside `<Folder Name="/games/">` (reuse it if it exists; otherwise
+create it after `/templates/`), one `<Project Path="games/<Name>/Hosts/<Host>/<Name>.<Host>.csproj" />` each,
+sorted by game name as `ukiyo_new_game` does, and prove it:
 
 ```sh
 dotnet build games/<Name>/Hosts/Headless && dotnet run --project games/<Name>/Hosts/Headless -- --checkpoints 0,60
 dotnet build games/<Name>/Hosts/Desktop                # needs scripts/fetch-native.sh once
-dotnet build games/<Name>/Hosts/Browser                # needs (cd web/three-adapter && bun install) once
-dotnet publish games/<Name>/Hosts/Export.Desktop -c Release -o artifacts/<kebab>
+dotnet run --project games/<Name>/Hosts/Desktop --no-build -- --capture /private/tmp/<kebab>-gpu   # opens a window
+dotnet publish games/<Name>/Hosts/Browser -c Release -o artifacts/<kebab>-web   # needs (cd web/three-adapter && bun install) once
+python3 -m http.server 8797 -d artifacts/<kebab>-web/wwwroot   # any static server; open http://127.0.0.1:8797/
+dotnet publish games/<Name>/Hosts/Export.Desktop -c Release -o artifacts/<kebab>   # binary: artifacts/<kebab>/<kebab>
+otool -L artifacts/<kebab>/<kebab>                      # only /System/Library/Frameworks/* and /usr/lib/*
+strings artifacts/<kebab>/<kebab> | grep -c DevBridge   # 0: exports never link the dev bridge
 dotnet test tests/Ukiyo.Tests --filter GameLayoutTests # the layout checks also cover games/*
 ```
 
-The first line prints `[ukiyo] target=headless game=<Name> Game.cs=… Program.cs=…`: the same hashes appear on every
-host that compiled the same files.
+Assembly names: `<kebab>-headless`, `<kebab>-desktop`, `<kebab>-web`, and `<kebab>` for the export. Headless and
+desktop print `[ukiyo] target=headless|desktop game=<Name> Game.cs=… Program.cs=…`; the web page prints
+`[ukiyo] target=web …` to the browser console. The same hashes on every host mean they compiled the same files. To read
+the web console without a browser window: `"<Chrome>" --headless=new --enable-logging=stderr --v=0
+--use-angle=swiftshader --enable-unsafe-swiftshader http://127.0.0.1:8797/` (or `scripts/web-evidence.sh`, which
+the G0 checks use).
 
 ## Checks (`GameLayoutTests`)
 
