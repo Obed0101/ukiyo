@@ -13,7 +13,8 @@ Data flows one way — game → `RenderPacket` → renderer — and every bounda
 
 ```
 src/Ukiyo.Render           contracts every renderer implements: IRenderer, IRenderCapture, RenderPacket,
-                           ResourceBatch, handles, RenderValidation, PacketCodec (binary protocol v1), PNG, SpriteGeometry
+                           ResourceBatch, handles, RenderValidation, PacketCodec (binary protocol v1), PNG, SpriteGeometry,
+                           DetMath (deterministic scalar math for every layer above it)
 src/Ukiyo.Core             IGame, GameRuntime (fixed 60 Hz, Step/AdvanceTime/RenderFrame/Capture), GameContext,
                            FrameBuilder, snapshots, input, sprites, audio contract, DevHooks, IPlatformHost,
                            SceneRegistry + ScenePatch (docs/scenes-patches.md)
@@ -40,8 +41,17 @@ Nothing in `src/` references `tools/`, `studio/` or a sample.
   and `JsonDocument` instead of reflection-based serializers.
 - Central package versions (`Directory.Packages.props`). New packages need a reason; engine code has almost none.
 - Determinism: simulation code uses `Simulation.TickSeconds`, never wall-clock time; seeded randomness; stable
-  iteration order; `DetMath` for trigonometry that must match across CoreCLR, NativeAOT and WebAssembly. Anything a
-  host does with real time (frame pacing, audio queueing) stays in the host.
+  iteration order. Anything a host does with real time (frame pacing, audio queueing) stays in the host.
+- Same bits on x64, arm64 and WebAssembly: no SIMD reductions and no libm in simulation or packet paths (anything
+  that reaches game state, snapshots, `Extract` or `PacketCodec`). Not `Vector2/3/4.Dot/Length/Normalize`,
+  `Vector4.Transform`, `Matrix4x4` products/`Invert`/`CreateFromQuaternion`/`CreateLookAt`, `Quaternion` helpers,
+  `MathF.Sin/Cos/Tan/Atan2/Exp/Log/Pow`, `FusedMultiplyAdd` or the `*Estimate` functions: use `DetMath`
+  (`src/Ukiyo.Render/DetMath.cs`, namespace `Ukiyo`; extend it there, scalar IEEE operations one at a time) or a
+  table built with it. Zeros are normalized: `SnapshotWriter` and `PacketCodec` write −0 as +0
+  (`DetMath.PositiveZero`); keep it that way for any new serializer. Element-wise vector `+ - * /` and
+  `MathF.Sqrt/Abs/Floor/Round/Min/Max` are exact. CPU-renderer pixel math (`SoftwareRenderer` transforms,
+  `LightingMath`) is exempt only where its output is compared with a tolerance. `SnapshotGoldenTests` catches a
+  regression on the other CI runner.
 - Errors are typed and tagged: `RenderException(RenderErrorCode…)` with `[RENDER:Code]`, `ArgumentException` /
   `FormatException` / `InvalidDataException` with a `[AREA]:` prefix (`[RUNTIME]`, `[INPUT]`, `[WAV]`, `[HEADLESS]`…).
   Never swallow a failure as a dropped frame or a default value.
@@ -69,7 +79,8 @@ A change counts when its check ran, not when it compiles:
 
 ```sh
 dotnet build Ukiyo.slnx -c Release        # warnings are errors, AOT analyzers on
-dotnet test tests/Ukiyo.Tests             # add a test for the behavior you changed
+dotnet test tests/Ukiyo.Tests             # add a test for the behavior you changed; includes the per-sample
+                                          # snapshot goldens (UKIYO_UPDATE_GOLDEN=1 … --filter SnapshotGoldenTests)
 (cd web/three-adapter && bun test)        # when protocol or adapter changed
 (cd tools/mcp && bun test) ; (cd studio && bun test)
 bun scripts/cli-flow.ts                   # golden CLI transcript; --update after an intended output change

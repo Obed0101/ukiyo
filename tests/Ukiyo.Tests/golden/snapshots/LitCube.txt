@@ -1,0 +1,14 @@
+# LitCube: headless snapshots at 0,1,60,180,600
+# Pinned on every CI machine. Regenerate only for an intended change: UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests --filter SnapshotGoldenTests
+snapshot {"tick":0,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"lamp":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+snapshot {"tick":1,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0.00189359,0.0054102573,0.0010820514,0.999983],"scale":[1,1,1]},"lamp":{"position":[1.4999578,0.85,0.011249895],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+snapshot {"tick":60,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0.11131055,0.31803012,0.06360603,0.9393727],"scale":[1,1,1]},"lamp":{"position":[1.3506707,0.85,0.6524483],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+snapshot {"tick":180,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0.28158054,0.80451584,0.16090317,0.49757108],"scale":[1,1,1]},"lamp":{"position":[0.32851017,0.85,1.463585],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+snapshot {"tick":600,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[-0.11387029,-0.3253437,-0.06506874,-0.9364567],"scale":[1,1,1]},"lamp":{"position":[-0.3161937,0.85,-1.4662952],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+[ukiyo] null frames=5 instances=15 sprites=0 meshes=3 materials=3 textures=0
+resources 52400cbd27c336ca100e355eddf80e480683dc0200d2fc247bfdcf628ec85362
+frame 0 23837afe624b8ef1c3533636b5326a9dd40bafbc880511e2319afc1ab3376e74
+frame 1 2078ff745c381c744366c2841f2135df03fd3f181ee78b53596b663a5bb8812d
+frame 60 9d2a97b4ebd9746f3ac5ac74b6454008002fb602767cb353aab93bf962969712
+frame 180 e2e9f0dbef953e21530f334771c8de7ac32c621e8580a6d6b548f2e6a353b4e7
+frame 600 d3cf38e3966e3f3e6c8253ee57d0f5e4b34999a7dd163886a76978f63e913348

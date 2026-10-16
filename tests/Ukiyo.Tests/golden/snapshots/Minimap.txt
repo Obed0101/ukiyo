@@ -1,0 +1,14 @@
+# Minimap: headless snapshots at 0,1,60,180,600
+# Pinned on every CI machine. Regenerate only for an intended change: UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests --filter SnapshotGoldenTests
+snapshot {"tick":0,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"rover":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+snapshot {"tick":1,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"rover":{"position":[2.999949,0.3,0.017499901],"rotation":[0,-0.0029143887,0,0.99999577],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+snapshot {"tick":60,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"rover":{"position":[2.818118,0.3,1.0286934],"rotation":[0,-0.17410813,0,0.98472655],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+snapshot {"tick":180,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"rover":{"position":[1.4927132,0.3,2.6022696],"rotation":[0,-0.50121295,0,0.86532396],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+snapshot {"tick":600,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"rover":{"position":[-2.80937,0.3,-1.0523497],"rotation":[0,0.98398596,0,0.17824607],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+[ukiyo] null frames=5 instances=70 sprites=20 meshes=2 materials=7 textures=1
+resources 0bf734d39329b815fbe2f28b15120e8254d5345b318ef4f6cfbb7d697f2b16d2
+frame 0 94e1ed85c03b2dd298807f20e890793e30b52b1df360b3a559b502c3dfe44b80 5d09086800865e050ef73e72b25d114caa8b7a4f4ac247adde58fb562c03b832
+frame 1 d9c6056e9261c7fe64a041f664d8e57e6220c453cb6b72d55b7c0ea0ad1cf99e d1ba3e3dd2b721a8f4bb956a13acceb3a3e0035300769ae52fe8c070ec2e47a3
+frame 60 88ee4c725ecd181653d7b728a32e27c5ac3fb92979b5dccd6b5722e6d70e618d 205774848f8352c510b8191e16f35cc218c2dd0b079a3a8c76c744304660d15d
+frame 180 3ee7a35dae2bcd187f77b8804886888cfd40e2eef410afb0c4548382c7157518 aa599741c29cdf27f450d1c6d1031fdf22c14b60470cd5ef4f3974335f59845a
+frame 600 b24b0762f3e32984d1b21dcd5e34269b5c915021cac1a3a184c267c36b99040a fae00876552a614f491001884a6b31f66ab6965a8d1dad5a178718357468d317

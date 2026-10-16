@@ -282,7 +282,10 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     }
 }
 
-/// <summary>Stable JSON for snapshots: parity tooling compares these across targets.</summary>
+/// <summary>
+/// Stable JSON for snapshots: parity tooling compares these across targets. Keys are sorted ordinally and zeros are
+/// written as +0 (<see cref="DetMath.PositiveZero(float)"/>), so a sign-of-zero difference between CPUs never reaches the text.
+/// </summary>
 public static class SnapshotWriter
 {
     public static string Write(GameSnapshot snapshot, SourceIdentity source, RenderCapabilities capabilities)
@@ -317,7 +320,7 @@ public static class SnapshotWriter
                 json.WriteStartObject("values");
                 foreach (var (name, value) in snapshot.Values.OrderBy(entry => entry.Key, StringComparer.Ordinal))
                 {
-                    json.WriteNumber(name, value);
+                    json.WriteNumber(name, DetMath.PositiveZero(value));
                 }
 
                 json.WriteEndObject();
@@ -384,7 +387,7 @@ public static class SnapshotWriter
         json.WriteStartArray(name);
         foreach (var value in values)
         {
-            json.WriteNumberValue(value);
+            json.WriteNumberValue(DetMath.PositiveZero(value));
         }
 
         json.WriteEndArray();

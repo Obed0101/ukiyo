@@ -229,6 +229,11 @@ the core.
 - `dotnet test tests/Ukiyo.Tests` and `bun test` in `tools/mcp`, `studio` and `web/three-adapter`. None of these
   needs native libraries, a GPU or a display; the Studio's `*.browser.ts` checks (Chrome plus a running Metal game) are
   not part of `bun test` and stay manual.
+- Cross-platform determinism: `SnapshotGoldenTests` compares every sample's headless snapshots and packet digests with
+  `tests/Ukiyo.Tests/golden/snapshots/<Sample>.txt`, so a golden recorded on one runner must come out byte for byte on
+  the other, and runs again with `DOTNET_EnableHWIntrinsic=0` (System.Numerics without SIMD or FMA). On a mismatch
+  the actual output is uploaded as an artifact. Intended changes: `UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests
+  --filter SnapshotGoldenTests`, then review the diff.
 - The golden CLI transcript, `bun scripts/cli-flow.ts` (help, status, scaffold, headless run, CPU capture, import
   check, removal), against `tools/mcp/test/golden/cli-flow.txt`. When a CLI or tool output changes on purpose,
   `bun scripts/cli-flow.ts --update` rewrites it; review the diff and commit the golden with the change.

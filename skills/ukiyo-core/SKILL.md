@@ -50,8 +50,13 @@ public sealed class MyGame : IGame
 ## Determinism rules
 
 - No `DateTime.Now`, `Random.Shared`, `Stopwatch` or wall-clock time in game code. Use `tick.Tick`; seed your own `Random(seed)`.
-- Iterate collections in a stable order. Physics uses `Ukiyo.Physics.DetMath` for sin/cos; do the same for anything that must
-  match across machines.
+- Iterate collections in a stable order (sort dictionary keys before they reach output).
+- Math that reaches state, snapshots or `Extract` goes through `DetMath` (namespace `Ukiyo`): `SinCos`, `Pow`,
+  `AxisAngle`, `Dot`/`Length`/`Normalize`/`Cross`, `Compose` (scale·rotation·translation) and `Multiply` for matrices.
+  Never `MathF.Sin/Cos/Tan/Atan2/Exp/Log/Pow` (libm differs per OS), `Quaternion.CreateFromAxisAngle`,
+  `Vector2/3/4.Dot/Length/Normalize`, `Vector4.Transform` or `Matrix4x4` products and `Invert` (SIMD and fused
+  multiply-adds round differently on x64, arm64 and WebAssembly). `+ - * /` on vectors, `MathF.Sqrt/Abs/Floor/Round/Min/Max`
+  are exact and fine. `EntityPose.ToMatrix()`, `EntityPose.Planar` and `FrameBuilder.LookAt` already follow this.
 - Same code + same input script ⇒ same snapshot JSON. Tests assert exactly that.
 
 ## Scenes, prefabs and patches (opt-in)

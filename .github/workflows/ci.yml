@@ -87,8 +87,25 @@ jobs:
             dotnet build artifacts/ci/Ukiyo.Linux.slnx -c Release
           fi
 
+      # Includes SnapshotGoldenTests: every sample's headless snapshots and packet digests, recorded on one machine,
+      # must come out byte for byte on both runners (docs/conventions.md, Determinism).
       - name: C# tests
         run: dotnet test tests/Ukiyo.Tests
+
+      # The same goldens with System.Numerics on its software paths (no SIMD, no FMA). A simulation or packet path that
+      # still depends on how the CPU vectorizes or fuses fails here, even on the machine that recorded the golden.
+      - name: Goldens without hardware intrinsics
+        env:
+          DOTNET_EnableHWIntrinsic: "0"
+        run: dotnet test tests/Ukiyo.Tests --no-build --filter "FullyQualifiedName~SnapshotGoldenTests|FullyQualifiedName~golden_files|FullyQualifiedName~DetMathTests"
+
+      - name: Upload the differing golden snapshots
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: golden-snapshots-actual-${{ matrix.os }}
+          path: artifacts/golden-snapshots/
+          if-no-files-found: ignore
 
       - name: Bun tests (tools/mcp)
         working-directory: tools/mcp

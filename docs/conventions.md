@@ -19,6 +19,28 @@ wgpu/Metal and on Three.js.
 | Ticks | Fixed 60 Hz. After N updates the world is at tick N. 64-bit ticks cross to JS as two uint32 (lo, hi). |
 | Memory | Renderers consume packets before returning; nothing keeps a borrowed buffer. The browser bridge copies (`byte[]` → `Uint8Array`) in G0; there is no zero-copy claim. |
 
+## Determinism
+
+Same code and same input give byte-identical snapshots and render packets on every host: CoreCLR and NativeAOT on x64
+and arm64, and WebAssembly. Floating point is the part that breaks this quietly, so simulation and packet paths
+(game state, `Snapshot`, `Extract`, `PacketCodec`) follow three rules:
+
+- No SIMD reductions or fused paths. `Vector2/3/4.Dot/Length/Normalize`, `Vector4.Transform`, `Matrix4x4` products,
+  `Invert`, `CreateFromQuaternion`, `CreateLookAt`, `CreatePerspective…` and the `Quaternion` helpers sum lanes in an
+  order of their own and use fused multiply-adds where the CPU has them. Element-wise `+ - * /` is exact and fine.
+- No libm. `MathF`/`Math` `Sin`, `Cos`, `Tan`, `Atan2`, `Exp`, `Log`, `Pow` differ by an ulp between macOS, glibc and
+  the WebAssembly runtime; `FusedMultiplyAdd` and the `*Estimate` functions differ by design. `Sqrt`, `Abs`, `Floor`,
+  `Round`, `Min`, `Max` are exact.
+- Zeros are normalized: `SnapshotWriter` and `PacketCodec` write −0 as +0, because two machines can agree on a value
+  and still disagree on the sign of a zero.
+
+Use `DetMath` (`src/Ukiyo.Render/DetMath.cs`, namespace `Ukiyo`): `SinCos`, `Pow`, `AxisAngle`, `Dot`, `Length`,
+`Normalize`, `Cross`, `Compose` (scale · rotation · translation), `Rotation`, `Multiply`, `PositiveZero`. They use only
+IEEE operations evaluated one at a time. CPU-renderer pixel math may use System.Numerics where its output is compared
+within a tolerance (`SoftwareRenderer` transforms, `LightingMath`); sRGB encode and decode, which a byte-exact CPU frame
+goes through, use `DetMath.Pow`. `SnapshotGoldenTests` pins every sample's snapshots and packet digests on both CI
+runners, also with `DOTNET_EnableHWIntrinsic=0`.
+
 ## Detecting inversions
 
 `CubeGame` gives each face its own color (+X red, −X cyan, +Y green, −Y magenta, +Z blue, −Z yellow) and puts an

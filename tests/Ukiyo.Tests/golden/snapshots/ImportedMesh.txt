@@ -1,0 +1,14 @@
+# ImportedMesh: headless snapshots at 0,1,60,180,600
+# Pinned on every CI machine. Regenerate only for an intended change: UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests --filter SnapshotGoldenTests
+snapshot {"tick":0,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"lamp":{"position":[1.3,0.9,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"suzanne":{"position":[0,0.5121875,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2,"meshTriangles":996,"meshVertices":555,"meshes":2}}
+snapshot {"tick":1,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"lamp":{"position":[1.299935,0.9,0.012999783],"rotation":[0,0,0,1],"scale":[1,1,1]},"suzanne":{"position":[0,0.5121875,0],"rotation":[0,0.004166655,0,0.9999913],"scale":[1,1,1]}},"values":{"lights":2,"meshTriangles":996,"meshVertices":555,"meshes":2}}
+snapshot {"tick":60,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"lamp":{"position":[1.0729363,0.9,0.7340352],"rotation":[0,0,0,1],"scale":[1,1,1]},"suzanne":{"position":[0,0.5121875,0],"rotation":[0,0.24740396,0,0.9689124],"scale":[1,1,1]}},"values":{"lights":2,"meshTriangles":996,"meshVertices":555,"meshes":2}}
+snapshot {"tick":180,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"lamp":{"position":[-0.2953628,0.9,1.2660018],"rotation":[0,0,0,1],"scale":[1,1,1]},"suzanne":{"position":[0,0.5121875,0],"rotation":[0,0.6816388,0,0.73168886],"scale":[1,1,1]}},"values":{"lights":2,"meshTriangles":996,"meshVertices":555,"meshes":2}}
+snapshot {"tick":600,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"lamp":{"position":[1.2482213,0.9,-0.36324012],"rotation":[0,0,0,1],"scale":[1,1,1]},"suzanne":{"position":[0,0.5121875,0],"rotation":[0,0.5984721,0,-0.8011436],"scale":[1,1,1]}},"values":{"lights":2,"meshTriangles":996,"meshVertices":555,"meshes":2}}
+[ukiyo] null frames=5 instances=15 sprites=0 meshes=2 materials=2 textures=0
+resources 38f49c59a430a2c6766ed14a2bf1719e8db1052d38c1055a7e4a549e3ec01e2e
+frame 0 f920d107615e80f740374612aaf2c16b4ceec2b8c7e31afa10755c1ed1980591
+frame 1 baabac245aa0e7b92e88bed1e6f6752b81165afebd3a635a65c21900600dd536
+frame 60 4aae22305da772b945a4a3a989b3f8cb0701661943eda42c26b3d60047c404f7
+frame 180 f4fb14c6f0f2cd5f7ce1c030e3bea0f14a9604ea1080e29168894bc1f8ded706
+frame 600 fd0b44b8a0714d2ed372da60b32b8a7aac5e3765692ac50b97cfac069bc5a1f4

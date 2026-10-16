@@ -1,5 +1,4 @@
 using System.Numerics;
-using Ukiyo.Physics;
 using Ukiyo.Rendering;
 
 namespace Ukiyo.Samples.ImportedMesh;
@@ -77,7 +76,7 @@ public sealed class ImportedMeshGame : IGame
         frame.Lighting = new SceneLighting(Ambient, [KeyLight, Light.Point(_lamp, LampColor, LampIntensity, LampRange)]);
         frame.Draw(_pedestal, _litVertexColors, Matrix4x4.Identity);
         frame.Draw(_suzanne, _litVertexColors, SuzannePose.ToMatrix());
-        frame.Draw(_pedestal, _lampMaterial, Matrix4x4.CreateScale(LampScale) * Matrix4x4.CreateTranslation(_lamp));
+        frame.Draw(_pedestal, _lampMaterial, DetMath.Compose(new Vector3(LampScale), Quaternion.Identity, _lamp));
     }
 
     /// <summary>Asset counts come from the generated class, so every target's snapshot shows what it compiled in.</summary>

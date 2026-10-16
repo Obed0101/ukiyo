@@ -3,6 +3,7 @@
 Binary format used across the C#↔JavaScript bridge. Encoder: `src/Ukiyo.Render/PacketCodec.cs`.
 Decoder: `web/three-adapter/protocol.js`. Both are pinned to the golden files in `web/three-adapter/fixtures/`.
 Little-endian, 4-byte aligned. Control data (capabilities, evidence) uses JSON; per-frame data uses this format.
+Every f32 is written with −0 as +0, so the same packet has the same bytes on every host (docs/conventions.md, Determinism).
 
 ## Header (16 bytes, both packet types)
 

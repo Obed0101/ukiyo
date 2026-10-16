@@ -7,7 +7,8 @@ description: Use for 2D collision and movement — rigid bodies, boxes and circl
 
 `Ukiyo.Physics.PhysicsWorld2D` is a deterministic 2D rigid-body world: sort-and-sweep broad phase, SAT boxes and
 circles with contact clipping, sequential impulses with friction and restitution, positional correction, sensors.
-Same inputs and step count give bit-identical results (bodies are processed in creation order; trig uses `DetMath`).
+Same inputs and step count give bit-identical results on every CPU and runtime (bodies are processed in creation
+order; trig, dot products and normalization use `DetMath`, never libm or System.Numerics reductions).
 Reference the project from each host csproj: `src/Ukiyo.Physics/Ukiyo.Physics.csproj`.
 
 ## World and bodies

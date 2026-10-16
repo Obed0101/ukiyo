@@ -67,6 +67,16 @@ counts and compare the hashes with `PatchHistory.AppliedHash(expected records)` 
 determinism by running the same patch log twice (and once submitted live at each tick) and comparing the snapshot
 sequences (`ScenePatchTests`).
 
+## Cross-platform goldens
+
+`SnapshotGoldenTests` pins every sample (and the `templates/game` cube) in `tests/Ukiyo.Tests/golden/snapshots/<Sample>.txt`:
+the headless host's snapshot lines at fixed checkpoints, with the sample's input script or patch log, plus a SHA-256
+of every resource batch and frame packet. CI runs it on macOS arm64 and ubuntu x64, and again with
+`DOTNET_EnableHWIntrinsic=0`, so a golden recorded on one machine must come out of the other byte for byte. A new
+sample needs a case (`Every_sample_has_a_golden` fails without one). After an intended change:
+`UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests --filter SnapshotGoldenTests`, then read the diff; a mismatch
+writes the actual output to `artifacts/golden-snapshots/`.
+
 ## Rules
 
 - Descriptive names that state the scenario. Test edges and errors: invalid input throws typed errors
