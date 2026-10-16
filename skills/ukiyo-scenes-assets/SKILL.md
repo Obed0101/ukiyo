@@ -14,12 +14,12 @@ is loaded from disk or the network at runtime; everything is compiled or embedde
 |---|---|---|
 | `SceneRegistry<T>`, prefabs, scene JSON, `LoadScene`, patches through `runtime.SubmitPatch` | available | `src/Ukiyo.Core/Scene*.cs`, docs/scenes-patches.md, `samples/SceneHop` |
 | Texture/atlas importer `tools/Ukiyo.Import` → `Shared/gen/*.g.cs`, `--check` | available | docs/assets.md, `samples/TexturedQuad` |
-| Mesh importer | **in progress** (branch `feat/g2-mesh-importer`) | not on `dev`: do not use |
+| Mesh importer: glTF 2.0 (`.gltf` + `.bin`, `.glb`) → `Shared/gen/*.g.cs`, sources in `<game>/art/` | available | docs/assets.md § Meshes, `samples/ImportedMesh` |
 | New template layout (`ukiyo_new_game`) | **in progress** (`feat/g05-game-template`) | today's 2d template has one prefab `crate`, one scene `start` built in code |
 | Submitting patches from outside the game: headless `--patches FILE`, `ukiyo_run`/`ukiyo_capture` `patches`, `ukiyo_live` `patch`, dev bridge `patch` command, CLI `run --patches` | available | docs/scenes-patches.md, ukiyo-live |
 
 Branch states are from 2026-10-16. Before relying on an "in progress" row, check whether it merged:
-`git log dev --oneline | head`, `git grep -il mesh tools/Ukiyo.Import` (a mesh importer).
+`git log dev --oneline | head`, `git grep -n "Shared" tools/mcp/src/tools/new-game.ts` (the template layout).
 
 ## Two scenes, the smallest working shape
 
