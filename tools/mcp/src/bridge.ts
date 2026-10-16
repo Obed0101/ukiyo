@@ -52,6 +52,7 @@ export function bridgeRequest(session: LiveSession, request: Record<string, unkn
   return new Promise((resolve, reject) => {
     const socket = connect({ host: "127.0.0.1", port: session.port });
     let buffer = "";
+    let answered = false;
     const timer = setTimeout(() => {
       socket.destroy();
       reject(new Error(`[LIVE]: no answer from ${session.game} (pid ${session.pid}) in ${timeoutMs} ms — is the window paused in a debugger?`));
@@ -62,6 +63,8 @@ export function bridgeRequest(session: LiveSession, request: Record<string, unkn
       buffer += chunk;
       const newline = buffer.indexOf("\n");
       if (newline < 0) return;
+      if (answered) return;
+      answered = true;
       clearTimeout(timer);
       socket.end();
       try {
@@ -73,6 +76,10 @@ export function bridgeRequest(session: LiveSession, request: Record<string, unkn
     socket.on("error", (error) => {
       clearTimeout(timer);
       reject(new Error(`[LIVE]: ${error.message}`));
+    });
+    socket.on("close", () => {
+      clearTimeout(timer);
+      if (!answered) reject(new Error(`[LIVE]: connection closed before a complete response from ${session.game} (pid ${session.pid})`));
     });
   });
 }

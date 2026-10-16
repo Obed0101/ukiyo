@@ -9,7 +9,8 @@ dotnet run --project samples/LanternRun/Desktop   # any development build; it an
 bun studio/src/server.ts                          # → http://127.0.0.1:4100
 ```
 
-**State: written, not run.** Nothing here has been started or opened in a browser yet ([G3](../docs/G3.md)).
+**State: base runs against a live game.** Remaining acceptance checks and automated recording/Frame-panel coverage
+are tracked in [G3](../docs/G3.md); controlled reload is not implemented yet.
 
 ## The UI is files
 

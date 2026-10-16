@@ -27,6 +27,29 @@ Requests run on the game's own thread between frames, so a snapshot or capture i
 
 ## Patterns
 
+### Any editor or terminal (no MCP required)
+
+The same bridge is available as a Bun CLI, with JSON on stdout, errors on stderr and nonzero exit on failure:
+
+```sh
+bun tools/mcp/src/cli.ts live list
+bun tools/mcp/src/cli.ts live status --pid 123
+bun tools/mcp/src/cli.ts live pause --pid 123
+bun tools/mcp/src/cli.ts live step --pid 123 --ticks 60
+bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
+bun tools/mcp/src/cli.ts live input --pid 123 --events events.json
+bun tools/mcp/src/cli.ts live record --pid 123 --on true
+bun tools/mcp/src/cli.ts live record --pid 123 --on false --out input.json
+```
+
+Use these as editor tasks or terminal commands. `--pid` is mandatory when multiple games are running; unlike the
+MCP adapter, the CLI does not choose the newest implicitly. Output files are created exclusively and never
+overwritten. Captures write PNG; recordings write the script array accepted by headless `--input`. Discovery tokens
+are handled internally and are never part of normal CLI output. This is runtime control, not code hot reload.
+
+Recordings preserve absolute ticks and contain input, not a saved game state. Replaying a mid-game recording from
+a fresh runtime requires the same prior state/input history and viewport.
+
 - Reproduce a bug a human hit: `record on` → the human plays → `record off` → save the script → replay it headless with
   `ukiyo_run {"input": …}` → fix → replay again → turn the replay into a test (ukiyo-testing).
 - Inspect a moment: `pause` → `step 1` repeatedly → `snapshot` / `capture` at each tick.

@@ -199,7 +199,7 @@ goes to the game.
 - [x] **G0 · One program, two real renderers.** Metal and WebGL2 from the same C#, NativeAOT single binary, static web export.
 - [x] **G1 · Runtime slice.** Input, 2D sprites, physics, game UI, audio, dev bridge, MCP and skills. Headless, Metal and WebGL2 match in simulation and pixels; NativeAOT export without the dev bridge ([report](docs/G1.md)). Not committed or released yet.
 - [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI and its tool adapters.
-- [ ] **G3 · Studio and reload.** A human window onto a running game in simple, balanced or complete layouts, a dev bridge from any editor, controlled reload. The Studio base is written, [not yet run](docs/G3.md).
+- [ ] **G3 · Studio and reload.** A human window onto a running game in simple, balanced or complete layouts, a dev bridge from any editor, controlled reload. The Studio base has [live Metal evidence](docs/G3.md), including Watch, pointer input and recording → headless replay; controlled reload remains open.
 - [ ] **G4 · Evidence and games.** Replays, visual conformance and the first real games.
 - [ ] **G5 · The open library.** Packages for assets and game systems, published and shared by the community, free and open source.
 

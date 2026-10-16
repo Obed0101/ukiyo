@@ -37,28 +37,33 @@ export default {
     let playing = false;
     let timer = /** @type {ReturnType<typeof setTimeout> | undefined} */ (undefined);
     let lastTick = -1;
+    let watchGeneration = 0;
 
     let captureError = "";
 
     async function captureOnce() {
       try {
-        await studio.capture();
+        const frame = await studio.capture();
         captureError = "";
+        render();
+        return frame;
       } catch (error) {
         captureError = `Capture failed: ${error instanceof Error ? error.message : String(error)}`;
       }
       render();
+      return null;
     }
 
-    async function watchLoop() {
-      if (!watching) return;
+    async function watchLoop(generation = watchGeneration) {
+      if (!watching || generation !== watchGeneration) return;
       const status = studio.status;
       // A paused game shows the same frame forever; only capture again when the tick moved.
       if (studio.session && status && status.tick !== lastTick) {
-        lastTick = status.tick;
-        await captureOnce();
+        const frame = await captureOnce();
+        if (generation !== watchGeneration) return;
+        if (frame) lastTick = frame.tick;
       }
-      timer = setTimeout(watchLoop, 1000 / fps);
+      if (watching) timer = setTimeout(() => watchLoop(generation), 1000 / fps);
     }
 
     /** @param {string} text */
@@ -102,6 +107,7 @@ export default {
     captureButton.addEventListener("click", () => captureOnce());
     watchButton.addEventListener("click", () => {
       watching = !watching;
+      watchGeneration++;
       watchButton.setAttribute("aria-pressed", String(watching));
       clearTimeout(timer);
       lastTick = -1;
@@ -110,6 +116,7 @@ export default {
     });
     playButton.addEventListener("click", () => {
       playing = !playing;
+      if (!playing) releaseInput();
       playButton.setAttribute("aria-pressed", String(playing));
       if (playing) screen.focus();
       studio.view({ playing });
@@ -121,22 +128,37 @@ export default {
       studio.call("input", { events }).catch((error) => studio.log("error", error instanceof Error ? error.message : String(error)));
     }
 
-    /** Maps a click on the scaled image to drawing-buffer pixels. @param {PointerEvent} event */
-    function pointerAt(event) {
+    /** Maps a click on the scaled image to drawing-buffer pixels. @param {PointerEvent} event @param {boolean} [outside] */
+    function pointerAt(event, outside = false) {
       const frame = studio.frame;
       if (!frame || image.parentElement !== screen) return null;
       // The image is letterboxed with object-fit: contain; find the drawn rectangle inside its box.
       const box = image.getBoundingClientRect();
       const scale = Math.min(box.width / frame.width, box.height / frame.height);
+      if (!(scale > 0)) return null;
       const left = box.left + (box.width - frame.width * scale) / 2;
       const top = box.top + (box.height - frame.height * scale) / 2;
       const x = (event.clientX - left) / scale;
       const y = (event.clientY - top) / scale;
-      if (x < 0 || y < 0 || x > frame.width || y > frame.height) return null;
+      if (!outside && (x < 0 || y < 0 || x > frame.width || y > frame.height)) return null;
       return /** @type {[number, number]} */ ([Math.round(x), Math.round(y)]);
     }
 
     const held = new Set();
+    /** @type {Map<number, { button: "Left" | "Middle" | "Right", at: [number, number] }>} */
+    const pointers = new Map();
+
+    function releaseInput() {
+      const events = /** @type {import("../web/types").InputEvent[]} */ ([...held].map((code) => ({ key: code, down: false })));
+      held.clear();
+      for (const [id, { button }] of pointers) {
+        // Cancellation is not a click. Release outside the drawing buffer so GameUi cannot activate the button.
+        events.push({ button, down: false, pointer: [-1, -1] });
+        pointers.delete(id);
+        if (screen.hasPointerCapture(id)) screen.releasePointerCapture(id);
+      }
+      if (events.length && studio.session) send(events);
+    }
     /** @param {KeyboardEvent} event @param {boolean} down */
     function key(event, down) {
       if (!playing || !GAME_KEYS.test(event.code) || event.metaKey) return;
@@ -150,9 +172,19 @@ export default {
     /** @param {PointerEvent} event @param {boolean} down */
     function pointer(event, down) {
       if (!playing) return;
-      const at = pointerAt(event);
-      const button = BUTTONS[event.button];
+      const previous = pointers.get(event.pointerId);
+      const at = pointerAt(event, !down) ?? (!down ? previous?.at : null);
+      const button = down ? BUTTONS[event.button] : previous?.button;
       if (!at || !button) return;
+      event.preventDefault();
+      if (down) {
+        screen.focus();
+        pointers.set(event.pointerId, { button, at });
+        screen.setPointerCapture(event.pointerId);
+      } else {
+        pointers.delete(event.pointerId);
+        if (screen.hasPointerCapture(event.pointerId)) screen.releasePointerCapture(event.pointerId);
+      }
       send([{ button, down, pointer: at }]);
     }
 
@@ -160,24 +192,43 @@ export default {
     screen.addEventListener("keyup", (event) => key(event, false));
     screen.addEventListener("pointerdown", (event) => pointer(event, true));
     screen.addEventListener("pointerup", (event) => pointer(event, false));
-    screen.addEventListener("blur", () => {
-      // Releasing focus must not leave a key stuck down in the game.
-      if (held.size) send([...held].map((code) => ({ key: code, down: false })));
-      held.clear();
+    screen.addEventListener("pointercancel", () => releaseInput());
+    screen.addEventListener("lostpointercapture", () => releaseInput());
+    screen.addEventListener("pointermove", (event) => {
+      if (!playing) return;
+      const at = pointerAt(event);
+      if (!at) return;
+      const previous = pointers.get(event.pointerId);
+      if (previous) previous.at = at;
+      send([{ pointer: at }]);
     });
+    screen.addEventListener("blur", releaseInput);
+    window.addEventListener("blur", releaseInput);
 
     studio.on("frame", render);
     studio.on("session", () => {
+      // The shell has already switched sessions: never forward old releases to the new game.
+      held.clear();
+      pointers.clear();
+      playing = false;
+      playButton.setAttribute("aria-pressed", "false");
+      studio.view({ playing });
+      watchGeneration++;
+      clearTimeout(timer);
       lastTick = -1;
       captureError = "";
       render();
+      if (watching) watchLoop();
     });
     studio.on("status", render);
     render();
 
     return () => {
       watching = false;
+      watchGeneration++;
       clearTimeout(timer);
+      releaseInput();
+      window.removeEventListener("blur", releaseInput);
     };
   },
 };
