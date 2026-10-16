@@ -50,6 +50,14 @@ it uses (Physics, UI).
 Decode with `PngDecoder.Decode(png)` and assert pixels at known positions (a sprite's center, the clear color in a
 corner). Prefer a few well-chosen pixels over whole-image hashes, which break on harmless changes.
 
+## Scenes and patches in tests
+
+A game with a `SceneRegistry` reads its scene JSON from `context.Assets`, which in tests is the test assembly: embed
+the game's assets in `Ukiyo.Tests.csproj` too (see the SceneHop `EmbeddedResource` line). Submit patches with
+`runtime.SubmitPatch(…)` before or between `StepTo` calls; assert `runtime.SceneState` (`Applied`, `Rejected` with a
+`SceneErrorCode`) or the `"scene"` key of `SnapshotJson()`. Prove determinism by running the same patch log twice
+(and once submitted live at each tick) and comparing the snapshot sequences (`ScenePatchTests`).
+
 ## Rules
 
 - Descriptive names that state the scenario. Test edges and errors: invalid input throws typed errors

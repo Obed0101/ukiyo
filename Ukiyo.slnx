@@ -25,6 +25,7 @@
     <Project Path="samples/TexturedQuad/Headless/TexturedQuad.Headless.csproj" />
     <Project Path="samples/TexturedQuad/Desktop/TexturedQuad.Desktop.csproj" />
     <Project Path="samples/TexturedQuad/Browser/TexturedQuad.Browser.csproj" />
+    <Project Path="samples/SceneHop/Headless/SceneHop.Headless.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Ukiyo.Import/Ukiyo.Import.csproj" />

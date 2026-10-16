@@ -1,0 +1,10 @@
+{
+  "name": "cavern",
+  "bounds": { "min": [-6, -3, 0], "max": [6, 3, 0] },
+  "entities": [
+    { "id": "torch", "prefab": "lantern", "position": [0, -2], "values": { "glow": 0.4, "size": 0.75 } },
+    { "id": "bat-1", "prefab": "drifter", "position": [5, 1.5], "values": { "speed": -4 } },
+    { "id": "bat-2", "prefab": "drifter", "position": [-5, 0.5], "values": { "speed": 2.5, "size": 0.35 } },
+    { "id": "drip", "prefab": "drifter", "position": [2, 2.5], "values": { "speed": 0.5, "size": 0.25 } }
+  ]
+}

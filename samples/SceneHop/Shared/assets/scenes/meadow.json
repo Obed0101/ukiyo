@@ -1,0 +1,9 @@
+{
+  "name": "meadow",
+  "bounds": { "min": [-8, -4.5, 0], "max": [8, 4.5, 0] },
+  "entities": [
+    { "id": "lamp-west", "prefab": "lantern", "position": [-4, 0], "values": { "glow": 0.9 } },
+    { "id": "lamp-east", "prefab": "lantern", "position": [4, 0], "values": { "glow": 0.6, "size": 1.5 } },
+    { "id": "moth", "prefab": "drifter", "position": [-6, 2], "values": { "speed": 3 } }
+  ]
+}
