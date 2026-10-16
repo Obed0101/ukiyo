@@ -130,8 +130,9 @@ scripts/g1lit.sh` exited 1. Edges now come from geometry:
   inherits (SwiftShader's actual subpixel precision was not checked). Where the reference changes by less than 16
   levels per pixel (every LitCube and Minimap interior), the gate is exactly Δ ≤ 1 as before. `lit-pixels.md` reports
   both the interior pixels with Δ > 1 that the gradient allows and those over tolerance.
-- **Checks.** `dotnet build Ukiyo.slnx -c Release` 0 warnings; `dotnet test tests/Ukiyo.Tests` 239/239 (9 in
-  `SurfaceMapTests`); adapter `bun test` 37/37. `scripts/g1lit.sh` exit 0 for LitCube, `SAMPLE=RotatingCube` and
+- **Checks.** `dotnet build Ukiyo.slnx -c Release` 0 warnings; `dotnet test tests/Ukiyo.Tests` 245/245 (9 in
+  `SurfaceMapTests`); adapter `bun test` 37/37; `tools/mcp` 89/89. Gates re-run after merging dev at `8a53c21` (game
+  layout): same numbers. `scripts/g1lit.sh` exit 0 for LitCube, `SAMPLE=RotatingCube` and
   `SAMPLE=ImportedMesh`; `scripts/g1passes.sh` exit 0 (masks per pass; its numbers in
   [rendering-passes.md](rendering-passes.md) reproduce exactly). Several runs first failed for the environment only
   (desktop window never became visible, or headless Chrome's virtual-time budget ran out at load average ≈ 20–36)
