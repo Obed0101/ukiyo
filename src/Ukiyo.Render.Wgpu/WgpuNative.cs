@@ -570,6 +570,7 @@ internal static class WgpuConst
     public const uint CompareLess = 0x02;
     public const uint CompareAlways = 0x08;
     public const uint StencilKeep = 0x01;
+    public const uint LoadOpLoad = 0x01;
     public const uint LoadOpClear = 0x02;
     public const uint StoreOpStore = 0x01;
     public const uint StoreOpDiscard = 0x02;
@@ -657,6 +658,10 @@ internal static unsafe partial class WgpuNative
     [LibraryImport(Library)] public static partial nint wgpuDeviceCreateSampler(nint device, SamplerDescriptor* descriptor);
     [LibraryImport(Library)] public static partial void wgpuQueueWriteTexture(nint queue, TexelCopyTextureInfo* destination, void* data, nuint dataSize, TexelCopyBufferLayout* dataLayout, Extent3D* writeSize);
     [LibraryImport(Library)] public static partial void wgpuRenderPassEncoderDraw(nint pass, uint vertexCount, uint instanceCount, uint firstVertex, uint firstInstance);
+    // webgpu.h: void wgpuRenderPassEncoderSetViewport(WGPURenderPassEncoder, float x, float y, float width, float height, float minDepth, float maxDepth)
+    [LibraryImport(Library)] public static partial void wgpuRenderPassEncoderSetViewport(nint pass, float x, float y, float width, float height, float minDepth, float maxDepth);
+    // webgpu.h: void wgpuRenderPassEncoderSetScissorRect(WGPURenderPassEncoder, uint32_t x, uint32_t y, uint32_t width, uint32_t height)
+    [LibraryImport(Library)] public static partial void wgpuRenderPassEncoderSetScissorRect(nint pass, uint x, uint y, uint width, uint height);
     [LibraryImport(Library)] public static partial void wgpuSamplerRelease(nint handle);
 
     [LibraryImport(Library)] public static partial void wgpuInstanceRelease(nint handle);

@@ -36,8 +36,10 @@ public void Update(in TickInfo tick)
   `args["name"]` / `args.Float("name")` throw `UnknownParameter` for a name the prefab did not declare.
 - **Register prefabs before scenes.** `Register(SceneData)` validates every entity against them; one registry per game.
 - `Entities` is in spawn order (scene order, then patch order); retarget keeps an entity's place. `this[id]` /
-  `TryGet` find one. `ActiveScene`, `LoadedAt`, `RequestedScene`, `Tick`, `AppliedPatches`, `PendingPatches` and
-  `RejectedPatches` are readable at any time.
+  `TryGet` find one. `ActiveScene`, `LoadedAt`, `RequestedScene`, `Tick`, `AppliedPatches`, `PendingPatches`,
+  `RejectedPatches`, `AppliedCount`, `RejectedCount`, `AppliedHash` and `RejectedHash` are readable at any time.
+  `AppliedPatches` and `RejectedPatches` hold only the last `PatchHistory.Window` (16) entries; see
+  [In snapshots](#in-snapshots).
 - The game still writes its own `Snapshot` (poses, values); the runtime adds the `scene` section.
 
 ## Timing: the tick boundary
@@ -130,17 +132,51 @@ Error codes (`SceneErrorCode`, message prefix `[SCENE:Code]:`): `Malformed`, `In
 
 Games with a registry get one extra key; every other game's snapshot JSON is byte-identical to before.
 
+Real output, scene section only, of `dotnet run --project samples/SceneHop/Headless -- --checkpoints 0,12,60,80,120
+--patches log.json` with the four-patch log from `HeadlessPatchTests`, at tick 120:
+
 ```json
 "scene": {
-  "active": "meadow", "loadedAt": 0,
-  "patches":  [ { "id": "p1", "tick": 12 }, { "id": "p2", "tick": 40 } ],
+  "active": "meadow", "loadedAt": 120,
+  "appliedCount": 3, "appliedHash": "0b380a05d110bf94",
+  "patches":  [ { "id": "p1", "tick": 12 }, { "id": "p2", "tick": 40 }, { "id": "p3", "tick": 75 } ],
+  "rejectedCount": 1, "rejectedHash": "021904ec402bed74",
   "rejected": [ { "id": "p4", "tick": 80, "code": "UnknownEntity", "message": "[SCENE:UnknownEntity]: patch p4 op #0 (moth): no live entity to dispose" } ]
 }
 ```
 
-`patches` lists applied patches in application order. Pending patches are not in snapshots (they are not world state);
-read `PendingPatches` instead. Same code + same input script + same patch log ⇒ the same snapshot sequence (tested by
-`The_same_patch_log_gives_the_same_snapshot_sequence_whether_queued_up_front_or_submitted_live`).
+The history is **bounded**, so a session with thousands of patches has snapshots the same size as one with twenty:
+
+| Key | Meaning |
+|---|---|
+| `patches` | the last `PatchHistory.Window` (16) applied patches `{id, tick}`, oldest first; older ones are evicted first |
+| `rejected` | the last 16 refusals at a patch's tick `{id, tick, code, message}`, oldest first, evicted the same way |
+| `appliedCount`, `rejectedCount` | every applied patch / every refusal since the game started, including evicted ones |
+| `appliedHash`, `rejectedHash` | hash chains over every entry since the game started, 16 lowercase hex digits |
+
+Each chain is **FNV-1a 64** (offset basis `cbf29ce484222325`, prime `100000001b3`) continued entry by entry, so it
+equals FNV-1a 64 of the concatenated entry encodings. An applied entry is the UTF-8 patch id, a `0` byte, then the
+tick as 8 bytes little-endian; a refusal is the same followed by the UTF-8 code name (`UnknownEntity`) and a `0` byte
+(the message is not hashed; it is shown in the window). Before any entry the chain is `cbf29ce484222325`.
+`PatchHistory.ChainApplied`, `ChainRejected`, `AppliedHash(records)`, `RejectedHash(rejections)` and `Format`
+compute it in C#; `tools/mcp/test/patches.test.ts` recomputes it in JavaScript.
+
+Why this format: a window keeps what an agent reads most (what just happened) at a fixed size; counts say how much was
+evicted; the chain makes two runs comparable exactly without the full list (equal count and hash ⇒ the same patches,
+in the same order, at the same ticks, barring a 64-bit collision). FNV-1a is plain 64-bit integer arithmetic over a
+fixed byte encoding, so CoreCLR, NativeAOT and WebAssembly give the same value; `string.GetHashCode` is randomized
+per process and never used. It is not a cryptographic hash: it detects divergence, it does not authenticate a log.
+The hash is a string because JSON numbers cannot carry 64 bits exactly into JavaScript. Ids stay reserved after
+eviction (a reused id is still `DuplicatePatch`): the registry keeps every id it has seen, which is the only part of
+the history that grows with the session, in memory and never in snapshots.
+
+To check a full history, keep the patch log: replaying it gives the same counts and hashes, and the outcome of every
+entry can be recomputed from it (`The_same_long_patch_log_gives_identical_snapshots_twice_and_live_and_the_hashes_replay_from_the_log`).
+Pending patches are not in snapshots (they are not world state); read `PendingPatches` instead. Same code + same input
+script + same patch log ⇒ the same snapshot sequence (tested by
+`The_same_patch_log_gives_the_same_snapshot_sequence_whether_queued_up_front_or_submitted_live`; size bound by
+`A_ten_thousand_patch_session_keeps_snapshots_under_a_fixed_byte_ceiling`, about 3 KB where the unbounded lists were
+about 560 KB).
 
 ## Submitting from each entry point
 
@@ -148,7 +184,7 @@ read `PendingPatches` instead. Same code + same input script + same patch log �
 |---|---|---|
 | C# (tests, game code, tools) | `runtime.SubmitPatch(ScenePatch.Parse(json))`; a log: `ScenePatch.ParseLog` then submit in order | throws `SceneException` on refusal |
 | Headless host | `dotnet run --project samples/SceneHop/Headless -- --checkpoints 0,60,120 --patches log.json` (with `--input`, `--capture`, `--audio` as usual) | snapshot lines as always |
-| MCP, headless | `ukiyo_run` (or `ukiyo_capture`) with `"patches": [ … ]` inline or `"patchLog": "path/in/repo.json"` | `patches: {submitted, applied, rejected, notReached}` |
+| MCP, headless | `ukiyo_run` (or `ukiyo_capture`) with `"patches": [ … ]` inline or `"patchLog": "path/in/repo.json"` | `patches: {submitted, appliedCount, appliedHash, applied, rejectedCount, rejectedHash, rejected, notReached}` |
 | CLI, headless | `bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches log.json` | the `ukiyo_run` result as JSON on stdout |
 | Running desktop build | dev bridge `{"cmd":"patch","patch":{…}}`; `ukiyo_live {"action":"patch","patch":{…}}`; `bun tools/mcp/src/cli.ts live patch --pid N --patch patch.json` | `{"id","tick","status":"queued"\|"applied","currentTick","paused"}` |
 
@@ -163,9 +199,11 @@ A tick-0 patch the world refuses is not a bad log: it is recorded in `rejected` 
 refused at its tick.
 
 **MCP `ukiyo_run`.** `patches` (inline array, validated against the advertised patch schema) or `patchLog` (a file
-inside the repository), not both. The result adds `patches.applied` and `patches.rejected` (from the last snapshot's
-`scene` section, with the typed messages) and `patches.notReached` (submitted patches whose tick is after the last
-checkpoint). A refused log makes the run an error result with `patches.refused` holding the host's stderr line.
+inside the repository), not both. The result adds, from the last snapshot's `scene` section, `patches.appliedCount`,
+`appliedHash`, `rejectedCount`, `rejectedHash` and the windows `patches.applied` / `patches.rejected` (the last 16
+each, refusals with the typed messages), and `patches.notReached` (submitted patches whose tick is after the last
+checkpoint; every patch at or before it was applied or refused by then). Compare two runs by their counts and hashes,
+not by the windows. A refused log makes the run an error result with `patches.refused` holding the host's stderr line.
 
 **Dev bridge `patch`.** One patch per request, run on the host thread between frames, where the runtime is exactly at
 a boundary. A patch for a later tick is queued (`"status":"queued"`); one for the current tick applies now
@@ -173,7 +211,8 @@ a boundary. A patch for a later tick is queued (`"status":"queued"`); one for th
 patch at the current tick and `step`. Refusals are `ok:false` with the typed message as `error`
 (`[SCENE:PastTick]: patch p targets tick 1790, but tick 1791 is the current boundary; target 1791 or later`); a
 world-dependent refusal at the current tick is also recorded in `rejected`. A game without scenes answers
-`[RUNTIME]: <Game> has no SceneRegistry, so it cannot take patches`. The bridge only exists in development builds
+`[RUNTIME]: <Game> has no SceneRegistry, so it cannot take patches`. `"applied"` is decided by `AppliedCount`
+growing, not by looking the id up in the window. The bridge only exists in development builds
 (`UkiyoDevBridge=true`), never in exports. Patches submitted live are not recorded into input recordings: keep the
 patch files and replay them headless with `--patches`.
 

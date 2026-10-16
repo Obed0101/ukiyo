@@ -65,12 +65,29 @@ const schema: JsonSchema & { type: "object" } = {
 type PatchRef = { id: string; tick: number };
 type PatchRejection = PatchRef & { code: string; message: string };
 
+/** The snapshot's bounded patch history (docs/scenes-patches.md): windows of the last 16, counts and hashes of all. */
+type SceneHistory = {
+  appliedCount: number;
+  appliedHash: string;
+  patches: PatchRef[];
+  rejectedCount: number;
+  rejectedHash: string;
+  rejected: PatchRejection[];
+};
+
 export type PatchReport = {
   log: string;
   submitted: number;
-  /** Patches applied by the last checkpoint, in application order (from the snapshot's scene section). */
+  /** Patches applied by the last checkpoint, all of them. */
+  appliedCount: number;
+  /** FNV-1a 64 chain over every applied patch's id and tick: equal hashes ⇒ the same patches applied in the same order. */
+  appliedHash: string | null;
+  /** The last 16 applied patches, in application order (the snapshot's window; earlier ones are only counted). */
   applied: PatchRef[];
-  /** Patches the world refused at their tick, with the typed [SCENE:Code] message. */
+  /** Patches the world refused at their tick, all of them. */
+  rejectedCount: number;
+  rejectedHash: string | null;
+  /** The last 16 refusals, with the typed [SCENE:Code] message. */
   rejected: PatchRejection[];
   /** Submitted patches whose tick is after the last checkpoint: neither applied nor refused yet. */
   notReached: PatchRef[];
@@ -102,14 +119,21 @@ export function patchLogFile(args: Record<string, unknown>, root: string, work: 
 /** Applied / rejected / not reached, read from the last snapshot's `scene` section and the host's `patches` line. */
 export function patchReport(output: HeadlessOutput, patches: PatchRef[] | null): PatchReport | null {
   if (!output.patches) return null;
-  const scene = (output.snapshots.at(-1)?.scene ?? { patches: [], rejected: [] }) as { patches: PatchRef[]; rejected: PatchRejection[] };
-  const seen = new Set([...scene.patches, ...scene.rejected].map((patch) => patch.id));
+  const last = output.snapshots.at(-1);
+  const scene = (last?.scene ?? {}) as Partial<SceneHistory>;
+  // Every patch whose tick the run reached was applied or refused at that boundary, before the snapshot was taken, so
+  // "not reached" follows from ticks alone; the windows are too short to look ids up in.
+  const lastTick = typeof last?.tick === "number" ? last.tick : -1;
   return {
     log: output.patches.path,
     submitted: output.patches.submitted,
-    applied: scene.patches,
-    rejected: scene.rejected,
-    notReached: (patches ?? []).filter((patch) => !seen.has(patch.id)),
+    appliedCount: scene.appliedCount ?? 0,
+    appliedHash: scene.appliedHash ?? null,
+    applied: scene.patches ?? [],
+    rejectedCount: scene.rejectedCount ?? 0,
+    rejectedHash: scene.rejectedHash ?? null,
+    rejected: scene.rejected ?? [],
+    notReached: (patches ?? []).filter((patch) => patch.tick > lastTick),
   };
 }
 
@@ -170,7 +194,7 @@ const run: Tool = {
   name: "ukiyo_run",
   title: "Run headless",
   description:
-    "Builds and runs a game with no window or GPU, optionally with scripted input and a scene patch log (patches inline or patchLog file), and returns a JSON snapshot (entity poses + named values) at each checkpoint tick. With patches it also reports which were applied, which the world rejected at their tick (typed [SCENE:Code] message) and which were not reached by the last checkpoint; an invalid log fails the run before tick 0. Use it to prove behavior: positions, scores, state machines.",
+    "Builds and runs a game with no window or GPU, optionally with scripted input and a scene patch log (patches inline or patchLog file), and returns a JSON snapshot (entity poses + named values) at each checkpoint tick. With patches it also reports how many were applied and how many the world rejected at their tick (the last 16 of each, rejections with the typed [SCENE:Code] message, plus a hash chain over all of them that two runs can compare), and which were not reached by the last checkpoint; an invalid log fails the run before tick 0. Use it to prove behavior: positions, scores, state machines.",
   inputSchema: schema,
   run: (args, context) => runHeadless(args, context, false),
 };

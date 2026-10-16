@@ -3,6 +3,7 @@ using Ukiyo.Hosting;
 using Ukiyo.Rendering;
 using Ukiyo.Rendering.Software;
 using Ukiyo.Samples.ImportedMesh;
+using Ukiyo.Samples.Minimap;
 using Xunit;
 
 namespace Ukiyo.Tests;
@@ -162,6 +163,42 @@ public sealed class SurfaceMapTests
         Assert.Equal(RenderErrorCode.OutOfRange, Assert.Throws<RenderException>(() => recorded.Surfaces.EncodePng(59)).Code);
         var png = PngDecoder.Decode(recorded.Surfaces.EncodePng(60));
         Assert.Equal((gateSize.Width, gateSize.Height), (png.Width, png.Height));
+    }
+
+    [Fact]
+    public async Task Multi_camera_frames_get_a_mask_per_pass_and_pass_borders_are_edges()
+    {
+        var size = new RenderExtent(480, 320, 1f);
+        var captures = new Dictionary<bool, List<byte[]>>();
+        SurfaceMap? surfaces = null;
+        foreach (var record in new[] { false, true })
+        {
+            var runtime = new GameRuntime(new MinimapGame(), Source);
+            using var renderer = new SoftwareRenderer { Surfaces = record ? new SurfaceMap() : null };
+            await runtime.StartAsync(renderer, new RenderConfiguration("test", size));
+            runtime.StepTo(60);
+            runtime.RenderFrame(size);
+            captures[record] = [(await renderer.CaptureAsync(new CaptureRequest(60), CancellationToken.None)).Png];
+            for (var pass = 0; pass < runtime.PassCount; pass++)
+            {
+                captures[record].Add((await renderer.CaptureAsync(new CaptureRequest(60) { Pass = pass }, CancellationToken.None)).Png);
+            }
+
+            surfaces = renderer.Surfaces;
+        }
+
+        Assert.Equal(captures[false], captures[true]);
+        Assert.Equal(2, surfaces!.PassCount);
+        var rect = MinimapGame.MinimapRect(size);
+        var minimap = PngDecoder.Decode(surfaces.EncodePng(60, pass: 1));
+        Assert.Equal((rect.Width, rect.Height), (minimap.Width, minimap.Height));
+        Assert.Equal((size.Width, size.Height), (PngDecoder.Decode(surfaces.EncodePng(60, pass: 0)).Width, PngDecoder.Decode(surfaces.EncodePng(60, pass: 0)).Height));
+
+        var frame = surfaces.Classify();
+        var midY = rect.Y + rect.Height / 2;
+        Assert.Equal(SurfaceMap.Edge, frame[midY * size.Width + rect.X]);       // the minimap's left border in the frame
+        Assert.Equal(SurfaceMap.Edge, frame[midY * size.Width + rect.X - 1]);
+        Assert.Equal(RenderErrorCode.OutOfRange, Assert.Throws<RenderException>(() => surfaces.Classify(pass: 2)).Code);
     }
 
     private static async Task<(byte[] Png, SurfaceMap? Surfaces)> CaptureImportedMesh(bool recordSurfaces, long tick, RenderExtent extent)

@@ -7,15 +7,21 @@ namespace Ukiyo.Rendering.Software;
 /// agent gets real frames with no window, GPU or browser. It is a reference, not a performance path: meshes are
 /// clipped against the near plane only, there is no MSAA, and sprites use affine UVs (they are screen-aligned quads).
 /// Lit materials (G1Lit) are shaded per pixel with <see cref="LightingMath.Shade"/>, the model the shaders copy.
+/// Multi-camera frames (docs/rendering-passes.md): each pass is rasterized into its own image at its rect size, exactly
+/// like a single-camera frame of that size, then copied into the frame at its rect; captures read either one.
 /// </summary>
 public sealed class SoftwareRenderer : IRenderer, IRenderCapture
 {
     private readonly ResourceTable<MeshData> _meshes = new();
     private readonly ResourceTable<MaterialData> _materials = new();
     private readonly ResourceTable<LinearTexture> _textures = new();
+    private readonly PassSequencer _passes = new();
+    private readonly Surface?[] _passImages = new Surface?[RenderValidation.MaxPasses];
     private RenderExtent _extent;
-    private float[] _color = [];
-    private float[] _depth = [];
+    private Surface _frame = new(0, 0);
+    private Surface _target = new(0, 0);
+    private int _lastPassCount = 1;
+    private bool _lastFrameHasPasses;
     private long? _lastTick;
     private bool _initialized;
     private bool _disposed;
@@ -23,14 +29,14 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     /// <summary>The CPU renderer is the pixel reference for headless captures, so it implements G1Lit with the shared <see cref="LightingMath"/>.</summary>
     private const RenderProfile HighestProfile = RenderProfile.G1Lit;
 
-    public RenderCapabilities Capabilities { get; private set; } = new("SoftwareRenderer", "CPU", "managed rasterizer", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true };
+    public RenderCapabilities Capabilities { get; private set; } = new("SoftwareRenderer", "CPU", "managed rasterizer", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true, SupportsPasses = true };
 
     public long FramesRendered { get; private set; }
 
     /// <summary>
-    /// Debug only, null by default: when set, every <see cref="Render"/> also records which surface covers each pixel,
-    /// for pixel-parity gates (see <see cref="SurfaceMap"/>). It never changes the frame; while it is null the only cost
-    /// is a null check per covered pixel.
+    /// Debug only, null by default: when set, every <see cref="Render"/> also records which surface covers each pixel of
+    /// the frame and of each pass, for pixel-parity gates (see <see cref="SurfaceMap"/>). It never changes the frame;
+    /// while it is null the only cost is a null check per covered pixel.
     /// </summary>
     public SurfaceMap? Surfaces { get; set; }
 
@@ -79,9 +85,7 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
     {
         RequireReady();
         _extent = extent;
-        var pixels = extent.IsEmpty ? 0 : extent.Width * extent.Height;
-        _color = new float[pixels * 3];
-        _depth = new float[pixels];
+        _frame = extent.IsEmpty ? new Surface(0, 0) : new Surface(extent.Width, extent.Height);
     }
 
     public void Render(RenderPacket packet)
@@ -89,21 +93,86 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         RequireReady();
         RenderValidation.Validate(packet);
         RenderValidation.RequireProfile(Capabilities.Profile, packet);
+        var completesFrame = _passes.Accept(packet);
+        if (packet.Pass is { Id: 0 })
+        {
+            _lastTick = null;
+        }
+
         if (_extent.IsEmpty)
         {
             return;
         }
 
-        for (var i = 0; i < _depth.Length; i++)
+        try
         {
-            _color[i * 3] = packet.ClearColor.X;
-            _color[i * 3 + 1] = packet.ClearColor.Y;
-            _color[i * 3 + 2] = packet.ClearColor.Z;
-            _depth[i] = 1f;
+            if (packet.Pass is not { } pass)
+            {
+                Surfaces?.BeginFrame(packet.Tick, _frame.Width, _frame.Height);
+                Draw(packet, _frame);
+                _lastPassCount = 1;
+                _lastFrameHasPasses = false;
+            }
+            else
+            {
+                RenderValidation.RequirePassInside(pass, _extent);
+                if (pass.Id == 0)
+                {
+                    _frame.Clear(packet.ClearColor);
+                    Surfaces?.BeginFrame(packet.Tick, _frame.Width, _frame.Height);
+                }
+
+                var image = PassImage(pass);
+                Surfaces?.BeginPass(pass.Id, image.Width, image.Height);
+                Draw(packet, image);
+                _frame.CopyFrom(image, pass.Rect.X, pass.Rect.Y);
+                Surfaces?.EndPass(pass.Id, pass.Rect.X, pass.Rect.Y);
+                _lastPassCount = pass.Count;
+                _lastFrameHasPasses = true;
+            }
+        }
+        catch
+        {
+            _passes.Abort();
+            throw;
         }
 
-        Surfaces?.BeginFrame(packet.Tick, _extent.Width, _extent.Height);
-        var viewProjection = ViewProjection(packet.Camera, _extent.Width / (float)_extent.Height);
+        if (completesFrame)
+        {
+            _lastTick = packet.Tick;
+            FramesRendered++;
+        }
+    }
+
+    public ValueTask<CaptureResult> CaptureAsync(CaptureRequest request, CancellationToken cancellationToken)
+    {
+        RequireReady();
+        _passes.RequireComplete();
+        if (_lastTick != request.Tick)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"capture for tick {request.Tick} but last frame is tick {_lastTick}");
+        }
+
+        RenderValidation.RequireCapturablePass(request.Pass, _lastPassCount);
+        var surface = request.Pass is { } id && _lastFrameHasPasses ? _passImages[id]! : _frame;
+        var rgba = surface.ToSrgbRgba();
+        var png = PngEncoder.EncodeRgba(rgba, surface.Width, surface.Height);
+        return ValueTask.FromResult(new CaptureResult(CaptureStatus.Captured, png, surface.Width, surface.Height, Capabilities.Backend));
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+        _initialized = false;
+    }
+
+    /// <summary>One camera into <paramref name="target"/>: clear, meshes, sprites. Its size is the drawing buffer the packet sees.</summary>
+    private void Draw(RenderPacket packet, Surface target)
+    {
+        _target = target;
+        target.Clear(packet.ClearColor);
+        var extent = new RenderExtent(target.Width, target.Height, 1f);
+        var viewProjection = ViewProjection(packet.Camera, target.Width / (float)target.Height);
         for (var i = 0; i < packet.Instances.Count; i++)
         {
             var instance = packet.Instances[i];
@@ -118,40 +187,23 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         {
             var sprite = packet.Sprites[index];
             var texture = _textures.Get(sprite.Texture);
-            SpriteGeometry.Quad(sprite, packet.Camera2D, _extent, quad);
+            SpriteGeometry.Quad(sprite, packet.Camera2D, extent, quad);
             DrawSpriteTriangle(quad[0], quad[1], quad[2], texture, sprite.Color, ownsEdgeAB: true, index);
             DrawSpriteTriangle(quad[0], quad[2], quad[3], texture, sprite.Color, ownsEdgeAB: false, index);
         }
-
-        _lastTick = packet.Tick;
-        FramesRendered++;
     }
 
-    public ValueTask<CaptureResult> CaptureAsync(CaptureRequest request, CancellationToken cancellationToken)
+    /// <summary>The image pass <paramref name="pass"/> draws into, kept after the frame for per-pass captures.</summary>
+    private Surface PassImage(FramePass pass)
     {
-        RequireReady();
-        if (_lastTick != request.Tick)
+        var image = _passImages[pass.Id];
+        if (image is null || image.Width != pass.Rect.Width || image.Height != pass.Rect.Height)
         {
-            throw new RenderException(RenderErrorCode.OutOfRange, $"capture for tick {request.Tick} but last frame is tick {_lastTick}");
+            image = new Surface(pass.Rect.Width, pass.Rect.Height);
+            _passImages[pass.Id] = image;
         }
 
-        var rgba = new byte[_depth.Length * 4];
-        for (var i = 0; i < _depth.Length; i++)
-        {
-            rgba[i * 4] = ColorSpace.LinearToSrgb(_color[i * 3]);
-            rgba[i * 4 + 1] = ColorSpace.LinearToSrgb(_color[i * 3 + 1]);
-            rgba[i * 4 + 2] = ColorSpace.LinearToSrgb(_color[i * 3 + 2]);
-            rgba[i * 4 + 3] = 255;
-        }
-
-        var png = PngEncoder.EncodeRgba(rgba, _extent.Width, _extent.Height);
-        return ValueTask.FromResult(new CaptureResult(CaptureStatus.Captured, png, _extent.Width, _extent.Height, Capabilities.Backend));
-    }
-
-    public void Dispose()
-    {
-        _disposed = true;
-        _initialized = false;
+        return image;
     }
 
     /// <summary>Identical to the wgpu path: inverse camera transform, right-handed perspective with 0..1 depth.</summary>
@@ -244,8 +296,9 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         }
 
         Surfaces?.FrontFacing(instance, triangle);
-        var width = _extent.Width;
-        var height = _extent.Height;
+        var width = _target.Width;
+        var height = _target.Height;
+        var colors = _target.Color;
         var sa = ToPixel(na, width, height);
         var sb = ToPixel(nb, width, height);
         var sc = ToPixel(nc, width, height);
@@ -275,12 +328,12 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
 
                 var depth = w0 * na.Z + w1 * nb.Z + w2 * nc.Z;
                 var pixel = y * width + x;
-                if (depth < 0 || depth > 1 || !(depth < _depth[pixel]))
+                if (depth < 0 || depth > 1 || !(depth < _target.Depth[pixel]))
                 {
                     continue;
                 }
 
-                _depth[pixel] = depth;
+                _target.Depth[pixel] = depth;
                 Surfaces?.Cover(pixel, instance, triangle);
                 var pw0 = w0 * invW.X;
                 var pw1 = w1 * invW.Y;
@@ -294,9 +347,9 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
                     color = LightingMath.Shade(color, normal, world, lighting);
                 }
 
-                _color[pixel * 3] = color.X;
-                _color[pixel * 3 + 1] = color.Y;
-                _color[pixel * 3 + 2] = color.Z;
+                colors[pixel * 3] = color.X;
+                colors[pixel * 3 + 1] = color.Y;
+                colors[pixel * 3 + 2] = color.Z;
             }
         }
     }
@@ -311,8 +364,9 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
             return;
         }
 
-        var width = _extent.Width;
-        var height = _extent.Height;
+        var width = _target.Width;
+        var height = _target.Height;
+        var colors = _target.Color;
         var minX = Math.Max(0, (int)MathF.Floor(MathF.Min(a.Pixel.X, MathF.Min(b.Pixel.X, c.Pixel.X))));
         var maxX = Math.Min(width - 1, (int)MathF.Ceiling(MathF.Max(a.Pixel.X, MathF.Max(b.Pixel.X, c.Pixel.X))));
         var minY = Math.Max(0, (int)MathF.Floor(MathF.Min(a.Pixel.Y, MathF.Min(b.Pixel.Y, c.Pixel.Y))));
@@ -342,9 +396,9 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
                 Surfaces?.CoverSprite(y * width + x, sprite);
                 var pixel = (y * width + x) * 3;
                 var alpha = MathF.Min(1f, texel.W);
-                _color[pixel] = texel.X * alpha + _color[pixel] * (1 - alpha);
-                _color[pixel + 1] = texel.Y * alpha + _color[pixel + 1] * (1 - alpha);
-                _color[pixel + 2] = texel.Z * alpha + _color[pixel + 2] * (1 - alpha);
+                colors[pixel] = texel.X * alpha + colors[pixel] * (1 - alpha);
+                colors[pixel + 1] = texel.Y * alpha + colors[pixel + 1] * (1 - alpha);
+                colors[pixel + 2] = texel.Z * alpha + colors[pixel + 2] * (1 - alpha);
             }
         }
     }
@@ -361,6 +415,52 @@ public sealed class SoftwareRenderer : IRenderer, IRenderCapture
         if (!_initialized)
         {
             throw new RenderException(RenderErrorCode.NotInitialized, "SoftwareRenderer used before InitializeAsync");
+        }
+    }
+
+    /// <summary>Linear RGB color and depth for one image: the drawing buffer, or one pass at its rect size.</summary>
+    private sealed class Surface(int width, int height)
+    {
+        public int Width { get; } = width;
+
+        public int Height { get; } = height;
+
+        public float[] Color { get; } = new float[width * height * 3];
+
+        public float[] Depth { get; } = new float[width * height];
+
+        public void Clear(Vector4 color)
+        {
+            for (var i = 0; i < Depth.Length; i++)
+            {
+                Color[i * 3] = color.X;
+                Color[i * 3 + 1] = color.Y;
+                Color[i * 3 + 2] = color.Z;
+                Depth[i] = 1f;
+            }
+        }
+
+        /// <summary>Opaque copy of <paramref name="source"/> with its top-left at (x, y); passes never blend with each other.</summary>
+        public void CopyFrom(Surface source, int x, int y)
+        {
+            for (var row = 0; row < source.Height; row++)
+            {
+                Array.Copy(source.Color, row * source.Width * 3, Color, ((y + row) * Width + x) * 3, source.Width * 3);
+            }
+        }
+
+        public byte[] ToSrgbRgba()
+        {
+            var rgba = new byte[Depth.Length * 4];
+            for (var i = 0; i < Depth.Length; i++)
+            {
+                rgba[i * 4] = ColorSpace.LinearToSrgb(Color[i * 3]);
+                rgba[i * 4 + 1] = ColorSpace.LinearToSrgb(Color[i * 3 + 1]);
+                rgba[i * 4 + 2] = ColorSpace.LinearToSrgb(Color[i * 3 + 2]);
+                rgba[i * 4 + 3] = 255;
+            }
+
+            return rgba;
         }
     }
 

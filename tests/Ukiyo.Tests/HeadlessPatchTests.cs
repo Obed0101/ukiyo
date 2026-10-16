@@ -143,4 +143,19 @@ public sealed class HeadlessPatchTests : IDisposable
         var rejected = Assert.Single(scene.GetProperty("rejected").EnumerateArray());
         Assert.Equal(("ghost", "UnknownEntity"), (rejected.GetProperty("id").GetString(), rejected.GetProperty("code").GetString()));
     }
+
+    [Fact]
+    public async Task More_tick_zero_refusals_than_the_window_holds_are_still_recorded_not_a_bad_log()
+    {
+        var ghosts = Enumerable.Range(1, PatchHistory.Window + 4).Select(i => $$"""{"id":"ghost-{{i}}","tick":0,"ops":[{"op":"dispose","id":"nobody"}]}""");
+        var (code, snapshots, stdout, stderr) = await RunHeadless(new SceneHopGame(), "--checkpoints", "0", "--patches", Write("ghosts.json", $"[{string.Join(',', ghosts)}]"));
+
+        Assert.Equal(0, code);
+        Assert.Equal("", stderr);
+        Assert.Contains($"submitted={PatchHistory.Window + 4}", stdout);
+        var scene = JsonDocument.Parse(Assert.Single(snapshots)).RootElement.GetProperty("scene");
+        Assert.Equal(PatchHistory.Window + 4, scene.GetProperty("rejectedCount").GetInt64());
+        Assert.Equal(PatchHistory.Window, scene.GetProperty("rejected").GetArrayLength());
+        Assert.Equal("ghost-5", scene.GetProperty("rejected")[0].GetProperty("id").GetString());
+    }
 }

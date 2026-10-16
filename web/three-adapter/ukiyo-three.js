@@ -2,7 +2,7 @@
 // Three geometries/materials and applies frame packets computed in C#. It never advances time, animates or
 // decides anything about the game: with no packet, nothing moves.
 import * as THREE from "three";
-import { CommandKind, RenderError, ResourceKind, TextureFilter, decodeFrame, decodeResources } from "./protocol.js";
+import { CommandKind, PassSequencer, RenderError, ResourceKind, TextureFilter, decodeFrame, decodeResources, requirePassInside } from "./protocol.js";
 import { spriteDrawOrder, spriteQuad } from "./sprite-geometry.js";
 import { createLitMaterial, createSceneLightUniforms, writeSceneLights } from "./lit-material.js";
 
@@ -21,6 +21,10 @@ const state = {
   target: null,
   blitScene: null,
   lastSequence: 0,
+  // Multi-camera frames: order checks, one sRGB target per pass id, and how many passes the last complete frame had.
+  passes: new PassSequencer(),
+  passTargets: [],
+  lastFramePasses: 0,
 };
 
 const tableFor = (kind) => (kind === ResourceKind.Mesh ? state.geometries : kind === ResourceKind.Material ? state.materials : state.textures);
@@ -127,13 +131,81 @@ export function resize(width, height) {
   state.target.setSize(width, height);
 }
 
-/** Applies one C# frame packet and draws it. Returns the tick that was presented. */
+/**
+ * Applies one C# frame packet and draws it. Returns the tick of the packet. A single-camera packet is drawn and
+ * presented at once. A pass of a multi-camera frame is drawn into its own target at its rect size (exactly like a
+ * single-camera frame of that size) and copied into the frame at its rect; the last pass presents the canvas.
+ */
 export function render(bytes) {
   requireReady();
   const frame = decodeFrame(bytes);
   if (frame.sequence <= state.lastSequence) throw new RenderError("InvalidPacket", `sequence ${frame.sequence} after ${state.lastSequence}`);
+  const completesFrame = state.passes.accept(frame);
   state.lastSequence = frame.sequence;
+  const size = state.renderer.getDrawingBufferSize(new THREE.Vector2());
+  try {
+    if (frame.pass) {
+      renderPass(frame, size, completesFrame);
+      return frame.tick;
+    }
+    if (state.target.width !== size.x || state.target.height !== size.y) state.target.setSize(size.x, size.y);
+    drawCamera(frame, state.target, size.x, size.y);
+    state.lastFramePasses = 0;
+  } catch (error) {
+    state.passes.abort();
+    throw error;
+  }
+  state.renderer.setRenderTarget(null);
+  state.renderer.render(state.blitScene, state.spriteCamera);
+  return frame.tick;
+}
 
+/** One pass: its own target, then an exact 1:1 copy into the frame target at the rect (GL rows count from the bottom). */
+function renderPass(frame, size, completesFrame) {
+  const { pass } = frame;
+  requirePassInside(pass, size.x, size.y);
+  const frameTarget = state.target;
+  if (frameTarget.width !== size.x || frameTarget.height !== size.y) frameTarget.setSize(size.x, size.y);
+  if (pass.id === 0) {
+    // Pixels no pass covers keep pass 0's clear color.
+    state.renderer.setRenderTarget(frameTarget);
+    const [r, g, b, a] = frame.clearColor;
+    state.renderer.setClearColor(new THREE.Color().setRGB(r, g, b, THREE.LinearSRGBColorSpace), a);
+    state.renderer.clear();
+  }
+
+  const passTarget = passTargetFor(pass.id, pass.width, pass.height);
+  drawCamera(frame, passTarget.target, pass.width, pass.height);
+  frameTarget.viewport.set(pass.x, size.y - pass.y - pass.height, pass.width, pass.height);
+  state.renderer.setRenderTarget(frameTarget);
+  state.renderer.render(passTarget.blitScene, state.spriteCamera);
+  frameTarget.viewport.set(0, 0, size.x, size.y);
+  state.renderer.setRenderTarget(null);
+  if (completesFrame) {
+    state.lastFramePasses = pass.count;
+    state.renderer.render(state.blitScene, state.spriteCamera);
+  }
+}
+
+/** A pass's sRGB target (kept for capturePass) and the quad that copies it into the frame target. */
+function passTargetFor(id, width, height) {
+  let entry = state.passTargets[id];
+  if (!entry) {
+    const target = new THREE.WebGLRenderTarget(width, height, { colorSpace: THREE.SRGBColorSpace, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+    const blit = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), new THREE.MeshBasicMaterial({ map: target.texture, depthTest: false, depthWrite: false, toneMapped: false }));
+    blit.position.z = -0.5;
+    blit.frustumCulled = false;
+    const blitScene = new THREE.Scene();
+    blitScene.add(blit);
+    entry = { target, blitScene };
+    state.passTargets[id] = entry;
+  }
+  if (entry.target.width !== width || entry.target.height !== height) entry.target.setSize(width, height);
+  return entry;
+}
+
+/** Draws one camera into `target` (width × height is the drawing buffer this packet sees): clear, meshes, sprites. */
+function drawCamera(frame, target, width, height) {
   const { camera, clearColor } = frame;
   const cam = state.camera;
   cam.position.set(camera.position[0], camera.position[1], camera.position[2]);
@@ -141,8 +213,7 @@ export function render(bytes) {
   cam.fov = THREE.MathUtils.radToDeg(camera.fovY);
   cam.near = camera.near;
   cam.far = camera.far;
-  const size = state.renderer.getDrawingBufferSize(new THREE.Vector2());
-  cam.aspect = size.x / size.y;
+  cam.aspect = width / height;
   cam.updateProjectionMatrix();
 
   while (state.pool.length < frame.instances.length) {
@@ -168,21 +239,17 @@ export function render(bytes) {
   });
 
   writeSceneLights(state.sceneLights, frame.lighting);
-  if (state.target.width !== size.x || state.target.height !== size.y) state.target.setSize(size.x, size.y);
-  state.renderer.setRenderTarget(state.target);
+  state.renderer.setRenderTarget(target);
   // Three converts the clear color for the bound target when it is set, so it must be set after binding.
   state.renderer.setClearColor(new THREE.Color().setRGB(clearColor[0], clearColor[1], clearColor[2], THREE.LinearSRGBColorSpace), clearColor[3]);
   state.renderer.clear();
   state.renderer.render(state.scene, cam);
   if (frame.sprites.length > 0) {
-    buildSprites(frame, size.x, size.y);
+    buildSprites(frame, width, height);
     state.renderer.render(state.spriteScene, state.spriteCamera);
   } else {
     state.spriteMeshes.forEach((mesh) => { mesh.visible = false; });
   }
-  state.renderer.setRenderTarget(null);
-  state.renderer.render(state.blitScene, state.spriteCamera);
-  return frame.tick;
 }
 
 /** One mesh per run of consecutive sprites sharing a texture, in the shared draw order. Geometry is rebuilt per frame. */
@@ -234,8 +301,42 @@ export function capture() {
   return `${canvas.width}x${canvas.height};${url.slice(url.indexOf(",") + 1)}`;
 }
 
+/**
+ * Pass `id` of the last multi-camera frame, alone at its rect size, read from its own target (the bytes the pass drew,
+ * before later passes covered any of it). Format: "WxH;<base64 png>", like capture().
+ */
+export function capturePass(id) {
+  requireReady();
+  state.passes.requireComplete();
+  if (!(id >= 0 && id < state.lastFramePasses)) throw new RenderError("OutOfRange", `capture of pass ${id}, but the last frame has ${state.lastFramePasses || 1} pass(es) and no pass section`);
+  const { target } = state.passTargets[id];
+  const { width, height } = target;
+  const pixels = new Uint8Array(width * height * 4);
+  // An SRGB8_ALPHA8 target reads back its stored (encoded) bytes, the same bytes the copy into the frame used.
+  state.renderer.readRenderTargetPixels(target, 0, 0, width, height, pixels);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  const image = context.createImageData(width, height);
+  for (let y = 0; y < height; y++) {
+    // GL rows start at the bottom; PNG rows at the top.
+    image.data.set(pixels.subarray((height - 1 - y) * width * 4, (height - y) * width * 4), y * width * 4);
+  }
+  for (let i = 3; i < image.data.length; i += 4) image.data[i] = 255;
+  context.putImageData(image, 0, 0);
+  const url = canvas.toDataURL("image/png");
+  return `${width}x${height};${url.slice(url.indexOf(",") + 1)}`;
+}
+
 export function dispose() {
   if (!state.renderer) return;
+  state.passTargets.forEach((entry) => {
+    entry.target.dispose();
+    entry.blitScene.children.forEach((mesh) => { mesh.geometry.dispose(); mesh.material.dispose(); });
+  });
+  state.passTargets.length = 0;
+  state.passes.abort();
   state.geometries.forEach((entry) => entry.value.dispose());
   state.materials.forEach((entry) => entry.value.dispose());
   state.textures.forEach((entry) => entry.value.dispose());

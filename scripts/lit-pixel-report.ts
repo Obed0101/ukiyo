@@ -1,7 +1,7 @@
 // Pixel detail for the G1Lit parity run: for every checkpoint, compares each target with the CPU reference of the same
 // size and splits the differing pixels into silhouette edges and interiors (shading). Edges come from geometry, not
 // color: the CPU reference also wrote an edge mask (headless --edge-masks, SurfaceMap in Ukiyo.Render.Software) that
-// marks every pixel whose 3x3 neighborhood spans more than one surface (background, another draw, a sprite, or
+// marks every pixel whose 3x3 neighborhood spans more than one surface (background, another draw, a sprite, a pass, or
 // triangles of one mesh that are not neighbors on one smooth sheet). There a GPU's rasterization rules may move the
 // boundary by a pixel; everywhere else only lighting decides the color, so lighting math drift shows up in interiors.
 // Usage: bun scripts/lit-pixel-report.ts <evidence-dir>   (after scripts/g1-parity.ts wrote web/*.png)
@@ -62,11 +62,20 @@ const rows = [
   "| Tick | Pair | Size | Max Δ | Pixels Δ>0 | Mask edge px | Edge px (max Δ) | Interior px (max Δ) | Interior Δ>1 on steep gradients | Interior over tolerance | Δ=0 / 1 / 2 / ≥3 |",
   "|---|---|---|---|---|---|---|---|---|---|---|",
 ];
-const ticks = readdirSync(join(dir, "headless")).filter((f) => /-tick-\d+\.png$/.test(f)).map((f) => Number(f.match(/(\d+)\.png$/)![1])).sort((a, b) => a - b);
-const name = (prefix: string, tick: number) => `${prefix}-tick-${String(tick).padStart(6, "0")}.png`;
-for (const tick of ticks) {
+// Every CPU capture is compared: whole frames (headless-tick-NNNNNN.png) and, for multi-camera frames, each pass alone
+// (headless-tick-NNNNNN-pass-K.png), each with its edge mask (edges-tick-NNNNNN[-pass-K].png in <reference>-edges/).
+// A target, reference or mask missing for any of them fails.
+const captures = readdirSync(join(dir, "headless"))
+  .map((f) => f.match(/^headless-tick-(\d+)(?:-pass-(\d+))?\.png$/))
+  .filter((m): m is RegExpMatchArray => m !== null)
+  .map((m) => ({ tick: Number(m[1]), pass: m[2] === undefined ? undefined : Number(m[2]) }))
+  .sort((a, b) => a.tick - b.tick || (a.pass ?? -1) - (b.pass ?? -1));
+const png = (folder: string, prefix: string, c: { tick: number; pass?: number }) =>
+  join(dir, folder, `${prefix}-tick-${String(c.tick).padStart(6, "0")}${c.pass === undefined ? "" : `-pass-${c.pass}`}.png`);
+for (const capture of captures) {
+  const tick = capture.pass === undefined ? `${capture.tick}` : `${capture.tick} · pass ${capture.pass}`;
   for (const [target, reference] of [["web", "headless"], ["desktop", "headless-desktop-size"]] as const) {
-    const t = join(dir, target, name(target, tick)), r = join(dir, reference, name("headless", tick)), m = join(dir, `${reference}-edges`, name("edges", tick));
+    const t = png(target, target, capture), r = png(reference, "headless", capture), m = png(`${reference}-edges`, "edges", capture);
     const missing = [t, r, m].filter((p) => !existsSync(p));
     if (missing.length) { failures++; rows.push(`| ${tick} | CPU vs ${target} | – | missing ${missing.join(", ")} | | | | | | | |`); continue; }
     const ref = decodePng(r);

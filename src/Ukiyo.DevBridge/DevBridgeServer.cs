@@ -146,7 +146,25 @@ public sealed class DevBridgeServer : IDevSession
                 return Ok(id, json => json.WriteRawValue(_runtime.SnapshotJson()));
             case "capture":
             {
-                var capture = _runtime.CaptureAsync().AsTask().GetAwaiter().GetResult();
+                // Optional "pass": a pass id, or "primary" for the pass the game marks as its view (what an inspector previews).
+                int? pass = null;
+                if (request.TryGetProperty("pass", out var passValue))
+                {
+                    if (passValue.ValueKind == JsonValueKind.String && passValue.GetString() == "primary")
+                    {
+                        pass = _runtime.PrimaryPass;
+                    }
+                    else if (passValue.ValueKind == JsonValueKind.Number && passValue.TryGetInt32(out var passId) && passId >= 0)
+                    {
+                        pass = passId;
+                    }
+                    else
+                    {
+                        return Error(id, "pass must be a pass id (0, 1, …) or \"primary\"");
+                    }
+                }
+
+                var capture = _runtime.CaptureAsync(pass).AsTask().GetAwaiter().GetResult();
                 if (capture is null)
                 {
                     return Error(id, $"{_runtime.Renderer.Capabilities.RendererName} cannot capture");
@@ -159,6 +177,13 @@ public sealed class DevBridgeServer : IDevSession
                     json.WriteNumber("width", capture.Width);
                     json.WriteNumber("height", capture.Height);
                     json.WriteString("backend", capture.Backend);
+                    if (pass is { } captured)
+                    {
+                        json.WriteNumber("pass", captured);
+                        json.WriteNumber("passes", _runtime.PassCount);
+                        json.WriteNumber("primaryPass", _runtime.PrimaryPass);
+                    }
+
                     json.WriteString("png", Convert.ToBase64String(capture.Png));
                     json.WriteEndObject();
                 });
@@ -230,6 +255,7 @@ public sealed class DevBridgeServer : IDevSession
         }
 
         ScenePatch patch;
+        var appliedBefore = _runtime.SceneState!.AppliedCount;
         try
         {
             patch = ScenePatch.Parse(patchElement.GetRawText());
@@ -240,7 +266,8 @@ public sealed class DevBridgeServer : IDevSession
             return Error(id, refused.Message);
         }
 
-        var applied = _runtime.SceneState!.Applied.Any(record => record.Id == patch.Id);
+        // Submit either queues the patch or applies exactly this one now; the applied list is only a bounded window.
+        var applied = _runtime.SceneState!.AppliedCount > appliedBefore;
         return Ok(id, json =>
         {
             json.WriteStartObject();

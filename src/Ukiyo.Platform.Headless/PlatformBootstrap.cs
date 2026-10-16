@@ -89,7 +89,7 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
 /// <summary>
 /// Runs the game with no window, GPU or DOM. Each checkpoint prints one JSON line prefixed with "snapshot "; with
 /// --capture it also writes headless-tick-NNNNNN.png and prints "capture {path}" (and with --edge-masks writes
-/// edges-tick-NNNNNN.png and prints "edges {path}"); with --patches it prints "patches {path} submitted=N" once the
+/// edges-tick-NNNNNN.png, plus edges-tick-NNNNNN-pass-K.png per pass, each with an "edges {path}" line); with --patches it prints "patches {path} submitted=N" once the
 /// log is accepted. Agents parse exactly these lines. Output goes to
 /// <paramref name="output"/> (stdout by default) and refusals to <paramref name="errors"/> (stderr by default).
 /// </summary>
@@ -190,12 +190,8 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".json"), snapshot);
             _out.WriteLine($"snapshot {snapshot}");
             _out.WriteLine($"capture {png}");
-            if (renderer.Surfaces is { } surfaces)
-            {
-                var edges = Path.GetFullPath(Path.Combine(options.EdgeMaskDirectory!, $"edges-tick-{checkpoint:D6}.png"));
-                await File.WriteAllBytesAsync(edges, surfaces.EncodePng(runtime.Tick));
-                _out.WriteLine($"edges {edges}");
-            }
+            await WriteEdgeMask(runtime, renderer, checkpoint, pass: null);
+            await WritePassCaptures(runtime, renderer, Path.ChangeExtension(png, null), checkpoint);
         }
 
         _out.WriteLine($"[ukiyo] software frames={renderer.FramesRendered} size={options.Extent.Width}x{options.Extent.Height}");
@@ -219,12 +215,13 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
 
         foreach (var patch in patches)
         {
-            var rejectedBefore = runtime.SceneState!.Rejected.Count;
+            // The count, not the rejected list: the list is a bounded window and stops growing once full.
+            var rejectedBefore = runtime.SceneState!.RejectedCount;
             try
             {
                 runtime.SubmitPatch(patch);
             }
-            catch (SceneException) when (runtime.SceneState!.Rejected.Count > rejectedBefore)
+            catch (SceneException) when (runtime.SceneState!.RejectedCount > rejectedBefore)
             {
                 // Refused by the world at tick 0: already in the snapshot's rejected list, not a bad log.
             }
@@ -243,5 +240,40 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
     {
         _errors.WriteLine($"[HEADLESS]: --patches {path}: {message}");
         return PatchLogRefused;
+    }
+
+    /// <summary>
+    /// Multi-camera frames also get one PNG per pass (<c>…-pass-K.png</c>, the pass alone at its rect size) and a
+    /// <c>capture-pass K primary=true|false {path}</c> line. Single-camera games write exactly what they always did.
+    /// </summary>
+    private async Task WritePassCaptures(GameRuntime runtime, SoftwareRenderer renderer, string stem, long checkpoint)
+    {
+        if (runtime.LastFrame is not [{ Pass: not null }, ..])
+        {
+            return;
+        }
+
+        for (var pass = 0; pass < runtime.PassCount; pass++)
+        {
+            var capture = await renderer.CaptureAsync(new CaptureRequest(runtime.Tick) { Pass = pass }, CancellationToken.None);
+            var path = $"{stem}-pass-{pass}.png";
+            await File.WriteAllBytesAsync(path, capture.Png);
+            _out.WriteLine($"capture-pass {pass} primary={(pass == runtime.PrimaryPass ? "true" : "false")} {path}");
+            await WriteEdgeMask(runtime, renderer, checkpoint, pass);
+        }
+    }
+
+    /// <summary>With --edge-masks: edges-tick-NNNNNN.png (or …-pass-K.png) for the capture just written, and an "edges {path}" line.</summary>
+    private async Task WriteEdgeMask(GameRuntime runtime, SoftwareRenderer renderer, long checkpoint, int? pass)
+    {
+        if (renderer.Surfaces is not { } surfaces)
+        {
+            return;
+        }
+
+        var name = pass is { } id ? $"edges-tick-{checkpoint:D6}-pass-{id}.png" : $"edges-tick-{checkpoint:D6}.png";
+        var path = Path.GetFullPath(Path.Combine(options.EdgeMaskDirectory!, name));
+        await File.WriteAllBytesAsync(path, surfaces.EncodePng(runtime.Tick, pass));
+        _out.WriteLine($"edges {path}");
     }
 }

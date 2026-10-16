@@ -68,6 +68,24 @@ there once; renderers do not reimplement it differently.
   shared vertex whose closed fan faces the camera). Interior tolerance is Δ ≤ 1 + floor(G/16), G = the reference's
   local gradient. Keep the map debug-only: null by default, never changes a frame.
 
+## Multi-camera passes
+
+- Model in docs/rendering-passes.md. A frame is one packet (no pass section, bytes unchanged) or 1–4 pass packets with
+  a `FramePass` (`Id`, `Count`, `PrimaryId`, `Rect`), frame flag `0x4`, 32-byte section last. Each pass is drawn
+  exactly like a single-camera frame of its rect's size, at its rect; pass 0 clears the whole buffer first.
+- Every renderer runs `PassSequencer.Accept(packet)` in `Render` (consecutive sequences, ids in order, same tick/count/
+  primary/viewport → else `InvalidPacket`), `RenderValidation.RequirePassInside(pass, ownExtent)`, `Abort()` when a
+  pass throws, and in `CaptureAsync` `RequireComplete()` + `RenderValidation.RequireCapturablePass`. JS mirrors it in
+  `PassSequencer` / `requirePassInside` (protocol.js).
+- Capture: `CaptureRequest.Pass` null = whole composed frame; k = pass k alone at its rect size (also where later passes
+  cover it). A single-camera frame is its own pass 0.
+- CPU: per-pass `Surface` + opaque copy. wgpu: passes collected, then drawn in place with viewport + scissor (Metal
+  surfaces are not copy destinations in wgpu-native 29), rect clear = sprite pipeline quad with a white texel; per-pass
+  capture re-renders into a `PassTarget`. three.js: per-pass sRGB target, 1:1 blit into the frame target, the last pass
+  blits to the canvas; `capturePass(id)` reads the pass target.
+- Declare `SupportsPasses = true` only when all of that holds; the runtime refuses passes otherwise.
+- Evidence: `scripts/g1passes.sh` (Minimap on CPU, Metal and WebGL2, whole frames and every pass).
+
 ## wgpu specifics
 
 - Bindings in `WgpuNative.cs` follow `webgpu.h` of the pinned wgpu-native (`scripts/fetch-native.sh`). Struct layout

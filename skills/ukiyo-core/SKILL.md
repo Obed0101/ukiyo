@@ -71,11 +71,16 @@ _scenes.LoadScene("meadow");                                       // live at ti
   Applied at the boundary before `tick` (now, if paused exactly there), whole or not at all. Past ticks, unknown
   prefabs/parameters and out-of-range values throw at submit; missing entities, bounds and the `scene` guard are
   checked at the tick and land in `RejectedPatches`. Game code may submit for `tick.Tick + 1`, never the running tick.
-- Snapshots of games with a registry carry `"scene":{"active","loadedAt","patches":[{"id","tick"}],"rejected":[…]}`.
+  At a boundary a pending `LoadScene` happens first, then that tick's patches. A patch changes the live entities only:
+  reloading the scene rebuilds them from the scene file, so the patch's effect is gone while it stays counted in
+  `scene.appliedCount`/`appliedHash`.
+- Snapshots of games with a registry carry
+  `"scene":{"active","loadedAt","appliedCount","appliedHash","patches":[{"id","tick"}],"rejectedCount","rejectedHash","rejected":[…]}`:
+  `patches`/`rejected` are the last 16 only, counts and FNV-1a 64 hashes cover the whole session.
   Same input script + same patch log ⇒ same snapshots.
 - Submitting without code: headless `--patches log.json` (a JSON array, submitted before tick 0; a bad log exits 2
-  with the `[SCENE:Code]` line on stderr), `ukiyo_run {"patches":[…]}` or `{"patchLog":"path"}` (reports `applied`,
-  `rejected`, `notReached`), and on a running desktop build `ukiyo_live {"action":"patch","patch":{…}}` /
+  with the `[SCENE:Code]` line on stderr), `ukiyo_run {"patches":[…]}` or `{"patchLog":"path"}` (reports `appliedCount`,
+  `appliedHash`, `applied`, `rejectedCount`, `rejectedHash`, `rejected`, `notReached`), and on a running desktop build `ukiyo_live {"action":"patch","patch":{…}}` /
   `bun tools/mcp/src/cli.ts live patch --pid N --patch p.json` (`queued` or `applied`). Details per entry point:
   docs/scenes-patches.md.
 
@@ -94,6 +99,14 @@ _scenes.LoadScene("meadow");                                       // live at ti
 
 Report what each check proved. A green build is not a visual check; a CPU capture is not a GPU capture.
 
+Without a configured MCP client: `UKIYO_ROOT=<repo> bun tools/mcp/src/server.ts` speaks MCP over stdio (always set
+`UKIYO_ROOT` to the checkout you mean to change; a real path, not `/tmp/…`, which is a symlink on macOS). The CLI
+`bun tools/mcp/src/cli.ts` covers `run <Game>` (`--checkpoints`, `--patches`, `--input`, `--size`) and `live
+list|step|capture|patch`; there is no CLI for new-game or capture. Determinism without a test: run the same headless
+command twice and `diff` stdout. MCP results contain per-run temp paths (patch logs, frame dirs under the OS temp
+dir), so compare only their `snapshots`.
+
 Sounds: `tick.Audio.Play(handle)` in `Update` (see ukiyo-audio); they are events, never state.
 
-Related skills: ukiyo-rendering, ukiyo-sprites, ukiyo-physics, ukiyo-input, ukiyo-ui, ukiyo-audio, ukiyo-testing, ukiyo-live.
+Related skills: ukiyo-new-game, ukiyo-scenes-assets (scenes, patches, imported art), ukiyo-hosts (hosts, flags,
+exports), ukiyo-rendering, ukiyo-sprites, ukiyo-physics, ukiyo-input, ukiyo-ui, ukiyo-audio, ukiyo-testing, ukiyo-live.

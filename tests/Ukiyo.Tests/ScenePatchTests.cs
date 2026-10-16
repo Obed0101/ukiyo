@@ -1,4 +1,5 @@
 using System.Numerics;
+using System.Text;
 using System.Text.Json;
 using Ukiyo.Rendering;
 using Ukiyo.Samples.SceneHop;
@@ -308,6 +309,187 @@ public sealed class ScenePatchTests
     {
         var error = Assert.Throws<SceneException>(() => ScenePatch.Parse(json));
         Assert.Equal(SceneErrorCode.Malformed, error.Code);
+    }
+
+    /// <summary>Patch i retargets a1 (applied) except every fourth, which disposes a missing entity (rejected at its tick).</summary>
+    private static ScenePatch LongLogEntry(int i) =>
+        i % 4 == 0
+            ? Patch($"p{i:D5}", i, new DisposeOp("nobody"))
+            : Patch($"p{i:D5}", i, new RetargetOp("a1") { Values = new Dictionary<string, double> { ["v"] = i % 10 } });
+
+    private static async Task<List<string>> RunLongLog(int count, long[] checkpoints, bool upFront)
+    {
+        var (runtime, _) = await ProbeGame.StartInAlphaAsync();
+        var log = Enumerable.Range(1, count).Select(LongLogEntry).ToList();
+        if (upFront)
+        {
+            log.ForEach(runtime.SubmitPatch);
+        }
+
+        var snapshots = new List<string>();
+        var next = 0;
+        foreach (var checkpoint in checkpoints)
+        {
+            if (upFront)
+            {
+                runtime.StepTo(checkpoint);
+            }
+            else
+            {
+                // Paused at each boundary, submitted for that boundary: applied now or refused now (thrown and recorded).
+                for (var tick = runtime.Tick; tick <= checkpoint; tick++)
+                {
+                    runtime.StepTo(tick);
+                    for (; next < log.Count && log[next].Tick == tick; next++)
+                    {
+                        try
+                        {
+                            runtime.SubmitPatch(log[next]);
+                        }
+                        catch (SceneException refused)
+                        {
+                            Assert.Equal(SceneErrorCode.UnknownEntity, refused.Code);
+                        }
+                    }
+                }
+            }
+
+            snapshots.Add(runtime.SnapshotJson());
+        }
+
+        return snapshots;
+    }
+
+    [Fact]
+    public async Task A_ten_thousand_patch_session_keeps_snapshots_under_a_fixed_byte_ceiling()
+    {
+        // 16 rejected entries of ~136 bytes, 16 applied of ~28, two probes and the counters: about 3 KB whatever the
+        // session length. The unbounded format listed all 10 000 entries, about 560 KB for this log.
+        const int ceiling = 4096;
+        long[] checkpoints = [16, 100, 1_000, 5_000, 10_000];
+        var snapshots = await RunLongLog(10_000, checkpoints, upFront: true);
+
+        Assert.All(snapshots, snapshot => Assert.InRange(Encoding.UTF8.GetByteCount(snapshot), 1, ceiling));
+        // Once both windows are full (tick 64), 9 900 more patches only lengthen numbers: each of the 32 listed ticks and
+        // ids grows from 2-3 to 4-5 digits, plus the tick and both counters. That is 70 bytes here, never one more entry.
+        Assert.InRange(snapshots[^1].Length - snapshots[1].Length, 0, 2 * PatchHistory.Window * 2 + 8);
+
+        var scene = JsonDocument.Parse(snapshots[^1]).RootElement.GetProperty("scene");
+        Assert.Equal(7_500, scene.GetProperty("appliedCount").GetInt64());
+        Assert.Equal(2_500, scene.GetProperty("rejectedCount").GetInt64());
+        Assert.Equal(PatchHistory.Window, scene.GetProperty("patches").GetArrayLength());
+        Assert.Equal(PatchHistory.Window, scene.GetProperty("rejected").GetArrayLength());
+        Assert.Equal("p09999", scene.GetProperty("patches")[PatchHistory.Window - 1].GetProperty("id").GetString());
+        Assert.Equal("p10000", scene.GetProperty("rejected")[PatchHistory.Window - 1].GetProperty("id").GetString());
+    }
+
+    [Fact]
+    public async Task The_same_long_patch_log_gives_identical_snapshots_twice_and_live_and_the_hashes_replay_from_the_log()
+    {
+        long[] checkpoints = [0, 15, 16, 17, 64, 333, 1_200];
+        var queued = await RunLongLog(1_200, checkpoints, upFront: true);
+
+        Assert.Equal(queued, await RunLongLog(1_200, checkpoints, upFront: true));
+        Assert.Equal(queued, await RunLongLog(1_200, checkpoints, upFront: false));
+
+        // The chains are recomputable from the log alone: every entry reached its tick, so the outcome is known.
+        var log = Enumerable.Range(1, 1_200).Select(LongLogEntry).ToList();
+        var applied = log.Where(p => p.Tick % 4 != 0).Select(p => new PatchRecord(p.Id, p.Tick));
+        var rejected = log.Where(p => p.Tick % 4 == 0).Select(p => new PatchRejection(p.Id, p.Tick, SceneErrorCode.UnknownEntity, ""));
+        var scene = JsonDocument.Parse(queued[^1]).RootElement.GetProperty("scene");
+        Assert.Equal(PatchHistory.Format(PatchHistory.AppliedHash(applied)), scene.GetProperty("appliedHash").GetString());
+        Assert.Equal(PatchHistory.Format(PatchHistory.RejectedHash(rejected)), scene.GetProperty("rejectedHash").GetString());
+
+        // A different log (one patch moved by a tick) with the same counts gives a different chain.
+        var (runtime, game) = await ProbeGame.StartInAlphaAsync();
+        foreach (var patch in log.Select(p => p.Id == "p00001" ? p with { Tick = 2 } : p))
+        {
+            runtime.SubmitPatch(patch);
+        }
+
+        runtime.StepTo(1_200);
+        Assert.Equal(game.Scenes.AppliedCount, scene.GetProperty("appliedCount").GetInt64());
+        Assert.NotEqual(scene.GetProperty("appliedHash").GetString(), PatchHistory.Format(game.Scenes.AppliedHash));
+    }
+
+    [Fact]
+    public async Task The_applied_window_evicts_the_oldest_patch_first_and_keeps_application_order()
+    {
+        var (runtime, game) = await ProbeGame.StartInAlphaAsync();
+        for (var i = 1; i <= 20; i++)
+        {
+            runtime.SubmitPatch(Patch($"p{i:D2}", i, new RetargetOp("a1") { Values = new Dictionary<string, double> { ["v"] = i % 10 } }));
+        }
+
+        runtime.StepTo(16);
+        Assert.Equal([.. Enumerable.Range(1, 16).Select(i => $"p{i:D2}")], game.Scenes.AppliedPatches.Select(p => p.Id));
+
+        runtime.StepTo(17);
+        Assert.Equal("p02", game.Scenes.AppliedPatches[0].Id);
+        Assert.Equal("p17", game.Scenes.AppliedPatches[^1].Id);
+
+        runtime.StepTo(20);
+        string[] expected = [.. Enumerable.Range(5, 16).Select(i => $"p{i:D2}")];
+        Assert.Equal(expected, game.Scenes.AppliedPatches.Select(p => p.Id));
+        Assert.Equal(expected, runtime.SceneState!.Applied.Select(p => p.Id));
+        var scene = SceneJson(runtime);
+        Assert.Equal(expected, scene.GetProperty("patches").EnumerateArray().Select(p => p.GetProperty("id").GetString()));
+        Assert.Equal(20, scene.GetProperty("appliedCount").GetInt64());
+        var all = Enumerable.Range(1, 20).Select(i => new PatchRecord($"p{i:D2}", i));
+        Assert.Equal(PatchHistory.Format(PatchHistory.AppliedHash(all)), scene.GetProperty("appliedHash").GetString());
+    }
+
+    [Fact]
+    public async Task Rejected_entries_are_bounded_by_the_same_window_and_counted_in_full()
+    {
+        var (runtime, game) = await ProbeGame.StartInAlphaAsync();
+        for (var i = 1; i <= 40; i++)
+        {
+            runtime.SubmitPatch(Patch($"r{i:D2}", i, new DisposeOp("nobody")));
+        }
+
+        runtime.StepTo(40);
+        Assert.Equal([.. Enumerable.Range(25, 16).Select(i => $"r{i:D2}")], game.Scenes.RejectedPatches.Select(r => r.Id));
+        Assert.Equal(40, game.Scenes.RejectedCount);
+        Assert.Equal(0, game.Scenes.AppliedCount);
+        var scene = SceneJson(runtime);
+        Assert.Equal(PatchHistory.Window, scene.GetProperty("rejected").GetArrayLength());
+        Assert.Equal(40, scene.GetProperty("rejectedCount").GetInt64());
+        Assert.Equal(PatchHistory.Format(PatchHistory.EmptyHash), scene.GetProperty("appliedHash").GetString());
+        var all = Enumerable.Range(1, 40).Select(i => new PatchRejection($"r{i:D2}", i, SceneErrorCode.UnknownEntity, ""));
+        Assert.Equal(PatchHistory.Format(PatchHistory.RejectedHash(all)), scene.GetProperty("rejectedHash").GetString());
+
+        // A refused patch's id stays used after it leaves the window.
+        Assert.Equal(SceneErrorCode.DuplicatePatch, Assert.Throws<SceneException>(() => runtime.SubmitPatch(Patch("r01", 50, new DisposeOp("a1")))).Code);
+    }
+
+    /// <summary>Plain FNV-1a 64 over bytes, checked against the published vectors; the chain must equal it on the documented encoding.</summary>
+    private static ulong Fnv1a64(ReadOnlySpan<byte> bytes)
+    {
+        var hash = 0xcbf29ce484222325UL;
+        foreach (var b in bytes)
+        {
+            hash = (hash ^ b) * 0x100000001b3UL;
+        }
+
+        return hash;
+    }
+
+    [Fact]
+    public void The_hash_chain_is_fnv1a_64_over_the_documented_byte_encoding()
+    {
+        Assert.Equal(0xcbf29ce484222325UL, Fnv1a64([]));
+        Assert.Equal(0xaf63dc4c8601ec8cUL, Fnv1a64("a"u8));
+        Assert.Equal(0x85944171f73967e8UL, Fnv1a64("foobar"u8));
+
+        // applied: id, 0, tick (8 bytes little-endian); rejected: the same, then the code name and 0.
+        byte[] applied = [.. "p1"u8, 0, 12, 0, 0, 0, 0, 0, 0, 0, .. "p2"u8, 0, 0x2c, 0x01, 0, 0, 0, 0, 0, 0];
+        Assert.Equal(Fnv1a64(applied), PatchHistory.ChainApplied(PatchHistory.ChainApplied(PatchHistory.EmptyHash, "p1", 12), "p2", 300));
+        byte[] rejected = [.. "p4"u8, 0, 80, 0, 0, 0, 0, 0, 0, 0, .. "UnknownEntity"u8, 0];
+        Assert.Equal(Fnv1a64(rejected), PatchHistory.ChainRejected(PatchHistory.EmptyHash, "p4", 80, SceneErrorCode.UnknownEntity));
+
+        Assert.Equal("cbf29ce484222325", PatchHistory.Format(PatchHistory.EmptyHash));
+        Assert.Equal("000000000000000a", PatchHistory.Format(10));
     }
 
     [Fact]

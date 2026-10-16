@@ -50,13 +50,21 @@ it uses (Physics, UI).
 Decode with `PngDecoder.Decode(png)` and assert pixels at known positions (a sprite's center, the clear color in a
 corner). Prefer a few well-chosen pixels over whole-image hashes, which break on harmless changes.
 
+Multi-camera games: `runtime.CaptureAsync(pass: k)` returns pass k alone at its rect size (`runtime.PassCount`,
+`runtime.PrimaryPass`, `runtime.LastFrame` describe the frame); assert on the pass image for what that camera sees and
+on the whole frame for where it lands. Headless `--capture` writes `…-pass-K.png` next to each frame, and
+`scripts/g1passes.sh` compares every pass across CPU, Metal and WebGL2 (`PassTests` has the patterns).
+
 ## Scenes and patches in tests
 
 A game with a `SceneRegistry` reads its scene JSON from `context.Assets`, which in tests is the test assembly: embed
 the game's assets in `Ukiyo.Tests.csproj` too (see the SceneHop `EmbeddedResource` line). Submit patches with
 `runtime.SubmitPatch(…)` before or between `StepTo` calls; assert `runtime.SceneState` (`Applied`, `Rejected` with a
-`SceneErrorCode`) or the `"scene"` key of `SnapshotJson()`. Prove determinism by running the same patch log twice
-(and once submitted live at each tick) and comparing the snapshot sequences (`ScenePatchTests`).
+`SceneErrorCode`, `AppliedCount`, `RejectedCount`, `AppliedHash`, `RejectedHash`) or the `"scene"` key of
+`SnapshotJson()`. `Applied`/`Rejected` keep only the last `PatchHistory.Window` (16): for longer logs assert the
+counts and compare the hashes with `PatchHistory.AppliedHash(expected records)` / `RejectedHash(…)`. Prove
+determinism by running the same patch log twice (and once submitted live at each tick) and comparing the snapshot
+sequences (`ScenePatchTests`).
 
 ## Rules
 

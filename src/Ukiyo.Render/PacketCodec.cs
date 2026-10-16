@@ -27,6 +27,13 @@ public static class PacketCodec
     public const int LightingHeaderSize = 16;    // f32 x 3 ambient + u32 light count
     public const int LightSize = 40;             // u32 kind, f32 x 3 vector, f32 x 3 color, f32 intensity, f32 range, u32 pad
 
+    /// <summary>
+    /// Frame flag: this packet is one pass of a multi-camera frame; a pass section follows every other section.
+    /// Single-camera frames never set it, so their bytes are unchanged.
+    /// </summary>
+    public const ushort FlagPasses = 0x4;
+    public const int PassSectionSize = 32;       // u32 id, count, primary, pad, then rect x, y, width, height
+
     /// <summary>Wire command id of CreateMesh with per-vertex normals (G1Lit). Commands 1-4 keep their v1 bytes.</summary>
     public const byte CreateMeshWithNormalsCommand = 5;
     public const int VertexWithNormalSize = 36;  // position, color, normal (f32 x 9)
@@ -118,10 +125,15 @@ public static class PacketCodec
             size += LightingHeaderSize + lighting.Lights.Count * LightSize;
         }
 
+        if (packet.Pass is not null)
+        {
+            size += PassSectionSize;
+        }
+
         var writer = new Writer(size);
         writer.U32(FrameMagic);
         writer.U16(Version);
-        writer.U16((ushort)((hasSprites ? FlagSprites : 0) | (lighting is not null ? FlagLighting : 0)));
+        writer.U16((ushort)((hasSprites ? FlagSprites : 0) | (lighting is not null ? FlagLighting : 0) | (packet.Pass is not null ? FlagPasses : 0)));
         writer.U32(packet.Sequence);
         writer.U32((uint)size);
         writer.U32((uint)(packet.Tick & 0xFFFFFFFF));
@@ -179,6 +191,18 @@ public static class PacketCodec
                 writer.F32(light.Range);
                 writer.U32(0);
             }
+        }
+
+        if (packet.Pass is { } pass)
+        {
+            writer.U32((uint)pass.Id);
+            writer.U32((uint)pass.Count);
+            writer.U32((uint)pass.PrimaryId);
+            writer.U32(0);
+            writer.U32((uint)pass.Rect.X);
+            writer.U32((uint)pass.Rect.Y);
+            writer.U32((uint)pass.Rect.Width);
+            writer.U32((uint)pass.Rect.Height);
         }
 
         return writer.Finish();
@@ -256,7 +280,7 @@ public static class PacketCodec
     public static RenderPacket DecodeFrame(ReadOnlySpan<byte> data)
     {
         var reader = new Reader(data);
-        var flags = reader.Header(FrameMagic, allowedFlags: FlagSprites | FlagLighting);
+        var flags = reader.Header(FrameMagic, allowedFlags: FlagSprites | FlagLighting | FlagPasses);
         var sequence = reader.U32();
         reader.ExpectLength();
         var tick = (long)(reader.U32() | ((ulong)reader.U32() << 32));
@@ -312,8 +336,19 @@ public static class PacketCodec
             lighting = new SceneLighting(ambient, lights);
         }
 
+        FramePass? pass = null;
+        if ((flags & FlagPasses) != 0)
+        {
+            // Out-of-range u32 values become negative ints here and fail validation with OutOfRange.
+            var id = unchecked((int)reader.U32());
+            var passCount = unchecked((int)reader.U32());
+            var primary = unchecked((int)reader.U32());
+            reader.U32();
+            pass = new FramePass(id, passCount, primary, new PassRect(unchecked((int)reader.U32()), unchecked((int)reader.U32()), unchecked((int)reader.U32()), unchecked((int)reader.U32())));
+        }
+
         reader.RequireEnd();
-        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances) { Camera2D = camera2D, Sprites = sprites, Lighting = lighting };
+        var packet = new RenderPacket(sequence, tick, viewport, clear, camera, instances) { Camera2D = camera2D, Sprites = sprites, Lighting = lighting, Pass = pass };
         RenderValidation.Validate(packet);
         return packet;
     }

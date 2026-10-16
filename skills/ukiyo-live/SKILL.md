@@ -20,7 +20,7 @@ for patches). Then:
 | `pause` / `resume` | stop or continue the simulation (the window keeps drawing) |
 | `step` + `ticks` | advance exactly N ticks while paused |
 | `snapshot` | the game's snapshot JSON at the current tick |
-| `capture` | the real frame from the GPU (wgpu → Metal) as PNG |
+| `capture` | the real frame from the GPU (wgpu → Metal) as PNG. Optional `"pass"`: a pass id or `"primary"` for one camera of a multi-camera game alone at its rect size (the response adds `pass`, `passes`, `primaryPass`) |
 | `input` + `events` | queue key/pointer events (same JSON as input scripts, without `tick`); they apply on the next tick |
 | `record` + `on` | start recording the player's input; `on:false` stops and returns it as an input script |
 | `patch` + `patch` | submit one scene patch (games with a `SceneRegistry`): `queued` for a later tick, `applied` when its tick is the current one; refusals return the typed `[SCENE:Code]` message |
@@ -61,7 +61,9 @@ a fresh runtime requires the same prior state/input history and viewport.
   `capture` → `resume`. A running game advances 60 ticks a second: patching without pausing needs `tick` = the
   current tick plus a margin, or it is refused as `PastTick`. Scene loads dispose patched entities like any other.
   Live patches are not part of `record`; keep the patch files and replay them headless with `ukiyo_run {"patches":…}`.
-  Format and rules: docs/scenes-patches.md.
+  A snapshot's `scene` section lists only the last 16 applied (`patches`) and 16 `rejected` patches, plus
+  `appliedCount`/`rejectedCount` and `appliedHash`/`rejectedHash` over the whole session: after a long session, check
+  that the headless replay reached the same counts and hashes as the live game. Format and rules: docs/scenes-patches.md.
 
 The person at the window keeps control: F5 pauses/resumes, F6 steps. Tell them before you inject input into a game
 they are playing.
