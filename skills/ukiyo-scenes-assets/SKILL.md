@@ -65,6 +65,11 @@ Typed diffs (`spawn`, `dispose`, `retarget`) applied atomically at a tick bounda
 checks run at submit vs. at the tick, and error codes: **docs/scenes-patches.md** (do not guess them). Tests show
 every case: `tests/Ukiyo.Tests/ScenePatchTests.cs`.
 
+From outside the game: headless `--patches log.json`, `ukiyo_run`/`ukiyo_capture` `patches`/`patchLog`, or
+`ukiyo_live patch` on a running dev build. Desktop hosts ignore `--patches` silently. A pending `LoadScene` runs
+before that tick's patches, and a reload rebuilds entities from the scene file, so a patch's effect does not survive it
+(it stays listed in `scene.patches`). Scene JSON is not in the `source` hashes.
+
 ## How scenes show in snapshots
 
 A game with a registry gets a `"scene"` key in every snapshot; its own poses and values are unchanged. Real line,
@@ -111,9 +116,10 @@ content b2320091ad58)` when nothing changed. Use it before committing art and in
 
 1. `ukiyo_run {"game":"<Name>","checkpoints":[0,59,60,120]}`: `scene.active` flips at 60, `loadedAt` matches,
    entity ids match the scene file.
-2. A test: run N ticks twice with the same input (and the same patch log) and compare snapshot JSON (ukiyo-testing).
+2. Determinism: run N ticks twice with the same input and patch log and compare snapshot JSON, in a test
+   (ukiyo-testing) or by running the headless command twice and `diff`ing stdout.
 3. `dotnet run --project tools/Ukiyo.Import -- --check games/<Name>/art` exits 0.
-4. `ukiyo_capture` to see the scene (CPU renderer).
+4. `ukiyo_capture` to see the scene (CPU renderer, 640x360 by default; it returns the frame paths, under the OS temp dir).
 
 Related: ukiyo-core, ukiyo-hosts, ukiyo-sprites (drawing the imported frames), ukiyo-sprite-generation (making art),
 ukiyo-testing.

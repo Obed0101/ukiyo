@@ -38,7 +38,8 @@ dependencies missing" otherwise); it is macOS arm64 only.
 - `Directory.Build.targets` embeds `Shared/assets/**` as `assets/<path>` in every host and hashes each
   `UkiyoSharedSource` file (SHA-256) into the assembly. Every run prints it, and every snapshot carries it as `"source"`:
   `[ukiyo] target=headless game=TexturedQuad Program.cs=067A82A56A30 QuadArt.g.cs=348884E7F07A …`. Same hashes on
-  two targets = same game code.
+  two targets = same game code. Files in `Shared/assets` (scene JSON, embedded PNGs) are **not** in `source`: equal
+  hashes do not prove equal scenes.
 
 ## Command-line flags (from each host's `Parse`)
 
@@ -47,8 +48,8 @@ Unknown flags are ignored without an error, and a flag missing its value is skip
 
 | Host | Flags |
 |---|---|
-| Headless | `--checkpoints 0,60,180,600` (default) · `--input script.json` · `--capture dir` (CPU frames `headless-tick-NNNNNN.png` + `.json`) · `--size 1280x720` (default; bad value → `[HEADLESS]:` error) · `--audio run.wav` |
-| Desktop, Export.Desktop (same `DesktopHost`) | `--capture dir` (GPU readback at each checkpoint, `desktop-tick-NNNNNN.png` + `.json`, then exit) · `--checkpoints` · `--frames N` (exit after N presented frames, prints a snapshot) · `--resize-test` · `--input script.json`. Keys: F5 pause, F6 step one tick (prints a snapshot) |
+| Headless | `--checkpoints 0,60,180,600` (default) · `--input script.json` · `--capture dir` (CPU frames `headless-tick-NNNNNN.png` + `.json`) · `--size 1280x720` (default; bad value → `[HEADLESS]:` error) · `--audio run.wav` · `--patches log.json` (scene patch log, submitted before tick 0; prints `patches <path> submitted=N`) |
+| Desktop, Export.Desktop (same `DesktopHost`) | `--capture dir` (GPU readback at each checkpoint, `desktop-tick-NNNNNN.png` + `.json`, then exit; frame size = the window's backing size, e.g. 1920x1280 on Retina, so framing differs from the 1280x720 headless default) · `--checkpoints` · `--frames N` (exit after N presented frames, prints a snapshot) · `--resize-test` · `--input script.json`. **No `--patches`: it is silently ignored** (no `patches … submitted=` line, `"patches":[]`); patch a running dev build with `ukiyo_live patch`, and exports cannot take patches. Keys: F5 pause, F6 step one tick (prints a snapshot) |
 | Browser (URL query → args in `web/three-adapter/ukiyo-host.js`) | `?checkpoints=0,60` → `--checkpoints` · `?paused` → `--paused` · `?fixed` → `--fixed-size` · `?input=input.json` (same origin; fetched and passed as `--input-json`). Keys: `` ` `` pause, Shift+`` ` `` step |
 
 Headless stdout is a contract the MCP tools parse: `[ukiyo] target=…`, `[ukiyo] renderer=…`, one `snapshot {json}` per
@@ -89,8 +90,9 @@ compiled in or embedded from `Shared/assets`.
 ## Adding a NativeAOT export to a game
 
 `ukiyo_new_game` does not create one. Copy `samples/RotatingCube/Export.Desktop/RotatingCube.Export.Desktop.csproj`
-to `games/<Name>/Export.Desktop/<Name>.Export.Desktop.csproj`, then change `AssemblyName` and `RootNamespace`, use
-the recursive `Shared/**/*.cs` glob above, and add the same optional `ProjectReference`s as the game's Desktop host.
+to `games/<Name>/Export.Desktop/<Name>.Export.Desktop.csproj`, then change `AssemblyName` and `RootNamespace`, replace both its
+`UkiyoSharedSource`/`Compile` lines with the recursive `Shared/**/*.cs` pair above (the `Link` needs
+`%(RecursiveDir)` too, not only the `Include`), and add the same optional `ProjectReference`s as the game's Desktop host.
 Keep `PublishAot`, `DirectPInvoke`, `NativeLibrary` and the framework `LinkerArg`; do not add `UkiyoDevBridge`.
 Prove it: `dotnet publish games/<Name>/Export.Desktop -c Release -o artifacts/<name>`, then `otool -L
 artifacts/<name>/<assembly>` lists only `/System/Library/Frameworks/*` and `/usr/lib/*`, and the binary runs alone:
