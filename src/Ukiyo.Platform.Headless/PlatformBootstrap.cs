@@ -191,12 +191,13 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
 
         foreach (var patch in patches)
         {
-            var rejectedBefore = runtime.SceneState!.Rejected.Count;
+            // The count, not the rejected list: the list is a bounded window and stops growing once full.
+            var rejectedBefore = runtime.SceneState!.RejectedCount;
             try
             {
                 runtime.SubmitPatch(patch);
             }
-            catch (SceneException) when (runtime.SceneState!.Rejected.Count > rejectedBefore)
+            catch (SceneException) when (runtime.SceneState!.RejectedCount > rejectedBefore)
             {
                 // Refused by the world at tick 0: already in the snapshot's rejected list, not a bad log.
             }

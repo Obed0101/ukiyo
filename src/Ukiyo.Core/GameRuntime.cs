@@ -314,6 +314,10 @@ public static class SnapshotWriter
         }
 
         json.WriteNumber("loadedAt", scene.LoadedAt);
+        // Bounded history (docs/scenes-patches.md): counts and hash chains cover the whole session, the lists only the
+        // last PatchHistory.Window entries, so snapshot size does not grow with the number of patches.
+        json.WriteNumber("appliedCount", scene.AppliedCount);
+        json.WriteString("appliedHash", PatchHistory.Format(scene.AppliedHash));
         json.WriteStartArray("patches");
         foreach (var patch in scene.Applied)
         {
@@ -324,6 +328,8 @@ public static class SnapshotWriter
         }
 
         json.WriteEndArray();
+        json.WriteNumber("rejectedCount", scene.RejectedCount);
+        json.WriteString("rejectedHash", PatchHistory.Format(scene.RejectedHash));
         json.WriteStartArray("rejected");
         foreach (var rejection in scene.Rejected)
         {
