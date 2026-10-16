@@ -24,11 +24,14 @@
     <Project Path="samples/LanternRun/Browser/LanternRun.Browser.csproj" />
     <Project Path="samples/TexturedQuad/Headless/TexturedQuad.Headless.csproj" />
     <Project Path="samples/TexturedQuad/Desktop/TexturedQuad.Desktop.csproj" />
+    <Project Path="samples/TexturedQuad/Export.Desktop/TexturedQuad.Export.Desktop.csproj" />
     <Project Path="samples/TexturedQuad/Browser/TexturedQuad.Browser.csproj" />
     <Project Path="samples/SceneHop/Headless/SceneHop.Headless.csproj" />
     <Project Path="samples/SceneHop/Desktop/SceneHop.Desktop.csproj" />
+    <Project Path="samples/SceneHop/Export.Desktop/SceneHop.Export.Desktop.csproj" />
     <Project Path="samples/LitCube/Headless/LitCube.Headless.csproj" />
     <Project Path="samples/LitCube/Desktop/LitCube.Desktop.csproj" />
+    <Project Path="samples/LitCube/Export.Desktop/LitCube.Export.Desktop.csproj" />
     <Project Path="samples/LitCube/Browser/LitCube.Browser.csproj" />
     <Project Path="samples/ImportedMesh/Headless/ImportedMesh.Headless.csproj" />
     <Project Path="samples/ImportedMesh/Desktop/ImportedMesh.Desktop.csproj" />

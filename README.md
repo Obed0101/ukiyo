@@ -232,8 +232,9 @@ the core.
 - The golden CLI transcript, `bun scripts/cli-flow.ts` (help, status, scaffold, headless run, CPU capture, import
   check, removal), against `tools/mcp/test/golden/cli-flow.txt`. When a CLI or tool output changes on purpose,
   `bun scripts/cli-flow.ts --update` rewrites it; review the diff and commit the golden with the change.
-- macOS only: the NativeAOT export of RotatingCube, published but not run, checked for system-only dependencies and
-  no dev bridge.
+- macOS only: the NativeAOT exports of RotatingCube, TexturedQuad, LitCube and SceneHop, published but not run,
+  checked for system-only dependencies and no dev bridge. Running them (window, snapshot and hash parity with
+  headless) is `scripts/aot-exports.sh` on a Mac with a display ([docs/export.md](docs/export.md)).
 
 Nothing opens a window: desktop hosts are built, never run. GPU and browser evidence (`scripts/g0.sh`, `g1.sh`,
 `ukiyo_live capture`) stays a local check on a Mac.
