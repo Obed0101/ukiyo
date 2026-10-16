@@ -6,16 +6,16 @@
       "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing"]
     },
     "balanced": {
-      "description": "Simple plus physics, game UI, sound, generated art and starting new games.",
-      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing", "ukiyo-physics", "ukiyo-ui", "ukiyo-audio", "ukiyo-sprite-generation", "ukiyo-new-game"]
+      "description": "Simple plus physics, game UI, sound, generated art, scenes and imported assets, hosts and exports, and starting new games.",
+      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing", "ukiyo-physics", "ukiyo-ui", "ukiyo-audio", "ukiyo-sprite-generation", "ukiyo-new-game", "ukiyo-scenes-assets", "ukiyo-hosts"]
     },
     "complete": {
       "description": "Everything for games, including rendering internals, driving running games live and changing the Studio.",
-      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing", "ukiyo-physics", "ukiyo-ui", "ukiyo-audio", "ukiyo-sprite-generation", "ukiyo-new-game", "ukiyo-rendering", "ukiyo-live", "ukiyo-studio"]
+      "skills": ["ukiyo-core", "ukiyo-sprites", "ukiyo-input", "ukiyo-testing", "ukiyo-physics", "ukiyo-ui", "ukiyo-audio", "ukiyo-sprite-generation", "ukiyo-new-game", "ukiyo-scenes-assets", "ukiyo-hosts", "ukiyo-rendering", "ukiyo-live", "ukiyo-studio"]
     },
     "engine": {
-      "description": "Working on ukiyo itself: architecture and rules, renderers and protocol, hosts and the dev bridge, MCP tools and skills, the Studio.",
-      "skills": ["ukiyo-engine", "ukiyo-core", "ukiyo-rendering", "ukiyo-renderer-dev", "ukiyo-platform-dev", "ukiyo-tooling", "ukiyo-studio", "ukiyo-live", "ukiyo-testing"]
+      "description": "Working on ukiyo itself: architecture and rules, renderers and protocol, hosts, export profiles and the dev bridge, MCP tools and skills, the Studio.",
+      "skills": ["ukiyo-engine", "ukiyo-core", "ukiyo-rendering", "ukiyo-renderer-dev", "ukiyo-hosts", "ukiyo-platform-dev", "ukiyo-tooling", "ukiyo-studio", "ukiyo-live", "ukiyo-testing"]
     }
   }
 }
