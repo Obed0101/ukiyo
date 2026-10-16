@@ -29,6 +29,38 @@ linear space (each renderer encodes to sRGB).
 Games run the `G0Unlit` profile unless they declare another: vertex colors × base color, no textures on meshes yet.
 Textures exist for the 2D layer (see ukiyo-sprites).
 
+## Meshes from glTF (import them; no parsing at runtime)
+
+Models made in Blender or another tool are glTF 2.0 files in `games/<Game>/art/`; the importer turns them into
+`Shared/gen/<Class>.g.cs` with the vertices compiled in. Full rules: docs/assets.md "Meshes". Example: `samples/ImportedMesh`.
+
+```jsonc
+// games/MyGame/art/props.import.json (paths relative to this file; .bin buffers relative to each model)
+{ "class": "PropMeshes", "namespace": "Ukiyo.Games.MyGame", "output": "../Shared/gen/PropMeshes.g.cs",
+  "inputs": ["lamp.gltf", "crate.glb"] }            // optional "normals": "required" | "flat" | "none", "doubleSided": "reject" | "cull"
+```
+
+```sh
+dotnet run --project tools/Ukiyo.Import -- games/MyGame/art            # regenerate (atlas and mesh specs)
+dotnet run --project tools/Ukiyo.Import -- --check games/MyGame/art    # exit 1 if a .g.cs is stale
+```
+
+```csharp
+_lamp = context.CreateMesh(PropMeshes.Lamp.Create());   // member = PascalCase file name; PropMeshes.Create("lamp") too
+_mat = context.CreateMaterial(new MaterialData(Vector4.One, UseVertexColors: true) { Lit = true });  // base color is baked in
+var lift = -PropMeshes.Lamp.BoundsMin.Y;                // bounds in meters, object space
+```
+
+- glTF uses the engine's conventions (meters, right-handed +Y up, CCW front faces, linear colors): data is copied, node
+  transforms of the default scene are baked (mirrors flip winding back), `COLOR_0 × baseColorFactor` becomes the vertex
+  color. One mesh per file.
+- Normals are required by default (`MissingNormals` otherwise): export with normals, or set `"normals": "flat"` /
+  `"none"` (unlit only).
+- Fails with `[IMPORT:UnsupportedFeature]` rather than dropping: textures, skins, morph targets, lines/points,
+  non-opaque or emissive materials, required extensions (Draco…), double-sided materials (turn on backface culling or
+  set `"doubleSided": "cull"`). Malformed files are `InvalidMesh`; over 2^20 vertices / 3·2^20 indices `MeshTooLarge`.
+- Commit the source model and the `.g.cs` together; the header pins the importer version and lists source SHA-256s.
+
 ## Lighting (profile G1Lit)
 
 ```csharp

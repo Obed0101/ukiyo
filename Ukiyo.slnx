@@ -29,6 +29,9 @@
     <Project Path="samples/LitCube/Headless/LitCube.Headless.csproj" />
     <Project Path="samples/LitCube/Desktop/LitCube.Desktop.csproj" />
     <Project Path="samples/LitCube/Browser/LitCube.Browser.csproj" />
+    <Project Path="samples/ImportedMesh/Headless/ImportedMesh.Headless.csproj" />
+    <Project Path="samples/ImportedMesh/Desktop/ImportedMesh.Desktop.csproj" />
+    <Project Path="samples/ImportedMesh/Browser/ImportedMesh.Browser.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Ukiyo.Import/Ukiyo.Import.csproj" />

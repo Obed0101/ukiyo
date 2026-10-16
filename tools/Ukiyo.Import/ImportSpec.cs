@@ -77,7 +77,7 @@ public sealed record ImportSpec(string SpecPath, string OutputPath, ImportReques
     {
         if (!input.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
         {
-            throw new ImportException(ImportErrorCode.InvalidSpec, $"{specPath}: input {input} is not a .png");
+            throw new ImportException(ImportErrorCode.InvalidSpec, $"{specPath}: input {input} is not a .png (an atlas spec imports PNGs; a mesh spec imports only .gltf/.glb)");
         }
 
         var full = Path.GetFullPath(Path.Combine(directory, input));
@@ -92,7 +92,7 @@ public sealed record ImportSpec(string SpecPath, string OutputPath, ImportReques
     }
 
     /// <summary>The spec path from the repository root (the folder holding Ukiyo.slnx), so headers match on every machine.</summary>
-    private static string RepositoryRelative(string fullSpec)
+    internal static string RepositoryRelative(string fullSpec)
     {
         for (var dir = Path.GetDirectoryName(fullSpec); dir is not null; dir = Path.GetDirectoryName(dir))
         {
@@ -105,7 +105,7 @@ public sealed record ImportSpec(string SpecPath, string OutputPath, ImportReques
         return Path.GetFileName(fullSpec);
     }
 
-    private static string String(JsonElement root, string field, string specPath) =>
+    internal static string String(JsonElement root, string field, string specPath) =>
         root.TryGetProperty(field, out var value) && value.ValueKind == JsonValueKind.String && value.GetString() is { Length: > 0 } text
             ? text
             : throw new ImportException(ImportErrorCode.InvalidSpec, $"{specPath}: needs a string \"{field}\"");
