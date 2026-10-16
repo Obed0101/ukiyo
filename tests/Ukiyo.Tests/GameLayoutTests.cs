@@ -113,10 +113,17 @@ public sealed class GameLayoutTests
             .Replace("my-game", "rotating-cube", StringComparison.Ordinal);
 
     /// <summary>Files of a game folder relative to it, without build output and the synced web adapter.</summary>
+    /// <summary>
+    /// Build outputs and synced adapter copies are skipped, including the old layout's <c>Browser/wwwroot/lib</c>,
+    /// which a checkout that built before the move still has on disk (gitignored, so a pull does not remove it).
+    /// </summary>
     private static string[] LayoutFiles(string dir) =>
         Directory.GetFiles(dir, "*", SearchOption.AllDirectories)
             .Select(file => Path.GetRelativePath(dir, file).Replace('\\', '/'))
-            .Where(file => !file.Split('/').Any(part => part is "bin" or "obj") && !file.StartsWith("Www/lib/", StringComparison.Ordinal) && Path.GetFileName(file) != ".DS_Store")
+            .Where(file => !file.Split('/').Any(part => part is "bin" or "obj")
+                && !file.StartsWith("Www/lib/", StringComparison.Ordinal)
+                && !file.Contains("wwwroot/lib/", StringComparison.Ordinal)
+                && Path.GetFileName(file) != ".DS_Store")
             .Order(StringComparer.Ordinal)
             .ToArray();
 }
