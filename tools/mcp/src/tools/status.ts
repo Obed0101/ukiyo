@@ -1,21 +1,68 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
-import { dotnetCommand, listGames, runProcess } from "../engine.ts";
+import { dotnetCommand, listGames, runProcess, type GameInfo } from "../engine.ts";
+import { declaredProfile, sceneRegistry, sharedSourceLines } from "../game-source.ts";
+import { assertSpecInsideRoot, findSpecs, importerAssemblyPath, importerBuildState, runImporter } from "../importer.ts";
 import { text, type Tool } from "../protocol.ts";
 import { liveSessions } from "../bridge.ts";
+
+type SpecCheck = { spec: string; status: string; outputs: { output: string; contentHash: string | null }[]; code?: string; message?: string };
+type ImportCheck = { ran: true; basis: string; results: SpecCheck[] } | { ran: false; reason: string };
+
+/** `--check` on every spec of every game, with an importer build that is already current; never builds. */
+async function checkImports(root: string, specsByGame: Map<string, string[]>, signal: AbortSignal): Promise<Map<string, ImportCheck>> {
+  const checks = new Map<string, ImportCheck>();
+  if (specsByGame.size === 0) return checks;
+  const state = importerBuildState(root, await importerAssemblyPath(root, { signal, timeoutMs: 30_000 }).catch(() => null));
+  for (const [game, specs] of specsByGame) {
+    if (!state.built) {
+      checks.set(game, { ran: false, reason: `not checked: ${state.reason}; ukiyo_import {"action":"check","game":"${game}"} builds it and checks` });
+      continue;
+    }
+    const results: SpecCheck[] = [];
+    for (const spec of specs) {
+      try {
+        assertSpecInsideRoot(root, spec);
+      } catch (error) {
+        results.push({ spec: relative(root, spec), status: "error", outputs: [], code: "OutsideRepository", message: error instanceof Error ? error.message : String(error) });
+        continue;
+      }
+      const r = await runImporter(root, state.dll, spec, true, { signal, timeoutMs: 30_000 });
+      results.push({ spec: r.spec, status: r.status, outputs: r.outputs.map(({ output, contentHash }) => ({ output, contentHash })), ...(r.error ? { code: r.error.code, message: r.error.message } : {}) });
+    }
+    checks.set(game, { ran: true, basis: `importer --check with the existing build ${relative(root, state.dll)} (newer than its sources)`, results });
+  }
+  return checks;
+}
+
+function sourceFacts(root: string, game: GameInfo) {
+  const lines = sharedSourceLines(root, game.dir);
+  return { profile: declaredProfile(lines), scenes: sceneRegistry(lines) };
+}
 
 const status: Tool = {
   name: "ukiyo_status",
   title: "Engine status",
   description:
-    "Orientation for an agent: engine version, games and their hosts (headless/desktop/browser), installed toolchain (dotnet, native libs, three), skills and live dev-bridge sessions. Call it first.",
+    "Orientation for an agent: engine version, games and their hosts (headless/desktop/browser), installed toolchain (dotnet, native libs, three), skills and live dev-bridge sessions. Call it first. " +
+    "Per game, read from its Shared/ source without building: the render profile it declares (IGame.Profile; G0Unlit when not overridden, G1Lit for lit 3D), whether it uses a SceneRegistry (snapshots then carry \"scene\"), " +
+    "and its import specs (*.import.json) with an importer --check of each when the importer build is already current; otherwise it says the check needs a build (ukiyo_import check) instead of guessing.",
   inputSchema: { type: "object", properties: {}, additionalProperties: false },
   async run(_args, { root, signal }) {
     const props = readFileSync(join(root, "Directory.Build.props"), "utf8");
     const version = props.match(/<Version>([^<]+)<\/Version>/)?.[1] ?? "unknown";
     const { command, env } = dotnetCommand();
     const dotnet = await runProcess(command, ["--version"], { cwd: root, env, timeoutMs: 15_000, signal }).catch(() => null);
-    const games = listGames(root).map((g) => ({ name: g.name, dir: relative(root, g.dir), hosts: Object.keys(g.hosts) }));
+    const found = listGames(root);
+    const specsByGame = new Map(found.map((g) => [g.name, findSpecs(g.dir)] as const).filter(([, specs]) => specs.length > 0));
+    const importChecks = await checkImports(root, specsByGame, signal);
+    const games = found.map((g) => ({
+      name: g.name,
+      dir: relative(root, g.dir),
+      hosts: Object.keys(g.hosts),
+      ...sourceFacts(root, g),
+      imports: { specs: (specsByGame.get(g.name) ?? []).map((s) => relative(root, s)), ...(importChecks.has(g.name) ? { check: importChecks.get(g.name) } : {}) },
+    }));
     const skillsDir = join(root, "skills");
     const skills = existsSync(skillsDir) ? readdirSync(skillsDir).filter((d) => existsSync(join(skillsDir, d, "SKILL.md"))) : [];
     const result = {
@@ -26,6 +73,9 @@ const status: Tool = {
         three: existsSync(join(root, "web/three-adapter/node_modules/three")) ? "present" : "missing: (cd web/three-adapter && bun install) for browser hosts",
       },
       games,
+      notes: [
+        "profile and scenes come from each game's source, not from a run: the headless [ukiyo] renderer line shows the renderer's profile, not the game's.",
+      ],
       skills,
       live: liveSessions().map(({ pid, game, target, port }) => ({ pid, game, target, port })),
     };

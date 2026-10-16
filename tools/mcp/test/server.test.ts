@@ -64,6 +64,7 @@ describe("stdio server", () => {
     const tools = (responses.get(2)?.result?.tools ?? []) as { name: string; inputSchema: { type: string } }[];
     expect(tools.map((t) => t.name).sort()).toEqual([
       "ukiyo_capture",
+      "ukiyo_import",
       "ukiyo_live",
       "ukiyo_new_game",
       "ukiyo_run",
