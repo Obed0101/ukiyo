@@ -15,11 +15,10 @@ is loaded from disk or the network at runtime; everything is compiled or embedde
 | `SceneRegistry<T>`, prefabs, scene JSON, `LoadScene`, patches through `runtime.SubmitPatch` | available | `src/Ukiyo.Core/Scene*.cs`, docs/scenes-patches.md, `samples/SceneHop` |
 | Texture/atlas importer `tools/Ukiyo.Import` → `Shared/gen/*.g.cs`, `--check` | available | docs/assets.md, `samples/TexturedQuad` |
 | Mesh importer: glTF 2.0 (`.gltf` + `.bin`, `.glb`) → `Shared/gen/*.g.cs`, sources in `<game>/art/` | available | docs/assets.md § Meshes, `samples/ImportedMesh` |
-| New template layout (`ukiyo_new_game`) | **in progress** (`feat/g05-game-template`) | today's 2d template has one prefab `crate`, one scene `start` built in code |
+| Template layout (`templates/game`, `ukiyo_new_game`): `Shared/{Scenes,Entities,Systems,Lib,gen,assets}`, `Hosts/<Host>/`, `Www/` | available | docs/game-layout.md, `samples/RotatingCube`; the 2d template has one prefab `crate`, one scene `start` built in code |
 | Submitting patches from outside the game: headless `--patches FILE`, `ukiyo_run`/`ukiyo_capture` `patches`, `ukiyo_live` `patch`, dev bridge `patch` command, CLI `run --patches` | available | docs/scenes-patches.md, ukiyo-live |
 
-Branch states are from 2026-10-16. Before relying on an "in progress" row, check whether it merged:
-`git log dev --oneline | head`, `git grep -n "Shared" tools/mcp/src/tools/new-game.ts` (the template layout).
+Branch states are from 2026-10-16; every row is available on `dev`. Check with `git log dev --oneline | head`.
 
 ## Two scenes, the smallest working shape
 
@@ -107,12 +106,14 @@ content b2320091ad58)` when nothing changed. Use it before committing art and in
 
 - **Two hashes, two meanings.** `HeroArt.ContentHash` is the SHA-256 of what the game receives (size, frames,
   animations, pixels); re-exporting identical art keeps it, and the importer leaves the file untouched. The file's own
-  SHA-256 appears in the host's source identity: `[ukiyo] target=headless game=TexturedQuad … QuadArt.g.cs=348884E7F07A`
-  and in each snapshot's `"source"` object. The `.g.cs` header lists the SHA-256 of every source file.
+  SHA-256 appears in the host's source identity: `[ukiyo] target=headless game=TexturedQuad … gen/QuadArt.g.cs=…`
+  and in each snapshot's `"source"` object (files in a subfolder of `Shared/` are keyed by their relative path). The `.g.cs` header lists the SHA-256 of every source file.
 - **`Shared/gen`, not `Shared/Assets/gen`.** macOS file systems are case-insensitive by default, so `Shared/Assets` is
   the same folder as `Shared/assets`, which `Directory.Build.targets` embeds byte for byte into every host. Generated
   code goes in `Shared/gen/` and art sources in `art/`, outside `Shared/`.
-- The host csproj must glob `../Shared/**/*.cs` (ukiyo-hosts) or the generated class is not compiled.
+- The host csproj must glob `Shared/**/*.cs` (ukiyo-hosts; the template layout and `ukiyo_new_game` games do) or the
+  generated class is not compiled. In the template layout the spec lives in `<game>/art/` with
+  `"output": "../Shared/gen/<Class>.g.cs"`. Scene JSON goes in `Shared/assets/scenes/`, prefab code in `Shared/Scenes/`.
 - Never edit a `.g.cs` by hand; change the art or the spec and regenerate.
 
 ## Proving it

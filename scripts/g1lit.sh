@@ -10,6 +10,8 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}" DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1
 SAMPLE="${SAMPLE:-LitCube}"; CHECKPOINTS="${CHECKPOINTS:-0,60,180,600}"
+# Host projects: <sample>/Hosts/<Host> in the template layout (docs/game-layout.md), <sample>/<Host> before it.
+HOSTS="samples/$SAMPLE"; [ -d "$HOSTS/Hosts" ] && HOSTS="$HOSTS/Hosts"
 EV="artifacts/evidence-g1lit"; [ "$SAMPLE" = LitCube ] || EV="artifacts/evidence-g1lit-$(echo "$SAMPLE" | tr '[:upper:]' '[:lower:]')"
 WEB="artifacts/g1lit-web-$(echo "$SAMPLE" | tr '[:upper:]' '[:lower:]')"
 PORT="${WEB_PORT:-8768}"
@@ -20,21 +22,21 @@ rm -rf "$EV" && mkdir -p "$EV"
 
 step "$SAMPLE headless (SoftwareRenderer) at the web canvas size"
 # --edge-masks: the CPU reference's geometric edge masks, which lit-pixel-report.ts uses to tell silhouettes from interiors.
-dotnet run --project "samples/$SAMPLE/Headless" -c Release -- --checkpoints "$CHECKPOINTS" --capture "$EV/headless" --edge-masks "$EV/headless-edges" --size 960x640 > "$EV/headless.log"
+dotnet run --project "$HOSTS/Headless" -c Release -- --checkpoints "$CHECKPOINTS" --capture "$EV/headless" --edge-masks "$EV/headless-edges" --size 960x640 > "$EV/headless.log"
 grep -E '^\[ukiyo\]' "$EV/headless.log"
 
 step "$SAMPLE desktop (WgpuRenderer, Metal)"
-dotnet build "samples/$SAMPLE/Desktop" -c Release -nologo -v q
-dotnet run --project "samples/$SAMPLE/Desktop" -c Release --no-build -- --capture "$EV/desktop" --checkpoints "$CHECKPOINTS" | grep -v '^snapshot' | tee "$EV/desktop.log" \
+dotnet build "$HOSTS/Desktop" -c Release -nologo -v q
+dotnet run --project "$HOSTS/Desktop" -c Release --no-build -- --capture "$EV/desktop" --checkpoints "$CHECKPOINTS" | grep -v '^snapshot' | tee "$EV/desktop.log" \
   || echo "[g1lit] desktop capture failed; the parity step reports it and still compares headless with web"
 # The window's drawing buffer follows the display scale, so the CPU reference for its pixels is rendered at that size.
 if SIZE="$(grep -om1 '[0-9]*x[0-9]* backend=Metal' "$EV/desktop.log" | cut -d' ' -f1)" && [ -n "$SIZE" ]; then
-  dotnet run --project "samples/$SAMPLE/Headless" -c Release --no-build -- --checkpoints "$CHECKPOINTS" --capture "$EV/headless-desktop-size" --edge-masks "$EV/headless-desktop-size-edges" --size "$SIZE" > /dev/null
+  dotnet run --project "$HOSTS/Headless" -c Release --no-build -- --checkpoints "$CHECKPOINTS" --capture "$EV/headless-desktop-size" --edge-masks "$EV/headless-desktop-size-edges" --size "$SIZE" > /dev/null
   echo "[g1lit] CPU reference at desktop size $SIZE"
 fi
 
 step "$SAMPLE web (WASM + three.js, WebGL2)"
-rm -rf "$WEB" && dotnet publish "samples/$SAMPLE/Browser" -c Release -o "$WEB" -nologo -v q
+rm -rf "$WEB" && dotnet publish "$HOSTS/Browser" -c Release -o "$WEB" -nologo -v q
 scripts/web-evidence.sh "$WEB/wwwroot" "$EV/web-dom.html" "$PORT" "checkpoints=$CHECKPOINTS&fixed=1"
 
 step "parity"

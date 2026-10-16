@@ -28,7 +28,10 @@ export function insideRoot(root: string, path: string): string {
 
 export type GameInfo = { name: string; dir: string; hosts: Record<string, string> };
 
-/** Games are folders under games/ or samples/ with a Shared/ directory and one folder per host. */
+/**
+ * Games are folders under games/ or samples/ with a Shared/ directory and one folder per host: <game>/Hosts/<Host>
+ * in the template layout (templates/game, docs/game-layout.md), <game>/<Host> in the older one.
+ */
 export function listGames(root: string): GameInfo[] {
   const games: GameInfo[] = [];
   for (const base of GAME_ROOTS) {
@@ -37,9 +40,10 @@ export function listGames(root: string): GameInfo[] {
     for (const name of readdirSync(baseDir).sort()) {
       const dir = join(baseDir, name);
       if (!statSync(dir).isDirectory() || !existsSync(join(dir, "Shared"))) continue;
+      const hostsDir = existsSync(join(dir, "Hosts")) ? join(dir, "Hosts") : dir;
       const hosts: Record<string, string> = {};
-      for (const host of readdirSync(dir)) {
-        const hostDir = join(dir, host);
+      for (const host of readdirSync(hostsDir).sort()) {
+        const hostDir = join(hostsDir, host);
         if (!statSync(hostDir).isDirectory()) continue;
         const project = readdirSync(hostDir).find((file) => file.endsWith(".csproj"));
         if (project) hosts[host] = join(hostDir, project);

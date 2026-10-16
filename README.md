@@ -59,7 +59,7 @@ ukiyo starts from the other end.
 | Real renderers | wgpu-native on Metal (Apple M4 Pro) and three.js on WebGL2, plus a null renderer that never touches a GPU. |
 | Identical simulation | Rotation at ticks 0, 60, 180 and 600 is bit-for-bit equal across all targets. |
 | Nothing moves behind your back | Paused in the browser, 1.5 s of real time advance zero ticks and consecutive frames are pixel-identical. |
-| One edit, everywhere | Changing only `CubeGame.cs` changes every target the same way; renderer code is untouched. |
+| One edit, everywhere | Changing only the game file (`CubeGame`, now `Shared/Game.cs`) changes every target the same way; renderer code is untouched. |
 | Single binary | `rotating-cube` is one 10.3 MB NativeAOT executable with wgpu and SDL linked in. It runs copied alone into an empty folder. |
 | Static web | The published site runs from any static file server, in IL or WebAssembly-AOT form. |
 
@@ -103,17 +103,17 @@ scripts/fetch-native.sh                  # pinned wgpu-native + SDL3, static and
 Run the same game three ways:
 
 ```sh
-dotnet run --project samples/RotatingCube/Headless   # no window, no GPU
-dotnet run --project samples/RotatingCube/Desktop    # native window, wgpu → Metal  (F5: pause · F6: step)
+dotnet run --project samples/RotatingCube/Hosts/Headless   # no window, no GPU
+dotnet run --project samples/RotatingCube/Hosts/Desktop    # native window, wgpu → Metal  (F5: pause · F6: step)
 
-dotnet publish samples/RotatingCube/Browser -c Release -o artifacts/web
+dotnet publish samples/RotatingCube/Hosts/Browser -c Release -o artifacts/web
 python3 -m http.server --directory artifacts/web/wwwroot 8080   # open http://localhost:8080
 ```
 
 Ship it:
 
 ```sh
-dotnet publish samples/RotatingCube/Export.Desktop -c Release -o artifacts/desktop
+dotnet publish samples/RotatingCube/Hosts/Export.Desktop -c Release -o artifacts/desktop
 ./artifacts/desktop/rotating-cube        # one file: no .NET, no dylibs, no editor
 ```
 
@@ -149,7 +149,7 @@ public void Extract(FrameBuilder frame)
 And every run tells you what it actually ran on:
 
 ```text
-[ukiyo] target=desktop game=RotatingCube CubeGame.cs=9846313B6743 Program.cs=138C7579F527
+[ukiyo] target=desktop game=RotatingCube Game.cs=9846313B6743 Program.cs=138C7579F527
 [ukiyo] renderer=WgpuRenderer backend=Metal device="Apple M4 Pro () · wgpu-native 29.0.1.1" profile=G0Unlit capture=True
 ```
 
@@ -182,7 +182,8 @@ src/Ukiyo.Physics             deterministic 2D physics            (G1)
 src/Ukiyo.UI                  game UI: HUDs, menus, pixel font    (G1)
 src/Ukiyo.Audio               mixer, WAV, sound synthesizer       (G1)
 src/Ukiyo.DevBridge           live control of dev builds          (G1)
-samples/RotatingCube/Shared   the one Program.cs and CubeGame.cs
+templates/game                the layout every new game copies    (docs/game-layout.md)
+samples/RotatingCube          that template filled in: Shared/Program.cs and Shared/Game.cs (CubeGame)
 samples/LanternRun            2D platformer sample                (G1)
 web/three-adapter             three.js presentation adapter, no game rules
 tools/mcp                     MCP server for agents               (G1)

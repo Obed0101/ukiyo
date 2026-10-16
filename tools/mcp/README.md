@@ -19,7 +19,7 @@ claude mcp add ukiyo -- bun /path/to/ukiyo/tools/mcp/src/server.ts   # UKIYO_ROO
 | `ukiyo_test` | C# tests (xunit) and/or the three.js adapter tests |
 | `ukiyo_import` | Dev-time asset importer on `*.import.json` specs: `run` regenerates, `check` reports stale files (below) |
 | `ukiyo_live` | Dev bridge of a running desktop build: pause, step, snapshot, GPU capture, input, recording |
-| `ukiyo_new_game` | Scaffolds `games/<Name>` with the hosts you ask for |
+| `ukiyo_new_game` | Scaffolds `games/<Name>` from `templates/game` (docs/game-layout.md) with the hosts you ask for under `Hosts/` |
 | `ukiyo_sprite_generate` · `_process` · `_sheet` | Image model or existing PNG → pixel-art PNG + atlas JSON; pack atlases |
 | `ukiyo_sound_generate` | Seeded synth sound effect as a JSON asset |
 | `ukiyo_studio` | What the person sees in the Studio; notify them; compose layouts, themes, panels |

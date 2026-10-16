@@ -46,8 +46,11 @@ height in pixels, y down), `Animations` (`AtlasAnimation`: name, frame names, fp
 `Load(context, filter)`. `Load` calls `SpriteSheet.FromAtlas`, which applies the same validation as
 `SpriteSheet.Parse` for JSON.
 
-The host csproj must compile `Shared/**/*.cs` (games from `ukiyo_new_game` and `samples/TexturedQuad` do; the older
-samples glob `Shared/*.cs`). `samples/TexturedQuad` is the working example.
+The host csproj must compile `Shared/**/*.cs` (the template layout of `templates/game` and `ukiyo_new_game`, and
+`samples/TexturedQuad` and `samples/ImportedMesh`, do; LanternRun, SceneHop, LitCube and Minimap glob `Shared/*.cs`). In the template layout
+(docs/game-layout.md) `Shared/gen/` is the layout's generated-code folder and specs live in `<game>/art/`, so
+`"output": "../Shared/gen/<Class>.g.cs"` lands it there; it is hashed as `gen/<Class>.g.cs`. `samples/TexturedQuad` is
+the working example.
 
 ## Inputs
 

@@ -63,7 +63,7 @@ if (baselineDir) {
     const delta = sameOrientation(before.entities.cube.rotation, after.entities.cube.rotation);
     check(`tick ${tick} differs from baseline after the C# edit`, delta > 1e-3, `max|Δ| vs baseline=${delta.toExponential(2)}`);
   }
-  check("shared source hash changed with the edit", hash(baseline[0]) !== hash(web[0]), `CubeGame.cs ${baseline[0].source["CubeGame.cs"].slice(0, 12)} → ${web[0].source["CubeGame.cs"].slice(0, 12)}`);
+  check("shared source hash changed with the edit", hash(baseline[0]) !== hash(web[0]), `Game.cs ${baseline[0].source["Game.cs"].slice(0, 12)} → ${web[0].source["Game.cs"].slice(0, 12)}`);
 }
 
 const pause = webEvidence.pauseCheck;

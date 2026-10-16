@@ -15,10 +15,10 @@
     <Project Path="src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />
   </Folder>
   <Folder Name="/samples/">
-    <Project Path="samples/RotatingCube/Headless/RotatingCube.Headless.csproj" />
-    <Project Path="samples/RotatingCube/Desktop/RotatingCube.Desktop.csproj" />
-    <Project Path="samples/RotatingCube/Export.Desktop/RotatingCube.Export.Desktop.csproj" />
-    <Project Path="samples/RotatingCube/Browser/RotatingCube.Browser.csproj" />
+    <Project Path="samples/RotatingCube/Hosts/Headless/RotatingCube.Headless.csproj" />
+    <Project Path="samples/RotatingCube/Hosts/Desktop/RotatingCube.Desktop.csproj" />
+    <Project Path="samples/RotatingCube/Hosts/Export.Desktop/RotatingCube.Export.Desktop.csproj" />
+    <Project Path="samples/RotatingCube/Hosts/Browser/RotatingCube.Browser.csproj" />
     <Project Path="samples/LanternRun/Headless/LanternRun.Headless.csproj" />
     <Project Path="samples/LanternRun/Desktop/LanternRun.Desktop.csproj" />
     <Project Path="samples/LanternRun/Browser/LanternRun.Browser.csproj" />
@@ -35,7 +35,14 @@
     <Project Path="samples/ImportedMesh/Browser/ImportedMesh.Browser.csproj" />
     <Project Path="samples/Minimap/Headless/Minimap.Headless.csproj" />
     <Project Path="samples/Minimap/Desktop/Minimap.Desktop.csproj" />
-    <Project Path="samples/Minimap/Browser/Minimap.Browser.csproj" />  </Folder>
+    <Project Path="samples/Minimap/Browser/Minimap.Browser.csproj" />
+  </Folder>
+  <Folder Name="/templates/">
+    <Project Path="templates/game/Hosts/Headless/MyGame.Headless.csproj" />
+    <Project Path="templates/game/Hosts/Desktop/MyGame.Desktop.csproj" />
+    <Project Path="templates/game/Hosts/Export.Desktop/MyGame.Export.Desktop.csproj" />
+    <Project Path="templates/game/Hosts/Browser/MyGame.Browser.csproj" />
+  </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Ukiyo.Import/Ukiyo.Import.csproj" />
   </Folder>
