@@ -266,12 +266,60 @@ public sealed class FrameBuilder
             Pass = pass,
         };
 
-    /// <summary>Camera at <paramref name="position"/> looking at <paramref name="target"/> (right-handed, +Y up, looks down local -Z).</summary>
+    /// <summary>
+    /// Camera at <paramref name="position"/> looking at <paramref name="target"/> (right-handed, +Y up, looks down local -Z).
+    /// Scalar float math only: System.Numerics matrix and quaternion helpers take different SIMD paths on arm64 and x64
+    /// and gave different bits (a -0 vs +0 quaternion component), which broke byte-identical packets across platforms.
+    /// </summary>
     public static CameraState LookAt(Vector3 position, Vector3 target, float fieldOfViewY, float near, float far)
     {
-        var view = Matrix4x4.CreateLookAt(position, target, Vector3.UnitY);
-        Matrix4x4.Invert(view, out var world);
-        var rotation = Quaternion.Normalize(Quaternion.CreateFromRotationMatrix(world));
-        return new CameraState(position, rotation, fieldOfViewY, near, far);
+        // Camera basis: z points from the target back to the eye, x = up × z, y = z × x (rows of the world rotation).
+        var (zx, zy, zz) = Normalized(position.X - target.X, position.Y - target.Y, position.Z - target.Z);
+        var (xx, xy, xz) = Normalized(zz, 0f, -zx);
+        var (yx, yy, yz) = (zy * xz - zz * xy, zz * xx - zx * xz, zx * xy - zy * xx);
+        return new CameraState(position, FromRotationRows(xx, xy, xz, yx, yy, yz, zx, zy, zz), fieldOfViewY, near, far);
     }
+
+    private static (float X, float Y, float Z) Normalized(float x, float y, float z)
+    {
+        var length = MathF.Sqrt(x * x + y * y + z * z);
+        return (x / length, y / length, z / length);
+    }
+
+    /// <summary>The same branches as Quaternion.CreateFromRotationMatrix, written out in scalar operations.</summary>
+    private static Quaternion FromRotationRows(float m11, float m12, float m13, float m21, float m22, float m23, float m31, float m32, float m33)
+    {
+        float x, y, z, w;
+        var trace = m11 + m22 + m33;
+        if (trace > 0f)
+        {
+            var s = MathF.Sqrt(trace + 1f);
+            w = s * 0.5f;
+            var inv = 0.5f / s;
+            (x, y, z) = ((m23 - m32) * inv, (m31 - m13) * inv, (m12 - m21) * inv);
+        }
+        else if (m11 >= m22 && m11 >= m33)
+        {
+            var s = MathF.Sqrt(1f + m11 - m22 - m33);
+            var inv = 0.5f / s;
+            (x, y, z, w) = (0.5f * s, (m12 + m21) * inv, (m13 + m31) * inv, (m23 - m32) * inv);
+        }
+        else if (m22 > m33)
+        {
+            var s = MathF.Sqrt(1f + m22 - m11 - m33);
+            var inv = 0.5f / s;
+            (x, y, z, w) = ((m21 + m12) * inv, 0.5f * s, (m32 + m23) * inv, (m31 - m13) * inv);
+        }
+        else
+        {
+            var s = MathF.Sqrt(1f + m33 - m11 - m22);
+            var inv = 0.5f / s;
+            (x, y, z, w) = ((m31 + m13) * inv, (m32 + m23) * inv, 0.5f * s, (m12 - m21) * inv);
+        }
+
+        var length = MathF.Sqrt(x * x + y * y + z * z + w * w);
+        return new Quaternion(PositiveZero(x / length), PositiveZero(y / length), PositiveZero(z / length), PositiveZero(w / length));
+    }
+
+    private static float PositiveZero(float value) => value == 0f ? 0f : value;
 }
