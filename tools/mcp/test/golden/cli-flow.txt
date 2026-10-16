@@ -185,6 +185,7 @@ $ ukiyo status
       "hosts": [
         "Browser",
         "Desktop",
+        "Export.Desktop",
         "Headless"
       ],
       "profile": {
@@ -249,6 +250,7 @@ $ ukiyo status
       "dir": "samples/SceneHop",
       "hosts": [
         "Desktop",
+        "Export.Desktop",
         "Headless"
       ],
       "profile": {
@@ -271,6 +273,7 @@ $ ukiyo status
       "hosts": [
         "Browser",
         "Desktop",
+        "Export.Desktop",
         "Headless"
       ],
       "profile": {

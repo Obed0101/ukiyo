@@ -123,7 +123,9 @@ point it at the game folder) and add the same optional `ProjectReference`s as th
 `PublishAot`, `DirectPInvoke`, `NativeLibrary` and the framework `LinkerArg`; do not add `UkiyoDevBridge`.
 Prove it: `dotnet publish <host dir> -c Release -o artifacts/<name>`, then `otool -L artifacts/<name>/<assembly>`
 lists only `/System/Library/Frameworks/*` and `/usr/lib/*`, and the binary runs alone: `./<assembly> --capture
-/tmp/cap` opens a window and writes GPU frames (needs a visible window on the Mac).
+/tmp/cap` opens a window and writes GPU frames (needs a visible window on the Mac). TexturedQuad, LitCube and SceneHop
+have such an older-layout export; `scripts/aot-exports.sh` runs all of these checks for them plus snapshot and
+source-hash equality with headless (docs/export.md has the results).
 
 ## Never
 

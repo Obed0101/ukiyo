@@ -116,15 +116,20 @@ jobs:
           if-no-files-found: ignore
 
       # The single-binary export links wgpu-native and SDL3 statically and must depend only on system libraries
-      # and never contain the dev bridge (docs/game-layout.md). Published, not run: running it opens a window.
-      - name: NativeAOT export (no window)
+      # and never contain the dev bridge (docs/game-layout.md, docs/export.md). Published, not run: running it opens a
+      # window (scripts/aot-exports.sh runs them on a Mac with a display).
+      - name: NativeAOT exports (no window)
         if: runner.os == 'macOS'
         run: |
-          dotnet publish samples/RotatingCube/Hosts/Export.Desktop -c Release -o artifacts/ci/desktop
-          otool -L artifacts/ci/desktop/rotating-cube
-          non_system="$(otool -L artifacts/ci/desktop/rotating-cube | tail -n +2 | awk '{print $1}' | grep -vE '^/(System|usr/lib)/' || true)"
-          [[ -z "$non_system" ]] || { echo "::error::non-system dependency in the export: $non_system"; exit 1; }
-          [[ "$(strings artifacts/ci/desktop/rotating-cube | grep -c DevBridge || true)" == "0" ]] || { echo "::error::the export contains the dev bridge"; exit 1; }
+          for export in samples/RotatingCube/Hosts/Export.Desktop:rotating-cube samples/TexturedQuad/Export.Desktop:textured-quad \
+                        samples/LitCube/Export.Desktop:lit-cube samples/SceneHop/Export.Desktop:scene-hop; do
+            project="${export%%:*}"; binary="artifacts/ci/${export##*:}/${export##*:}"
+            dotnet publish "$project" -c Release -o "$(dirname "$binary")"
+            otool -L "$binary"
+            non_system="$(otool -L "$binary" | tail -n +2 | awk '{print $1}' | grep -vE '^/(System|usr/lib)/' || true)"
+            [[ -z "$non_system" ]] || { echo "::error::non-system dependency in $binary: $non_system"; exit 1; }
+            [[ "$(strings "$binary" | grep -c DevBridge || true)" == "0" ]] || { echo "::error::$binary contains the dev bridge"; exit 1; }
+          done
 
       - name: Nothing left behind in the checkout
         run: |
