@@ -169,7 +169,61 @@ What the numbers mean:
   rasterizer uses float edge functions without the GPUs' fixed-point snapping or top-left rule). The lit run has more
   edge pixels because it has more silhouettes (floor, lamp) and lit-face contrast.
 
+### Real-GPU browser leg · 2026-10-16 (UKIYO-41)
+
+Apple M4 Pro, macOS 27.0 (26A428), Google Chrome 154.0.8037.95, three 0.186.0. WebGL device reported by the page:
+`ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, Unspecified Version)`.
+
+Every WebGL2 row above ran on SwiftShader: `scripts/web-evidence.sh` forces it with `--use-angle=swiftshader`, so
+"WebGL2 parity" had not been measured on a GPU. `WEB_GPU=1` adds an opt-in target `web-gpu` to `g0.sh`, `g1.sh`,
+`g1lit.sh` and `g1passes.sh`: the same published build, run again in headless Chrome with `--use-angle=metal` and
+compared with the same scripts, tolerances and edge masks as `web`. Default off, so CI (no GPU) and existing runs keep
+their single SwiftShader leg.
+
+- **Proof of the GPU.** The page's evidence JSON now carries `backend` and `device`: the string the adapter reads from
+  `UNMASKED_RENDERER_WEBGL` (`PlatformBootstrap.PublishEvidence`). The leg fails unless the device contains
+  `Metal Renderer: Apple` and not `SwiftShader`. It is checked in `web-evidence.sh` (`WEB_EVIDENCE_GL=metal`) and again
+  in `g1-parity.ts`/`g0-parity.ts` (row "web-gpu ran on the Apple GPU"). The default leg reports
+  `ANGLE (Google, Vulkan 1.3.0 (SwiftShader Device (LLVM 10.0.0) (0x0000C0DE)), SwiftShader driver)`. Negative
+  control: a SwiftShader dump fed in as `web-gpu` fails that row, and a missing one fails "web-gpu evidence present"
+  plus every `web-gpu` row in `lit-pixel-report.ts`.
+- **How it runs (decided by experiment).** `--headless=new` with `--use-angle=metal` (and with no ANGLE flag at all)
+  reports the Apple GPU, so no visible window is needed. The leg waits for the evidence in real time
+  (`scripts/web-evidence-realtime.ts`: DevTools port, poll the title, read the DOM) instead of `--dump-dom` with
+  virtual time. Under virtual time, the GPU leg on the AOT RotatingCube build dumped the page at "loading .NET
+  WebAssembly…" in 4 of 5 runs, against 5 of 5 good runs in real time. Real-time and virtual-time captures of LitCube
+  gave identical numbers. Running two legs back to back on one port also exposed a race in `web-evidence.sh`: the
+  first server was killed without waiting, and 1 of 3 following runs lost its evidence. The script now waits for the
+  server to exit (6 of 6 good runs after the fix).
+
+Same table as above, real-GPU WebGL2 against the CPU reference at 960×640, ticks 0/60/180/600 (snapshots identical,
+max Δ = 0, on every sample):
+
+| Sample | Pair | Interior max Δ | Interior px with Δ = 1 | Edge px (max Δ) | Interior px with Δ ≥ 2 |
+|---|---|---|---|---|---|
+| LitCube | CPU vs WebGL2 (Apple GPU) | 1 | 5395–14 099 of 614 400 (0.88–2.29 %) | 52–807 (226) | 0 |
+| RotatingCube (G0, unlit) | CPU vs WebGL2 (Apple GPU) | 0 | 0 | 0–2 (186) | 0 |
+| ImportedMesh | CPU vs WebGL2 (Apple GPU) | 1 | 1951–2829 (0.32–0.46 %) | 245–565 (211) | 0 |
+| Minimap, whole frame | CPU vs WebGL2 (Apple GPU) | 1 | 100–5836 | 45–389 (144) | 0 |
+| Minimap, pass 0 (960×640) | CPU vs WebGL2 (Apple GPU) | 1 | 0–5736 | 1–438 (144) | 0 |
+| Minimap, pass 1 (217×217) | CPU vs WebGL2 (Apple GPU) | 1 | 100 at every tick | 44 (1) | 0 |
+
+- **Every gate passes on the real GPU**: `WEB_GPU=1` `g1lit.sh` (LitCube, `SAMPLE=RotatingCube`,
+  `SAMPLE=ImportedMesh`) and `g1passes.sh` exit 0, with no tolerance changed.
+- **The Apple GPU behaves like the desktop Metal leg, not like SwiftShader.** LitCube's interior Δ = 1 share
+  (0.88–2.29 %) matches CPU vs Metal (0.9–2.4 %) and is 3.6–11× SwiftShader's at the same tick. That is float rounding on the Apple GPU,
+  whichever API drives it. ImportedMesh stays at Δ ≤ 1 everywhere. The gradient allowance (1 + floor(G/16)) that
+  SwiftShader needed on 4–18 steep pixels per frame is not used on the GPU. Unlit cube edges differ on 0–2 px
+  (SwiftShader 10–23, desktop Metal 0–3).
+- **Minimap pass 1:** the 144 differing pixels per tick (100 interior, 44 on the mask's edge) are one 12×12 flat face,
+  the green cube's top, with red 68 vs 67. The desktop Metal leg shows the same kind of one-step difference in that
+  pass (529 px).
+- `g1-parity.ts`'s whole-image pixel rows fail for `web-gpu` on 1–5 silhouette pixels per frame (2 of 16 frames pass),
+  as they do for `web` and `desktop`. `g1lit.sh` keeps those rows informational, as before.
+
 Evidence: `artifacts/evidence-g1lit/` (captures, `parity.md`, `lit-pixels.md`, diff maps, edge masks in
 `headless-edges/` and `headless-desktop-size-edges/`), `artifacts/evidence-g1lit-rotatingcube/` (unlit baseline) and
 `artifacts/evidence-g1lit-importedmesh/`. Reproduce with `scripts/g1lit.sh`, `SAMPLE=RotatingCube scripts/g1lit.sh`
-and `SAMPLE=ImportedMesh scripts/g1lit.sh` (opens a window briefly; set `WEB_PORT` if 8768 is taken).
+and `SAMPLE=ImportedMesh scripts/g1lit.sh` (opens a window briefly; set `WEB_PORT` if 8768 is taken). Prefix any of
+them with `WEB_GPU=1` for the real-GPU leg (`web-gpu-dom.html` and `web-gpu/` in the same evidence folder; needs a Mac
+with an Apple GPU and Chrome).

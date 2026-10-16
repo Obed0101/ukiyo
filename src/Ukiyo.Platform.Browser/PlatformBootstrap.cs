@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 using System.Text;
+using System.Text.Json;
 using Ukiyo.Rendering;
 using Ukiyo.Rendering.Three;
 
@@ -105,13 +106,15 @@ public sealed partial class BrowserHost(BrowserOptions options) : IPlatformHost
 
     /// <summary>
     /// Deterministic evidence: paused, step to each checkpoint, render, read back the canvas. Then wait real time
-    /// while paused and render again, proving nothing moves without C# advancing the simulation.
+    /// while paused and render again, proving nothing moves without C# advancing the simulation. "device" is what the
+    /// adapter read from WebGL (UNMASKED_RENDERER_WEBGL), so a gate can tell a real GPU from SwiftShader.
     /// </summary>
     private static async Task PublishEvidence(GameRuntime runtime, ThreeJsRenderer renderer, long[] checkpoints, bool fixedSize)
     {
         runtime.Paused = true;
         var json = new StringBuilder();
-        json.Append("{\"target\":\"web\",\"captures\":[");
+        json.Append("{\"target\":\"web\",\"backend\":\"").Append(JsonEncodedText.Encode(renderer.Capabilities.Backend).ToString())
+            .Append("\",\"device\":\"").Append(JsonEncodedText.Encode(renderer.Capabilities.Device).ToString()).Append("\",\"captures\":[");
         var sizes = new[] { (960, 640), (640, 480), (1200, 700) };
         for (var i = 0; i < checkpoints.Length; i++)
         {

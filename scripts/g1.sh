@@ -2,12 +2,17 @@
 # G1 parity: runs LanternRun with one input script on headless (CPU capture), desktop (Metal capture) and web
 # (WASM + three.js), then compares whole snapshots at the same checkpoints. Opens a window briefly; it must be
 # visible on the active desktop or macOS never presents a frame. Evidence goes to artifacts/evidence-g1.
+# WEB_GPU=1 adds the target "web-gpu": the same published build in headless Chrome on the real GPU (WebGL2 through
+# ANGLE Metal; the leg fails unless the page reports the Apple GPU), compared like "web". Default off (CI has no GPU).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="${DOTNET_ROOT:-$HOME/.dotnet}" DOTNET_NOLOGO=1 DOTNET_CLI_TELEMETRY_OPTOUT=1
 EV="artifacts/evidence-g1"; INPUT="samples/LanternRun/parity/input.json"; CHECKPOINTS="${CHECKPOINTS:-0,30,60,120,180,240,300}"
+PORT="${WEB_PORT:-8767}"
 step() { printf '\n\033[1m== %s\033[0m\n' "$1"; }
+# web-evidence.sh would silently read another process's server if the port were taken.
+if lsof -nP -iTCP:"$PORT" -sTCP:LISTEN >/dev/null 2>&1; then echo "[g1] port $PORT is in use; set WEB_PORT" >&2; exit 1; fi
 rm -rf "$EV" && mkdir -p "$EV"
 
 step "headless (SoftwareRenderer)"
@@ -29,7 +34,13 @@ fi
 step "web (WASM + three.js, WebGL2)"
 rm -rf artifacts/lantern-web && dotnet publish samples/LanternRun/Browser -c Release -o artifacts/lantern-web -nologo -v q
 cp "$INPUT" artifacts/lantern-web/wwwroot/input.json
-scripts/web-evidence.sh artifacts/lantern-web/wwwroot "$EV/web-dom.html" 8767 "checkpoints=$CHECKPOINTS&fixed=1&input=input.json"
+scripts/web-evidence.sh artifacts/lantern-web/wwwroot "$EV/web-dom.html" "$PORT" "checkpoints=$CHECKPOINTS&fixed=1&input=input.json"
+if [ "${WEB_GPU:-0}" = 1 ]; then
+  step "web on the real GPU (WebGL2 through ANGLE Metal)"
+  WEB_EVIDENCE_GL=metal scripts/web-evidence.sh artifacts/lantern-web/wwwroot "$EV/web-gpu-dom.html" "$PORT" "checkpoints=$CHECKPOINTS&fixed=1&input=input.json" \
+    || { WEB_GPU_FAILED=1; echo "[g1] real-GPU web leg failed; the parity step reports it"; }
+fi
 
 step "parity"
 bun scripts/g1-parity.ts "$EV"
+exit "${WEB_GPU_FAILED:-0}"
