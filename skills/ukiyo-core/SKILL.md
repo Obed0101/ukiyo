@@ -104,9 +104,12 @@ _scenes.LoadScene("meadow");                                       // live at ti
 Report what each check proved. A green build is not a visual check; a CPU capture is not a GPU capture.
 
 Without a configured MCP client: `UKIYO_ROOT=<repo> bun tools/mcp/src/server.ts` speaks MCP over stdio (always set
-`UKIYO_ROOT` to the checkout you mean to change; a real path, not `/tmp/…`, which is a symlink on macOS). The CLI
-`bun tools/mcp/src/cli.ts` covers `run <Game>` (`--checkpoints`, `--patches`, `--input`, `--size`) and `live
-list|step|capture|patch`; there is no CLI for new-game or capture. Determinism without a test: run the same headless
+`UKIYO_ROOT` to the checkout you mean to change; a real path, not `/tmp/…`, which is a symlink on macOS). Or use the
+CLI, which runs the same tools with JSON on stdout (exit 2 usage error, 1 tool failure; `--help` lists every command
+and option): `bun tools/mcp/src/cli.ts status`, `new-game <Name> [--template 2d|3d] [--hosts Headless,Desktop]`,
+`capture <Game> [--checkpoints 0,60] [--size WxH] [--input FILE] [--patches FILE] [--out DIR]`, `run <Game>`,
+`test [--filter EXPR]`, `import [--check] [specs…] [--game G]`, `skills list|install`, `live
+list|status|step|capture|patch|…`. Determinism without a test: run the same headless
 command twice and `diff` stdout. MCP results contain per-run temp paths (patch logs, frame dirs under the OS temp
 dir), so compare only their `snapshots`.
 

@@ -40,6 +40,22 @@ export type ToolContext = {
   signal: AbortSignal;
 };
 
+/**
+ * How the CLI (cli.ts, cli-args.ts) spells a tool where its input schema alone does not say it. Every field is
+ * optional: without hints the required string and number properties are positional and every other property is a
+ * --kebab-case option.
+ */
+export type CliHints = {
+  /** Properties read from positional arguments, in order; an array property last takes the rest. */
+  positional?: string[];
+  /** Flags that set fixed properties instead of naming one, e.g. --check → {"action":"check"}. */
+  switches?: Record<string, { set: Record<string, JsonValue>; description: string }>;
+  /** Values for properties the command line leaves unset, applied before the schema's own defaults. */
+  defaults?: Record<string, JsonValue>;
+  /** structuredContent keys listing files the tool writes to a temp dir; `--out DIR` copies them into DIR. */
+  outputs?: string[];
+};
+
 /** Shape every module in src/tools exports (default export: one tool or an array of tools). */
 export type Tool = {
   name: string;
@@ -47,6 +63,8 @@ export type Tool = {
   description: string;
   inputSchema: JsonSchema & { type: "object" };
   run: (args: Record<string, unknown>, context: ToolContext) => Promise<ToolResult>;
+  /** Command-line spelling hints; not part of tools/list. */
+  cli?: CliHints;
 };
 
 export type JsonRpcRequest = { jsonrpc: "2.0"; id?: string | number; method: string; params?: Record<string, unknown> };
