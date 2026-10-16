@@ -95,7 +95,9 @@ so a pass drawn at its rect covers the same pixels as the same pass drawn alone.
 `scripts/g1passes.sh` (Minimap at ticks 0/60/180/600, web canvas 960×640 with a 217×217 minimap, Metal drawing buffer
 1920×1280 with a 435×435 minimap): exit 0, 8 per-pass PNGs on every target (headless at both sizes, Metal, WebGL2).
 Snapshots and source hashes identical on CPU, Metal and WebGL2 (max Δ = 0). Pixels against the CPU reference at the
-same size; "edge" means a color discontinuity in the reference (a silhouette):
+same size; "edge" means the CPU reference's geometric edge mask marks the pixel (a silhouette, a crease or a pass
+border; see [rendering-lighting.md](rendering-lighting.md), one mask per frame and per pass). Re-run with those masks
+(UKIYO-45, same day and machine): every row below reproduced exactly, 0 interior pixels over tolerance:
 
 | Image | Pair | Interior max Δ | Interior px with Δ = 1 | Edge px (max Δ) |
 |---|---|---|---|---|
