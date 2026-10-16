@@ -16,6 +16,8 @@ frontmatter) that Claude Code, Codex-style agents and other skill-aware tools lo
 | `ukiyo-testing` | tests, snapshots, CPU captures, parity — what each proves |
 | `ukiyo-live` | pause, step, capture and inject input into a running build |
 | `ukiyo-new-game` | from idea to a playable, tested game on every target |
+| `ukiyo-scenes-assets` | scene registry, prefabs, switching scenes, patches; imported art in `Shared/gen` with content hashes |
+| `ukiyo-hosts` | headless, desktop dev, browser, NativeAOT and static web exports: flags, dev bridge presence, `wwwroot/lib` |
 | `ukiyo-rendering` | 3D drawing, conventions, renderers, the binary protocol |
 | `ukiyo-studio` | the person's Studio: panels, layouts, themes as files; what they are looking at; notices |
 
@@ -25,7 +27,8 @@ For working on ukiyo itself:
 |---|---|
 | `ukiyo-engine` | architecture, boundaries, build rules, where a change goes, evidence — load first |
 | `ukiyo-renderer-dev` | renderer contract, protocol on both sides, wgpu and three.js internals, cross-renderer parity |
-| `ukiyo-platform-dev` | hosts (headless, SDL3, WebAssembly), native interop, flags, export profiles, dev bridge commands |
+| `ukiyo-hosts` | (also in the game presets) what each host and export profile is and how to check it |
+| `ukiyo-platform-dev` | changing hosts (headless, SDL3, WebAssembly), native interop, flags, export profiles, dev bridge commands |
 | `ukiyo-tooling` | MCP tools (module contract, schemas, errors, tests) and writing skills and presets |
 
 ## Presets
