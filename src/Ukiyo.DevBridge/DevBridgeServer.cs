@@ -9,7 +9,8 @@ namespace Ukiyo.DevBridge;
 
 /// <summary>
 /// Lets an agent (through the ukiyo MCP server) or the Studio drive a running development build: status, pause,
-/// resume, step, snapshot, capture, inject input and record replays. Newline-delimited JSON over TCP on 127.0.0.1.
+/// resume, step, snapshot, capture, inject input, record replays and submit scene patches. Newline-delimited JSON over
+/// TCP on 127.0.0.1.
 /// Every request carries the token from the discovery file <c>~/.ukiyo/live/&lt;pid&gt;.json</c> (mode 0600), so other
 /// local processes cannot drive the game. Requests run on the host thread inside <see cref="Pump"/>, never concurrently
 /// with a tick or a frame.
@@ -145,7 +146,25 @@ public sealed class DevBridgeServer : IDevSession
                 return Ok(id, json => json.WriteRawValue(_runtime.SnapshotJson()));
             case "capture":
             {
-                var capture = _runtime.CaptureAsync().AsTask().GetAwaiter().GetResult();
+                // Optional "pass": a pass id, or "primary" for the pass the game marks as its view (what an inspector previews).
+                int? pass = null;
+                if (request.TryGetProperty("pass", out var passValue))
+                {
+                    if (passValue.ValueKind == JsonValueKind.String && passValue.GetString() == "primary")
+                    {
+                        pass = _runtime.PrimaryPass;
+                    }
+                    else if (passValue.ValueKind == JsonValueKind.Number && passValue.TryGetInt32(out var passId) && passId >= 0)
+                    {
+                        pass = passId;
+                    }
+                    else
+                    {
+                        return Error(id, "pass must be a pass id (0, 1, …) or \"primary\"");
+                    }
+                }
+
+                var capture = _runtime.CaptureAsync(pass).AsTask().GetAwaiter().GetResult();
                 if (capture is null)
                 {
                     return Error(id, $"{_runtime.Renderer.Capabilities.RendererName} cannot capture");
@@ -158,6 +177,13 @@ public sealed class DevBridgeServer : IDevSession
                     json.WriteNumber("width", capture.Width);
                     json.WriteNumber("height", capture.Height);
                     json.WriteString("backend", capture.Backend);
+                    if (pass is { } captured)
+                    {
+                        json.WriteNumber("pass", captured);
+                        json.WriteNumber("passes", _runtime.PassCount);
+                        json.WriteNumber("primaryPass", _runtime.PrimaryPass);
+                    }
+
                     json.WriteString("png", Convert.ToBase64String(capture.Png));
                     json.WriteEndObject();
                 });
@@ -203,9 +229,55 @@ public sealed class DevBridgeServer : IDevSession
                 });
             }
 
+            case "patch":
+                return SubmitPatch(id, request);
             default:
-                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record");
+                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record, patch");
         }
+    }
+
+    /// <summary>
+    /// Submits one patch through <see cref="GameRuntime.SubmitPatch"/>, so the bridge applies the same submit-time rules
+    /// as code. A patch for a later tick is queued; one for the current boundary applies now (between frames the
+    /// runtime is exactly at a boundary). Refusals come back as the typed <c>[SCENE:Code]</c> message; one that needed
+    /// the world at the current boundary is also recorded in the snapshot's <c>rejected</c> list.
+    /// </summary>
+    private string SubmitPatch(long id, JsonElement request)
+    {
+        if (!request.TryGetProperty("patch", out var patchElement) || patchElement.ValueKind != JsonValueKind.Object)
+        {
+            return Error(id, "patch needs \"patch\": {\"id\":\"p1\",\"tick\":120,\"ops\":[{\"op\":\"dispose\",\"id\":\"moth\"}]} (docs/scenes-patches.md)");
+        }
+
+        if (!_runtime.HasScenes)
+        {
+            return Error(id, $"[RUNTIME]: {_runtime.Game.Name} has no SceneRegistry, so it cannot take patches");
+        }
+
+        ScenePatch patch;
+        var appliedBefore = _runtime.SceneState!.AppliedCount;
+        try
+        {
+            patch = ScenePatch.Parse(patchElement.GetRawText());
+            _runtime.SubmitPatch(patch);
+        }
+        catch (SceneException refused)
+        {
+            return Error(id, refused.Message);
+        }
+
+        // Submit either queues the patch or applies exactly this one now; the applied list is only a bounded window.
+        var applied = _runtime.SceneState!.AppliedCount > appliedBefore;
+        return Ok(id, json =>
+        {
+            json.WriteStartObject();
+            json.WriteString("id", patch.Id);
+            json.WriteNumber("tick", patch.Tick);
+            json.WriteString("status", applied ? "applied" : "queued");
+            json.WriteNumber("currentTick", _runtime.Tick);
+            json.WriteBoolean("paused", _runtime.Paused);
+            json.WriteEndObject();
+        });
     }
 
     private void WriteStatus(Utf8JsonWriter json)

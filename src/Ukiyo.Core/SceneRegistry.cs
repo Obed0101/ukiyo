@@ -47,11 +47,23 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
     /// <summary>Live entities in spawn order (scene order, then patch order). Retarget keeps an entity's place.</summary>
     public IReadOnlyList<SceneEntity<TEntity>> Entities => _entities;
 
+    /// <summary>The last <see cref="PatchHistory.Window"/> applied patches, oldest first. <see cref="AppliedCount"/> counts them all.</summary>
     public IReadOnlyList<ScenePatch> AppliedPatches => _applied;
 
     public IReadOnlyList<ScenePatch> PendingPatches => _pending;
 
+    /// <summary>The last <see cref="PatchHistory.Window"/> refusals at a patch's tick, oldest first. <see cref="RejectedCount"/> counts them all.</summary>
     public IReadOnlyList<PatchRejection> RejectedPatches => _rejected;
+
+    public long AppliedCount { get; private set; }
+
+    public long RejectedCount { get; private set; }
+
+    /// <summary>Hash chain over every applied patch's id and tick (<see cref="PatchHistory.ChainApplied"/>).</summary>
+    public ulong AppliedHash { get; private set; } = PatchHistory.EmptyHash;
+
+    /// <summary>Hash chain over every refusal's id, tick and code (<see cref="PatchHistory.ChainRejected"/>).</summary>
+    public ulong RejectedHash { get; private set; } = PatchHistory.EmptyHash;
 
     public TEntity this[string id] =>
         _byId.TryGetValue(id, out var entity) ? entity.Instance : throw new SceneException(SceneErrorCode.UnknownEntity, $"no live entity \"{id}\" in scene {ActiveScene ?? "(none)"}");
@@ -169,7 +181,7 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
             {
                 // Recorded exactly as a queued patch refused at this tick would be, so a live session and a replay of
                 // the same submissions produce the same snapshots.
-                _rejected.Add(new PatchRejection(patch.Id, patch.Tick, refused.Code, refused.Message));
+                Reject(new PatchRejection(patch.Id, patch.Tick, refused.Code, refused.Message));
                 _patchIds.Add(patch.Id);
                 throw;
             }
@@ -186,7 +198,13 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
     }
 
     public SceneState State() =>
-        new(ActiveScene, LoadedAt, [.. _applied.Select(patch => new PatchRecord(patch.Id, patch.Tick))], [.. _rejected]);
+        new(ActiveScene, LoadedAt, [.. _applied.Select(patch => new PatchRecord(patch.Id, patch.Tick))], [.. _rejected])
+        {
+            AppliedCount = AppliedCount,
+            AppliedHash = AppliedHash,
+            RejectedCount = RejectedCount,
+            RejectedHash = RejectedHash,
+        };
 
     void ISceneDirector.AtBoundary(long tick)
     {
@@ -209,7 +227,7 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
             _pending.RemoveAt(0);
             if (patch.Tick < tick)
             {
-                _rejected.Add(new PatchRejection(patch.Id, patch.Tick, SceneErrorCode.PastTick, $"[SCENE:PastTick]: boundary {patch.Tick} was never reached (resumed at {tick})"));
+                Reject(new PatchRejection(patch.Id, patch.Tick, SceneErrorCode.PastTick, $"[SCENE:PastTick]: boundary {patch.Tick} was never reached (resumed at {tick})"));
                 continue;
             }
 
@@ -220,7 +238,7 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
             }
             catch (SceneException refused)
             {
-                _rejected.Add(new PatchRejection(patch.Id, patch.Tick, refused.Code, refused.Message));
+                Reject(new PatchRejection(patch.Id, patch.Tick, refused.Code, refused.Message));
                 continue;
             }
 
@@ -415,6 +433,26 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
             }
         }
 
-        _applied.Add(patch);
+        Keep(_applied, patch);
+        AppliedCount++;
+        AppliedHash = PatchHistory.ChainApplied(AppliedHash, patch.Id, patch.Tick);
+    }
+
+    private void Reject(PatchRejection rejection)
+    {
+        Keep(_rejected, rejection);
+        RejectedCount++;
+        RejectedHash = PatchHistory.ChainRejected(RejectedHash, rejection.Id, rejection.Tick, rejection.Code);
+    }
+
+    /// <summary>Appends to a rolling window, evicting the oldest entry once it holds <see cref="PatchHistory.Window"/>.</summary>
+    private static void Keep<T>(List<T> window, T entry)
+    {
+        if (window.Count == PatchHistory.Window)
+        {
+            window.RemoveAt(0);
+        }
+
+        window.Add(entry);
     }
 }

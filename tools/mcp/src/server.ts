@@ -26,7 +26,10 @@ const root = findRepoRoot(process.env.UKIYO_ROOT ?? here);
 
 const INSTRUCTIONS = `ukiyo is an agent-native C# game engine. The game is code: edit files under games/<Name>/Shared (or samples/), then prove the change.
 Loop: ukiyo_status → edit code → ukiyo_run (snapshots at ticks, scripted input) → ukiyo_capture (real frames from the CPU renderer) → ukiyo_test.
+ukiyo_status shows per game its render profile (G1Lit = lit 3D, declared by IGame.Profile), whether it uses a SceneRegistry (snapshots then carry "scene") and whether its imported assets are stale.
+Assets: source art + *.import.json → Shared/gen/*.g.cs via ukiyo_import (check reports stale files, run regenerates); rebuild the game afterwards.
 A running desktop build exposes a dev bridge: ukiyo_live pauses, steps, captures and injects input into it.
+Scene patches (games with a SceneRegistry, docs/scenes-patches.md): ukiyo_run {"patches":[…]} replays a patch log headless and reports applied/rejected; ukiyo_live patch submits one to a running game.
 Sprites: ukiyo_sprite_generate (image model → pixel-art PNG + atlas in Shared/assets), ukiyo_sprite_process, ukiyo_sprite_sheet.
 Sound: ukiyo_sound_generate (synth preset + seed, no audio files); ukiyo_run {"audio":true} reports what the run played.
 Studio (bun studio/src/server.ts) is the person's window: ukiyo_studio view says what they are looking at (focused panel, selected entity, tick); notify tells them something; compose changes layout/theme/panels. Its UI is files in studio/ (panels/*.js, themes/*.json, layouts/*.json): edit them to change it, open pages reload live.

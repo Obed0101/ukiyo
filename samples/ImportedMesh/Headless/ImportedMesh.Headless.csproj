@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>imported-mesh-headless</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.ImportedMesh</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Recursive so imported meshes (Shared/gen/*.g.cs) are compiled and hashed into the source identity too. -->
+    <UkiyoSharedSource Include="../Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+  </ItemGroup>
+</Project>

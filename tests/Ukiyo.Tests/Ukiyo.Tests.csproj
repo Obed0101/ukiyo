@@ -19,6 +19,10 @@
     <!-- SceneHop reads its scenes through GameContext.Assets, which looks in the game's assembly: here, this one. -->
     <EmbeddedResource Include="../../samples/SceneHop/Shared/assets/**/*" LogicalName="assets/$([System.String]::Copy('%(RecursiveDir)').Replace('\','/'))%(Filename)%(Extension)" />
     <Compile Include="../../samples/LitCube/Shared/LitCubeGame.cs" Link="Shared/LitCubeGame.cs" />
+    <Compile Include="../../samples/ImportedMesh/Shared/ImportedMeshGame.cs" Link="Shared/ImportedMeshGame.cs" />
+    <Compile Include="../../samples/ImportedMesh/Shared/gen/SceneMeshes.g.cs" Link="Shared/gen/SceneMeshes.g.cs" />
+    <Compile Include="../../samples/Minimap/Shared/MinimapGame.cs" Link="Shared/MinimapGame.cs" />
+
     <ProjectReference Include="../../src/Ukiyo.Core/Ukiyo.Core.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
     <ProjectReference Include="../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
@@ -26,5 +30,6 @@
     <ProjectReference Include="../../src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
     <ProjectReference Include="../../src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
   </ItemGroup>
 </Project>

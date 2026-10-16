@@ -19,7 +19,7 @@ const skills: Tool = {
   name: "ukiyo_skills",
   title: "Engine skills",
   description:
-    "Lists the ukiyo skills (per-area guides an agent loads: core loop, rendering, sprites, sprite generation, physics, input, UI, audio, testing, live bridge, new game, Studio; and for working on the engine itself: engine architecture, renderer development, hosts and dev bridge, tooling) and the simple/balanced/complete presets for games plus the engine preset, or installs a preset or chosen skills into a project for Claude Code (.claude/skills) and/or Codex-style agents (.agents/skills).",
+    "Lists the ukiyo skills (per-area guides an agent loads: core loop, rendering, sprites, sprite generation, physics, input, UI, audio, testing, live bridge, new game, scenes and imported assets, Studio; and for working on the engine itself: engine architecture, renderer development, hosts and exports, host and dev bridge development, tooling) and the simple/balanced/complete presets for games plus the engine preset, or installs a preset or chosen skills into a project for Claude Code (.claude/skills) and/or Codex-style agents (.agents/skills).",
   inputSchema: {
     type: "object",
     required: ["action"],

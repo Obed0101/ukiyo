@@ -199,26 +199,60 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         Step((int)(tick - Tick));
     }
 
+    /// <summary>
+    /// The packets of the last <see cref="RenderFrame"/>: one for a single-camera frame, one per pass otherwise.
+    /// </summary>
+    public IReadOnlyList<RenderPacket> LastFrame { get; private set; } = [];
+
+    /// <summary>Passes of the last frame (1 for a single-camera frame).</summary>
+    public int PassCount => LastFrame.Count is 0 ? 1 : LastFrame[0].Pass?.Count ?? 1;
+
+    /// <summary>The pass tools preview as the game view (inspector, dev bridge). 0 for a single-camera frame.</summary>
+    public int PrimaryPass => LastFrame.Count is 0 ? 0 : LastFrame[0].Pass?.PrimaryId ?? 0;
+
+    /// <summary>
+    /// Extracts the frame and renders each of its packets in pass order. Returns the primary pass's packet (the only one
+    /// for a single-camera game); <see cref="LastFrame"/> has all of them.
+    /// </summary>
     public RenderPacket RenderFrame(RenderExtent viewport)
     {
         FlushResources();
         Viewport = viewport;
-        var builder = new FrameBuilder { Viewport = viewport };
+        var builder = new FrameBuilder { DrawingBuffer = viewport };
         Game.Extract(builder);
-        var packet = builder.Build(++_sequence, Tick, viewport);
-        if (packet.Sprites.Count > 0 && !Renderer.Capabilities.SupportsSprites)
+        var packets = builder.Build(ref _sequence, Tick, viewport);
+        foreach (var packet in packets)
         {
-            throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{Renderer.Capabilities.RendererName} does not draw sprites; {packet.Sprites.Count} were submitted");
+            if (packet.Sprites.Count > 0 && !Renderer.Capabilities.SupportsSprites)
+            {
+                throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{Renderer.Capabilities.RendererName} does not draw sprites; {packet.Sprites.Count} were submitted");
+            }
+
+            if (packet.Pass is { } pass && !Renderer.Capabilities.SupportsPasses)
+            {
+                throw new RenderException(RenderErrorCode.UnsupportedFeature, $"{Renderer.Capabilities.RendererName} does not draw multi-camera frames; {Game.Name} built {pass.Count} pass(es)");
+            }
+
+            RenderValidation.RequireProfile(Renderer.Capabilities.Profile, packet);
         }
 
-        RenderValidation.RequireProfile(Renderer.Capabilities.Profile, packet);
+        foreach (var packet in packets)
+        {
+            Renderer.Render(packet);
+        }
 
-        Renderer.Render(packet);
-        return packet;
+        LastFrame = packets;
+        return packets[PrimaryPass];
     }
 
-    /// <summary>Renders the current tick again and reads it back, when the renderer can. Returns null otherwise.</summary>
-    public async ValueTask<CaptureResult?> CaptureAsync(CancellationToken cancellationToken = default)
+    /// <summary>Renders the current tick again and reads the whole frame back, when the renderer can. Returns null otherwise.</summary>
+    public ValueTask<CaptureResult?> CaptureAsync(CancellationToken cancellationToken = default) => CaptureAsync(pass: null, cancellationToken);
+
+    /// <summary>
+    /// Renders the current tick again and reads back pass <paramref name="pass"/> alone at its rect size (null: the whole
+    /// frame). Returns null when the renderer cannot capture.
+    /// </summary>
+    public async ValueTask<CaptureResult?> CaptureAsync(int? pass, CancellationToken cancellationToken = default)
     {
         if (Renderer is not IRenderCapture capture)
         {
@@ -226,7 +260,7 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         }
 
         RenderFrame(Viewport);
-        return await capture.CaptureAsync(new CaptureRequest(Tick), cancellationToken);
+        return await capture.CaptureAsync(new CaptureRequest(Tick) { Pass = pass }, cancellationToken);
     }
 
     public GameSnapshot Snapshot()
@@ -314,6 +348,10 @@ public static class SnapshotWriter
         }
 
         json.WriteNumber("loadedAt", scene.LoadedAt);
+        // Bounded history (docs/scenes-patches.md): counts and hash chains cover the whole session, the lists only the
+        // last PatchHistory.Window entries, so snapshot size does not grow with the number of patches.
+        json.WriteNumber("appliedCount", scene.AppliedCount);
+        json.WriteString("appliedHash", PatchHistory.Format(scene.AppliedHash));
         json.WriteStartArray("patches");
         foreach (var patch in scene.Applied)
         {
@@ -324,6 +362,8 @@ public static class SnapshotWriter
         }
 
         json.WriteEndArray();
+        json.WriteNumber("rejectedCount", scene.RejectedCount);
+        json.WriteString("rejectedHash", PatchHistory.Format(scene.RejectedHash));
         json.WriteStartArray("rejected");
         foreach (var rejection in scene.Rejected)
         {

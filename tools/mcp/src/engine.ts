@@ -101,10 +101,12 @@ export async function runProcess(command: string, args: string[], options: { cwd
 
 export type AudioSummary = { path: string; seconds: number; sounds: number; peak: number; rms: number };
 
-export type HeadlessOutput = { snapshots: Record<string, unknown>[]; captures: string[]; audio: AudioSummary | null; info: string[] };
+export type PatchLogSummary = { path: string; submitted: number };
+
+export type HeadlessOutput = { snapshots: Record<string, unknown>[]; captures: string[]; audio: AudioSummary | null; patches: PatchLogSummary | null; info: string[] };
 
 export function parseHeadless(stdout: string): HeadlessOutput {
-  const output: HeadlessOutput = { snapshots: [], captures: [], audio: null, info: [] };
+  const output: HeadlessOutput = { snapshots: [], captures: [], audio: null, patches: null, info: [] };
   for (const line of stdout.split("\n")) {
     if (line.startsWith("snapshot ")) output.snapshots.push(JSON.parse(line.slice("snapshot ".length)));
     else if (line.startsWith("capture ")) output.captures.push(line.slice("capture ".length).trim());
@@ -113,6 +115,11 @@ export function parseHeadless(stdout: string): HeadlessOutput {
       const [, path = "", ...pairs] = line.trim().split(" ");
       const fields = Object.fromEntries(pairs.map((pair) => pair.split("=") as [string, string]));
       output.audio = { path, seconds: Number(fields.seconds), sounds: Number(fields.sounds), peak: Number(fields.peak), rms: Number(fields.rms) };
+    }
+    else if (line.startsWith("patches ")) {
+      // patches <path> submitted=N (the path may contain spaces; the count is always last)
+      const match = /^patches (.+) submitted=(\d+)$/.exec(line.trim());
+      if (match) output.patches = { path: match[1]!, submitted: Number(match[2]) };
     }
     else if (line.startsWith("[ukiyo]")) output.info.push(line);
   }

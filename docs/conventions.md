@@ -15,6 +15,7 @@ wgpu/Metal and on Three.js.
 | Color | Linear working space. Each renderer encodes to its sRGB output (Metal `*Srgb` surface; Three `SRGBColorSpace`). |
 | Depth | 24-bit, compare `less`, cleared to 1. |
 | Lighting (G1Lit) | Per-pixel Lambert in linear RGB, world space: albedo × (ambient + Σ lights). Directional vectors are the direction light travels; point lights fall off to 0 at their range. Defined once in [rendering-lighting.md](rendering-lighting.md). |
+| Passes (multi-camera) | A frame is 1 pass (single camera, no pass section) or up to 4 passes, one packet each, drawn in id order. Pass rects are drawing-buffer pixels, top-left origin, +Y down (like screen sprites). Inside its rect a pass behaves exactly like a single-camera frame of the rect's size: aspect = rect width / height, world sprites through its own `Camera2D`, screen sprites in pass-local pixels, its own clear, depth and lighting. Defined once in [rendering-passes.md](rendering-passes.md). |
 | Ticks | Fixed 60 Hz. After N updates the world is at tick N. 64-bit ticks cross to JS as two uint32 (lo, hi). |
 | Memory | Renderers consume packets before returning; nothing keeps a borrowed buffer. The browser bridge copies (`byte[]` → `Uint8Array`) in G0; there is no zero-copy claim. |
 

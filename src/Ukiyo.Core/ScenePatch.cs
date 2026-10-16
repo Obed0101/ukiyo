@@ -215,8 +215,81 @@ public readonly record struct PatchRecord(string Id, long Tick);
 /// <summary>A queued patch that was refused at its tick because the world had changed; nothing it described happened.</summary>
 public readonly record struct PatchRejection(string Id, long Tick, SceneErrorCode Code, string Message);
 
-/// <summary>What snapshots record about scenes: the active scene, when it loaded, and the patch history.</summary>
-public sealed record SceneState(string? Active, long LoadedAt, IReadOnlyList<PatchRecord> Applied, IReadOnlyList<PatchRejection> Rejected);
+/// <summary>
+/// What snapshots record about scenes: the active scene, when it loaded, and a bounded patch history.
+/// <see cref="Applied"/> and <see cref="Rejected"/> hold only the last <see cref="PatchHistory.Window"/> entries (oldest
+/// first); the counts and hash chains cover every entry since the game started, so two runs can be compared exactly
+/// without the full lists and a long session's snapshots stay the same size.
+/// </summary>
+public sealed record SceneState(string? Active, long LoadedAt, IReadOnlyList<PatchRecord> Applied, IReadOnlyList<PatchRejection> Rejected)
+{
+    /// <summary>Patches applied since the game started, including those no longer in <see cref="Applied"/>.</summary>
+    public long AppliedCount { get; init; }
+
+    /// <summary><see cref="PatchHistory.ChainApplied"/> folded over every applied patch, in application order.</summary>
+    public ulong AppliedHash { get; init; } = PatchHistory.EmptyHash;
+
+    /// <summary>Patches refused at their tick since the game started, including those no longer in <see cref="Rejected"/>.</summary>
+    public long RejectedCount { get; init; }
+
+    /// <summary><see cref="PatchHistory.ChainRejected"/> folded over every refusal, in the order they were recorded.</summary>
+    public ulong RejectedHash { get; init; } = PatchHistory.EmptyHash;
+}
+
+/// <summary>
+/// The bounded patch history in snapshots (docs/scenes-patches.md): a rolling window of the last <see cref="Window"/>
+/// entries plus FNV-1a 64 hash chains over every entry. FNV-1a is plain integer arithmetic over a fixed byte encoding,
+/// so it gives the same value on CoreCLR, NativeAOT and WebAssembly; <see cref="string.GetHashCode()"/> is randomized
+/// per process and must never be used for this. Chaining continues the FNV state, so a chain equals FNV-1a 64 of the
+/// concatenated entry encodings, which any language can recompute from a patch log's outcomes.
+/// </summary>
+public static class PatchHistory
+{
+    /// <summary>How many applied and how many rejected entries a snapshot lists.</summary>
+    public const int Window = 16;
+
+    /// <summary>The chain before any entry: the FNV-1a 64 offset basis.</summary>
+    public const ulong EmptyHash = 0xcbf29ce484222325;
+
+    private const ulong Prime = 0x100000001b3;
+
+    /// <summary>Adds an applied patch: UTF-8 <paramref name="id"/>, a 0 byte, then <paramref name="tick"/> as 8 bytes little-endian.</summary>
+    public static ulong ChainApplied(ulong hash, string id, long tick) => Tick(Text(hash, id), tick);
+
+    /// <summary>Adds a refusal: the applied encoding followed by the UTF-8 code name (e.g. <c>UnknownEntity</c>) and a 0 byte.</summary>
+    public static ulong ChainRejected(ulong hash, string id, long tick, SceneErrorCode code) => Text(Tick(Text(hash, id), tick), code.ToString());
+
+    public static ulong AppliedHash(IEnumerable<PatchRecord> applied) =>
+        applied.Aggregate(EmptyHash, (hash, patch) => ChainApplied(hash, patch.Id, patch.Tick));
+
+    public static ulong RejectedHash(IEnumerable<PatchRejection> rejected) =>
+        rejected.Aggregate(EmptyHash, (hash, rejection) => ChainRejected(hash, rejection.Id, rejection.Tick, rejection.Code));
+
+    /// <summary>16 lowercase hex digits: JSON numbers cannot carry 64 bits exactly into JavaScript.</summary>
+    public static string Format(ulong hash) => hash.ToString("x16", CultureInfo.InvariantCulture);
+
+    private static ulong Text(ulong hash, string value)
+    {
+        foreach (var b in Encoding.UTF8.GetBytes(value))
+        {
+            hash = Byte(hash, b);
+        }
+
+        return Byte(hash, 0);
+    }
+
+    private static ulong Tick(ulong hash, long tick)
+    {
+        for (var shift = 0; shift < 64; shift += 8)
+        {
+            hash = Byte(hash, (byte)((ulong)tick >> shift));
+        }
+
+        return hash;
+    }
+
+    private static ulong Byte(ulong hash, byte value) => (hash ^ value) * Prime;
+}
 
 /// <summary>
 /// The runtime's view of a game's scene registry (<see cref="SceneRegistry{TEntity}"/>). GameRuntime calls

@@ -16,7 +16,8 @@ public static class PlatformBootstrap
 /// <param name="CaptureDirectory">When set, renders with the CPU renderer and writes a PNG per checkpoint.</param>
 /// <param name="Extent">Drawing-buffer size used for frames, UI layout and captures.</param>
 /// <param name="AudioPath">When set, mixes every sound the run plays and writes it as a WAV (one tick of audio per tick).</param>
-public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, string? CaptureDirectory, RenderExtent Extent, string? AudioPath = null)
+/// <param name="PatchLog">When set, a patch log (docs/scenes-patches.md) submitted at boundary 0, before the first tick.</param>
+public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, string? CaptureDirectory, RenderExtent Extent, string? AudioPath = null, string? PatchLog = null)
 {
     public static readonly long[] DefaultCheckpoints = [0, 60, 180, 600];
 
@@ -26,6 +27,7 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
         string? input = null;
         string? capture = null;
         string? audio = null;
+        string? patches = null;
         var extent = new RenderExtent(1280, 720, 1f);
         for (var i = 0; i < args.Length; i++)
         {
@@ -43,6 +45,11 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
                 case "--audio" when i + 1 < args.Length:
                     audio = args[++i];
                     break;
+                case "--patches" when i + 1 < args.Length:
+                    patches = args[++i];
+                    break;
+                case "--patches":
+                    throw new ArgumentException("[HEADLESS]: --patches expects a patch log path (a JSON array of patches)");
                 case "--size" when i + 1 < args.Length:
                     var size = args[++i].Split('x');
                     if (size.Length != 2 || !int.TryParse(size[0], out var w) || !int.TryParse(size[1], out var h))
@@ -60,16 +67,24 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
             throw new ArgumentException($"[HEADLESS]: --size must be positive, got {extent.Width}x{extent.Height}");
         }
 
-        return new HeadlessOptions(checkpoints, input, capture, extent, audio);
+        return new HeadlessOptions(checkpoints, input, capture, extent, audio, patches);
     }
 }
 
 /// <summary>
 /// Runs the game with no window, GPU or DOM. Each checkpoint prints one JSON line prefixed with "snapshot "; with
-/// --capture it also writes headless-tick-NNNNNN.png and prints "capture {path}". Agents parse exactly these lines.
+/// --capture it also writes headless-tick-NNNNNN.png and prints "capture {path}"; with --patches it prints
+/// "patches {path} submitted=N" once the log is accepted. Agents parse exactly these lines. Output goes to
+/// <paramref name="output"/> (stdout by default) and refusals to <paramref name="errors"/> (stderr by default).
 /// </summary>
-public sealed class HeadlessHost(HeadlessOptions options) : IPlatformHost
+public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = null, TextWriter? errors = null) : IPlatformHost
 {
+    /// <summary>Exit code when the patch log cannot be submitted (the run stops before its first tick).</summary>
+    public const int PatchLogRefused = 2;
+
+    private readonly TextWriter _out = output ?? Console.Out;
+    private readonly TextWriter _errors = errors ?? Console.Error;
+
     public string Target => "headless";
 
     public async Task<int> RunAsync(GameRuntime runtime)
@@ -77,48 +92,71 @@ public sealed class HeadlessHost(HeadlessOptions options) : IPlatformHost
         if (options.InputScript is { } path)
         {
             runtime.Script = InputScript.Parse(await File.ReadAllTextAsync(path));
-            Console.WriteLine($"[ukiyo] input script {path} events={runtime.Script.Events.Count}");
+            _out.WriteLine($"[ukiyo] input script {path} events={runtime.Script.Events.Count}");
+        }
+
+        IReadOnlyList<ScenePatch>? patches = null;
+        if (options.PatchLog is { } logPath)
+        {
+            try
+            {
+                patches = ScenePatch.ParseLog(await File.ReadAllTextAsync(logPath));
+            }
+            catch (Exception refused) when (refused is SceneException or IOException or UnauthorizedAccessException)
+            {
+                return RefusePatchLog(logPath, refused.Message);
+            }
         }
 
         using var recorder = options.AudioPath is null ? null : new RecordingAudioOutput();
         runtime.Audio = recorder;
         var code = options.CaptureDirectory is { } directory
-            ? await RunWithCaptures(runtime, directory)
-            : await RunNull(runtime);
-        if (recorder is not null && options.AudioPath is { } audioPath)
+            ? await RunWithCaptures(runtime, directory, patches)
+            : await RunNull(runtime, patches);
+        if (code == 0 && recorder is not null && options.AudioPath is { } audioPath)
         {
             var wav = Path.GetFullPath(audioPath);
             Directory.CreateDirectory(Path.GetDirectoryName(wav)!);
             await File.WriteAllBytesAsync(wav, recorder.ToWav());
             var (peak, rms) = recorder.Levels();
-            Console.WriteLine(FormattableString.Invariant($"audio {wav} seconds={recorder.Seconds:0.###} sounds={recorder.SoundsPlayed} peak={peak:0.####} rms={rms:0.####}"));
+            _out.WriteLine(FormattableString.Invariant($"audio {wav} seconds={recorder.Seconds:0.###} sounds={recorder.SoundsPlayed} peak={peak:0.####} rms={rms:0.####}"));
         }
 
         return code;
     }
 
-    private async Task<int> RunNull(GameRuntime runtime)
+    private async Task<int> RunNull(GameRuntime runtime, IReadOnlyList<ScenePatch>? patches)
     {
         using var renderer = new NullRenderer();
         await runtime.StartAsync(renderer, new RenderConfiguration("ukiyo-headless", options.Extent));
         runtime.Paused = true;
+        if (patches is not null && !SubmitPatches(runtime, patches))
+        {
+            return PatchLogRefused;
+        }
+
         foreach (var checkpoint in options.Checkpoints)
         {
             runtime.StepTo(checkpoint);
             runtime.RenderFrame(options.Extent);
-            Console.WriteLine($"snapshot {runtime.SnapshotJson()}");
+            _out.WriteLine($"snapshot {runtime.SnapshotJson()}");
         }
 
-        Console.WriteLine($"[ukiyo] null frames={renderer.FramesRendered} instances={renderer.InstancesSubmitted} sprites={renderer.SpritesSubmitted} meshes={renderer.LiveMeshes} materials={renderer.LiveMaterials} textures={renderer.LiveTextures}");
+        _out.WriteLine($"[ukiyo] null frames={renderer.FramesRendered} instances={renderer.InstancesSubmitted} sprites={renderer.SpritesSubmitted} meshes={renderer.LiveMeshes} materials={renderer.LiveMaterials} textures={renderer.LiveTextures}");
         return 0;
     }
 
-    private async Task<int> RunWithCaptures(GameRuntime runtime, string directory)
+    private async Task<int> RunWithCaptures(GameRuntime runtime, string directory, IReadOnlyList<ScenePatch>? patches)
     {
         Directory.CreateDirectory(directory);
         using var renderer = new SoftwareRenderer();
         await runtime.StartAsync(renderer, new RenderConfiguration("ukiyo-headless", options.Extent));
         runtime.Paused = true;
+        if (patches is not null && !SubmitPatches(runtime, patches))
+        {
+            return PatchLogRefused;
+        }
+
         foreach (var checkpoint in options.Checkpoints)
         {
             runtime.StepTo(checkpoint);
@@ -128,11 +166,76 @@ public sealed class HeadlessHost(HeadlessOptions options) : IPlatformHost
             await File.WriteAllBytesAsync(png, capture.Png);
             var snapshot = runtime.SnapshotJson();
             await File.WriteAllTextAsync(Path.ChangeExtension(png, ".json"), snapshot);
-            Console.WriteLine($"snapshot {snapshot}");
-            Console.WriteLine($"capture {png}");
+            _out.WriteLine($"snapshot {snapshot}");
+            _out.WriteLine($"capture {png}");
+            await WritePassCaptures(runtime, renderer, Path.ChangeExtension(png, null));
         }
 
-        Console.WriteLine($"[ukiyo] software frames={renderer.FramesRendered} size={options.Extent.Width}x{options.Extent.Height}");
+        _out.WriteLine($"[ukiyo] software frames={renderer.FramesRendered} size={options.Extent.Width}x{options.Extent.Height}");
         return 0;
+    }
+
+    /// <summary>
+    /// Submits the whole log at boundary 0 in file order, exactly as <see cref="GameRuntime.SubmitPatch"/> would from
+    /// code, so the run's snapshots match a replay through the C# API. A submit-time refusal stops the run. A patch for
+    /// tick 0 that the world refuses is recorded in the snapshot's <c>rejected</c> list, like any patch refused at its
+    /// tick, and the run goes on.
+    /// </summary>
+    private bool SubmitPatches(GameRuntime runtime, IReadOnlyList<ScenePatch> patches)
+    {
+        var path = options.PatchLog!;
+        if (!runtime.HasScenes)
+        {
+            RefusePatchLog(path, $"{runtime.Game.Name} has no SceneRegistry, so it cannot take patches");
+            return false;
+        }
+
+        foreach (var patch in patches)
+        {
+            // The count, not the rejected list: the list is a bounded window and stops growing once full.
+            var rejectedBefore = runtime.SceneState!.RejectedCount;
+            try
+            {
+                runtime.SubmitPatch(patch);
+            }
+            catch (SceneException) when (runtime.SceneState!.RejectedCount > rejectedBefore)
+            {
+                // Refused by the world at tick 0: already in the snapshot's rejected list, not a bad log.
+            }
+            catch (SceneException refused)
+            {
+                RefusePatchLog(path, refused.Message);
+                return false;
+            }
+        }
+
+        _out.WriteLine($"patches {Path.GetFullPath(path)} submitted={patches.Count}");
+        return true;
+    }
+
+    private int RefusePatchLog(string path, string message)
+    {
+        _errors.WriteLine($"[HEADLESS]: --patches {path}: {message}");
+        return PatchLogRefused;
+    }
+
+    /// <summary>
+    /// Multi-camera frames also get one PNG per pass (<c>…-pass-K.png</c>, the pass alone at its rect size) and a
+    /// <c>capture-pass K primary=true|false {path}</c> line. Single-camera games write exactly what they always did.
+    /// </summary>
+    private async Task WritePassCaptures(GameRuntime runtime, SoftwareRenderer renderer, string stem)
+    {
+        if (runtime.LastFrame is not [{ Pass: not null }, ..])
+        {
+            return;
+        }
+
+        for (var pass = 0; pass < runtime.PassCount; pass++)
+        {
+            var capture = await renderer.CaptureAsync(new CaptureRequest(runtime.Tick) { Pass = pass }, CancellationToken.None);
+            var path = $"{stem}-pass-{pass}.png";
+            await File.WriteAllBytesAsync(path, capture.Png);
+            _out.WriteLine($"capture-pass {pass} primary={(pass == runtime.PrimaryPass ? "true" : "false")} {path}");
+        }
     }
 }

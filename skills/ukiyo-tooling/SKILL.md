@@ -43,10 +43,20 @@ export default tool;                                                       // or
 - Paths from arguments go through `insideRoot(root, path)`; never read or write outside the repository except the
   documented state dirs (`~/.ukiyo/live`, `~/.ukiyo/studio`).
 - Long work uses `runProcess` from engine.ts with a timeout and the abort signal. Parse host output by its documented
-  line formats (`parseHeadless`), never by scraping prose.
+  line formats (`parseHeadless`: `snapshot`, `capture`, `audio`, `patches`), never by scraping prose.
+- Shapes shared by several tools are exported once and reused: `inputEventSchema` and `patchSchema` (tools/run.ts)
+  serve `ukiyo_run`, `ukiyo_capture` and `ukiyo_live`. The engine stays the judge: a schema only tells agents the
+  shape; a scene patch's prefabs, ranges and ticks are refused by the engine with its typed `[SCENE:Code]` message,
+  and the tool passes that message through instead of re-checking it.
+- `tools/mcp/src/cli.ts` is the thin editor-neutral adapter over the same code (`live <action>` through bridge.ts,
+  `run <Game>` through `runHeadless`): JSON on stdout, `[UKIYO]: …` on stderr and exit 1 on error.
 - Secrets only from environment variables (`OPENAI_API_KEY`, `GEMINI_API_KEY`); never log them or put them in results.
 - Shared clients, reused by the Studio: `tools/mcp/src/bridge.ts` (dev bridge discovery and requests) and
   `studio/src/discovery.ts` + `studio/src/manifest.ts` (Studio discovery and files).
+- Asset importer client: `tools/mcp/src/importer.ts` (spec discovery, repo-path checks, one importer build then one
+  run per spec, `[import]` / `[IMPORT:Code]` parsing), used by `ukiyo_import` (run/check) and `ukiyo_status`. Facts read
+  from a game's source without building it (render profile, SceneRegistry): `tools/mcp/src/game-source.ts`. Tool list
+  and output shapes: `tools/mcp/README.md`.
 
 After adding a tool: add its name to the expected list in `tools/mcp/test/server.test.ts`, add focused tests for its
 pure parts, mention it in the server `INSTRUCTIONS` if agents need to know when to reach for it, and teach it in the

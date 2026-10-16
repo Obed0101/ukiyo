@@ -31,6 +31,18 @@ public enum ImportErrorCode
 
     /// <summary><c>--check</c>: the generated file on disk differs from what the sources produce now.</summary>
     Stale = 10,
+
+    /// <summary>A model file is not valid glTF 2.0: bad container, JSON, index, accessor bounds or non-finite data.</summary>
+    InvalidMesh = 11,
+
+    /// <summary>A valid glTF uses something the engine's meshes cannot represent (textures, skins, lines, extensions…).</summary>
+    UnsupportedFeature = 12,
+
+    /// <summary>A primitive has no NORMAL while the spec requires normals (the default, needed by lit materials).</summary>
+    MissingNormals = 13,
+
+    /// <summary>A mesh exceeds the protocol limits: 2^20 vertices or 3·2^20 indices.</summary>
+    MeshTooLarge = 14,
 }
 
 /// <summary>Typed importer failure, prefixed <c>[IMPORT:Code]</c> like the engine's render errors.</summary>

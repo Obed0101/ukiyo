@@ -26,6 +26,9 @@ G1Lit adds per-pixel lighting to 3D meshes on every renderer at once (wgpu/Metal
 | Directional light | `Light.Directional(direction, color, intensity)` | direction = where the light travels, world space, non-zero; range 0 |
 | Point light | `Light.Point(position, color, intensity, range)` | world position in meters; range > 0 m |
 
+With several cameras ([rendering-passes.md](rendering-passes.md)) lighting is per pass: each pass packet carries its
+own lighting section, and a lit material in a pass without one is `InvalidPacket` even when another pass has lights.
+
 Colors are linear RGB ≥ 0; intensity is a unitless multiplier ≥ 0. There are no physical units (no lux or candela):
 a white light of intensity 1 hitting a surface head-on adds the surface's albedo once.
 
