@@ -3,6 +3,15 @@
     "ukiyo": {
       "command": "bun",
       "args": ["tools/mcp/src/server.ts"]
+    },
+    "plane": {
+      "command": "uvx",
+      "args": ["plane-mcp-server==0.3.4", "stdio"],
+      "env": {
+        "PLANE_API_KEY": "${PLANE_API_KEY}",
+        "PLANE_WORKSPACE_SLUG": "ukiyo",
+        "PLANE_BASE_URL": "https://plane.guezar.com"
+      }
     }
   }
 }
