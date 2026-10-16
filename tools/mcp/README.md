@@ -9,6 +9,42 @@ claude mcp add ukiyo -- bun /path/to/ukiyo/tools/mcp/src/server.ts   # UKIYO_ROO
 (cd tools/mcp && bun test)
 ```
 
+`UKIYO_ROOT` must be a real path (`realpath`). On macOS `/tmp` and the default temp dir (`/var/folders/…`) are
+symlinks, and building a repository reached through one is a known problem; use `/private/tmp/…` instead. The CLI
+resolves `UKIYO_ROOT` exactly like the server.
+
+## CLI
+
+`bun tools/mcp/src/cli.ts` runs the same tool modules without an MCP client. It finds them the way the server does
+(`src/tool-registry.ts`), so every tool module is a command: `ukiyo_new_game` is `new-game`. `--help` lists every
+command and its options, generated from the input schemas; `<command> --help` shows one.
+
+```sh
+bun tools/mcp/src/cli.ts status
+bun tools/mcp/src/cli.ts new-game SkyLantern --template 2d --hosts Headless,Desktop
+bun tools/mcp/src/cli.ts capture SkyLantern --checkpoints 0,60 --size 640x360 --out frames
+bun tools/mcp/src/cli.ts test --filter FullyQualifiedName~Physics
+bun tools/mcp/src/cli.ts import --check samples/TexturedQuad      # without --check: run (regenerate)
+bun tools/mcp/src/cli.ts skills install --preset engine --target claude
+```
+
+- Mapping (`src/cli-args.ts`): required string and number properties are positional, in schema order; every other
+  property is `--kebab-case` (`timeoutSeconds` → `--timeout-seconds`). Lists are comma-separated; booleans are flags
+  (`--audio`, or `--audio false`); objects and arrays of objects are a JSON file whose content is passed inline
+  (`--patches log.json`, `--input script.json`). Path values go to the tool unchanged, so they are
+  repository-relative or absolute inside the repository, as in MCP. The input is then checked by the tool's own schema.
+- A tool can refine its spelling with optional `cli` hints on its module (`CliHints` in protocol.ts): `ukiyo_import`
+  takes its specs as positional paths, `--check` for `action: "check"` and `run` by default; `ukiyo_capture` lists
+  `captures` as output files, which `--out DIR` copies into DIR and points the result at. A file name already in DIR
+  is exit 1, with the result (still pointing at the temp files) on stdout; nothing is overwritten.
+- stdout is the tool's `structuredContent` as one JSON line; logs and `[UKIYO]: …` errors go to stderr. Exit 2 is a
+  usage error (unknown command or option, missing argument, unreadable FILE, or input the schema or the tool refuses
+  with `ToolInputError`); exit 1 is a tool failure (`isError`, whose structured result still goes to stdout when it
+  has one, or a thrown error).
+- `run <Game>` and `live <action>` keep their own parsing in cli.ts (`--help` shows them) and exit 1 on every error.
+- Not every tool needs a target: `import` with no specs and no `--game` is refused by the tool (exit 2), as
+  `ukiyo_import {"action":"check"}` is.
+
 ## Tools
 
 | Tool | What it does |

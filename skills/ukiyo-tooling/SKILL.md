@@ -48,8 +48,16 @@ export default tool;                                                       // or
   serve `ukiyo_run`, `ukiyo_capture` and `ukiyo_live`. The engine stays the judge: a schema only tells agents the
   shape; a scene patch's prefabs, ranges and ticks are refused by the engine with its typed `[SCENE:Code]` message,
   and the tool passes that message through instead of re-checking it.
-- `tools/mcp/src/cli.ts` is the thin editor-neutral adapter over the same code (`live <action>` through bridge.ts,
-  `run <Game>` through `runHeadless`): JSON on stdout, `[UKIYO]: …` on stderr and exit 1 on error.
+- `tools/mcp/src/cli.ts` is the thin editor-neutral adapter over the same code. `live <action>` (bridge.ts) and
+  `run <Game>` (`runHeadless`) have their own parsing and exit 1 on any error. Every other tool module is a command
+  through one generic mapping (`src/cli-args.ts`, tools found by `src/tool-registry.ts` like the server):
+  `ukiyo_new_game` → `new-game`, required string/number properties positional, the rest `--kebab-case`, lists
+  comma-separated, objects and arrays of objects as JSON files, then `validate()` with the tool's own schema. A new
+  tool module is a new command and gets its `--help` block from its schema; add optional `cli` hints
+  (`CliHints`: `positional`, `switches`, `defaults`, `outputs`) only when the derived spelling reads badly, as
+  `ukiyo_import` (`import [--check] [specs…]`) and `ukiyo_capture` (`--out DIR` copies `captures`) do. stdout is the
+  `structuredContent` JSON, `[UKIYO]: …` errors on stderr; exit 2 for usage errors (including `ToolInputError`),
+  exit 1 for tool failures (an `isError` result still prints its structured result). Tests: test/cli-tools.test.ts.
 - Secrets only from environment variables (`OPENAI_API_KEY`, `GEMINI_API_KEY`); never log them or put them in results.
 - Shared clients, reused by the Studio: `tools/mcp/src/bridge.ts` (dev bridge discovery and requests) and
   `studio/src/discovery.ts` + `studio/src/manifest.ts` (Studio discovery and files).

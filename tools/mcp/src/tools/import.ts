@@ -29,6 +29,12 @@ const importTool: Tool = {
       timeoutSeconds: { type: "integer", minimum: 10, maximum: 900, default: 300, description: "For the importer build plus all specs." },
     },
   },
+  // CLI: `import [--check] [specs…] [--game G]`; regenerating is the default action there.
+  cli: {
+    positional: ["specs"],
+    switches: { check: { set: { action: "check" }, description: "report stale outputs, write nothing (without it: run, regenerating them)" } },
+    defaults: { action: "run" },
+  },
   async run(args, { root, log, signal }) {
     const check = args.action === "check";
     const specs = resolveSpecTargets(root, { game: args.game as string | undefined, specs: args.specs as string[] | undefined });

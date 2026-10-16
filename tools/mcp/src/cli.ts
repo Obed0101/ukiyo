@@ -1,10 +1,30 @@
 #!/usr/bin/env bun
-// Editor-neutral adapter: JSON stdout, diagnostics stderr, no MCP client required.
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+// Editor-neutral adapter: JSON stdout, diagnostics stderr, no MCP client required. `run` and `live` have their own
+// parsing below; every other tool module in src/tools is a command through the generic mapping in cli-args.ts.
+import { constants, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { basename, join, resolve } from "node:path";
 import { BRIDGE_COMMANDS, bridgeRequest, liveSessions, publicSessions, type LiveSession } from "./bridge.ts";
+import { CliUsageError, commandName, parseToolArgs, toolHelp } from "./cli-args.ts";
 import { findRepoRoot } from "./engine.ts";
-import { validate, type ToolContext } from "./protocol.ts";
+import { ToolInputError, validate, type Tool, type ToolContext, type ToolResult } from "./protocol.ts";
+import { loadTools } from "./tool-registry.ts";
 import { runHeadless, runSchema } from "./tools/run.ts";
+
+/** Commands parsed by hand in this file; their errors always exit 1, as before the generic commands existed. */
+const OWN_COMMANDS = new Set(["run", "live"]);
+
+const HEADER = `ukiyo CLI: the MCP tools without an MCP client.   bun tools/mcp/src/cli.ts <command> … (--help after a command: just that command)
+stdout: the tool's JSON result. stderr: logs and "[UKIYO]: …" errors. Exit 2: usage error (unknown command or option,
+missing argument, input the tool's schema refuses); exit 1: the tool failed (its JSON result, when it has one, is still
+on stdout). run and live exit 1 on every error.
+UKIYO_ROOT=<repo> selects the repository (default: the one this file is in), resolved like the MCP server. Give a real
+path (realpath): on macOS /tmp and the default temp dir are symlinks, a known build problem.`;
+
+const FOOTER = `Generic commands: required arguments are positional; lists are comma-separated (A,B); FILE options read a JSON file and
+pass its content inline; path values are passed as the tool takes them (repository-relative or absolute inside it).
+  bun tools/mcp/src/cli.ts new-game SkyLantern --template 2d --hosts Headless,Desktop
+  bun tools/mcp/src/cli.ts capture SkyLantern --checkpoints 0,60 --out frames
+  bun tools/mcp/src/cli.ts import --check samples/TexturedQuad`;
 
 export const HELP = `ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch> [options]
   --pid N           Required when more than one game is running
@@ -86,24 +106,91 @@ export function selectSession(sessions: LiveSession[], pid?: number) {
   return session;
 }
 
-async function runGame(args: string[]) {
-  const parsed = parseRunArgs(args);
-  if (parsed.patches) parsed.input.patches = readJsonArray(parsed.patches, "patch log");
-  if (parsed.events) parsed.input.input = readJsonArray(parsed.events, "input script");
+/** The tool context of a CLI process: UKIYO_ROOT resolved as server.ts does, logs on stderr, Ctrl-C aborts. */
+function cliContext(): ToolContext {
   const controller = new AbortController();
   process.once("SIGINT", () => controller.abort());
-  const context: ToolContext = {
+  return {
     root: findRepoRoot(process.env.UKIYO_ROOT ?? import.meta.dir),
     log: (level, event, data) => console.error(JSON.stringify({ level, event, ...data })),
     signal: controller.signal,
   };
+}
+
+const resultText = (result: ToolResult) => result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n");
+
+async function runGame(args: string[]) {
+  const parsed = parseRunArgs(args);
+  if (parsed.patches) parsed.input.patches = readJsonArray(parsed.patches, "patch log");
+  if (parsed.events) parsed.input.input = readJsonArray(parsed.events, "input script");
+  const context = cliContext();
   const result = await runHeadless(validate(runSchema, parsed.input) as Record<string, unknown>, context, false);
-  if (result.isError) throw new Error(result.content.map((part) => (part.type === "text" ? part.text : "")).join("\n"));
+  if (result.isError) throw new Error(resultText(result));
   return result.structuredContent;
+}
+
+/** A result the tool marked isError. Its structured result, when there is one, still goes to stdout. Exit 1. */
+export class ToolFailure extends Error {
+  constructor(message: string, readonly result?: Record<string, unknown>) {
+    super(message);
+  }
+}
+
+let discovered: Map<string, Tool> | undefined;
+
+/** Command name → tool, for every tool module except the ones with their own parsing (run, live). */
+export async function toolCommands(): Promise<Map<string, Tool>> {
+  discovered ??= new Map([...(await loadTools()).values()].filter((tool) => !OWN_COMMANDS.has(commandName(tool))).map((tool) => [commandName(tool), tool]));
+  return discovered;
+}
+
+/** Copies the files a result lists under `keys` into `dir` and points the result at the copies. Never overwrites. */
+export function copyOutputs(result: Record<string, unknown>, keys: string[], dir: string): Record<string, unknown> {
+  const out = resolve(dir);
+  const copies = keys.flatMap((key) => (Array.isArray(result[key]) ? (result[key] as string[]) : []).map((from) => ({ key, from, to: join(out, basename(from)) })));
+  const taken = copies.find(({ to }) => existsSync(to));
+  // The tool already succeeded: its result (with the temp paths) still goes to stdout, the exit code says the copy failed.
+  if (taken) throw new ToolFailure(`${taken.to} already exists; choose a new --out directory (the files are still at ${taken.from})`, result);
+  mkdirSync(out, { recursive: true });
+  for (const { from, to } of copies) copyFileSync(from, to, constants.COPYFILE_EXCL);
+  const moved = Object.fromEntries(keys.map((key) => [key, copies.filter((c) => c.key === key).map((c) => c.to)]));
+  return { ...result, ...moved, out };
+}
+
+/** One generic command: argv → the tool's own schema validation → tool.run → its structured result. */
+export async function runTool(tool: Tool, args: string[], context: () => ToolContext = cliContext) {
+  const { input, out } = parseToolArgs(tool, args);
+  if (out !== undefined && existsSync(out) && !statSync(out).isDirectory()) throw new CliUsageError(`--out ${out} exists and is not a directory`);
+  const validated = validate(tool.inputSchema, input) as Record<string, unknown>;
+  const result = await tool.run(validated, context());
+  if (result.isError) throw new ToolFailure(resultText(result), result.structuredContent);
+  const structured = result.structuredContent ?? { text: resultText(result) };
+  return out === undefined ? structured : copyOutputs(structured, tool.cli?.outputs ?? [], out);
+}
+
+/** Full help (hand-written run/live plus one generated block per tool), or one command's block. */
+export async function help(command?: string): Promise<string> {
+  const tools = await toolCommands();
+  const tool = command === undefined ? undefined : tools.get(command);
+  if (tool) return toolHelp(tool);
+  return [HEADER, HELP, ...[...tools.values()].map(toolHelp), FOOTER].join("\n");
+}
+
+/** Exit code of a failed command: 2 for usage errors of the generic commands, 1 otherwise (and always for run/live). */
+export function exitCode(args: string[], error: unknown): number {
+  if (OWN_COMMANDS.has(args[0] ?? "")) return 1;
+  return error instanceof CliUsageError || error instanceof ToolInputError ? 2 : 1;
 }
 
 export async function run(args: string[]) {
   if (args[0] === "run") return runGame(args);
+  if (args[0] === "live") return runLive(args);
+  const tool = (await toolCommands()).get(args[0] ?? "");
+  if (!tool) throw new CliUsageError(`${args[0] === undefined ? "no command" : `unknown command ${args[0]}`}; commands: ${[...OWN_COMMANDS, ...(await toolCommands()).keys()].join(", ")}; use --help`);
+  return runTool(tool, args.slice(1));
+}
+
+async function runLive(args: string[]) {
   const parsed = parseArgs(args);
   // Reject a known collision before issuing a state-changing command; wx still protects against races.
   if (parsed.output && existsSync(parsed.output)) throw new Error("output already exists; choose a new file");
@@ -139,12 +226,13 @@ export async function run(args: string[]) {
 }
 
 if (import.meta.main) {
-  if (process.argv.slice(2).some(arg => arg === "--help" || arg === "-h")) console.log(HELP);
-  else {
-    try { console.log(JSON.stringify(await run(process.argv.slice(2)))); }
-    catch (error) {
-      console.error(`[UKIYO]: ${error instanceof Error ? error.message : String(error)}`);
-      process.exitCode = 1;
-    }
+  const args = process.argv.slice(2);
+  try {
+    if (args.some(arg => arg === "--help" || arg === "-h")) console.log(await help(OWN_COMMANDS.has(args[0] ?? "") ? undefined : args[0]));
+    else console.log(JSON.stringify(await run(args)));
+  } catch (error) {
+    if (error instanceof ToolFailure && error.result) console.log(JSON.stringify(error.result));
+    console.error(`[UKIYO]: ${error instanceof Error ? error.message : String(error)}`);
+    process.exitCode = exitCode(args, error);
   }
 }

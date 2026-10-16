@@ -3,11 +3,10 @@
 // because stdout belongs to the protocol. Tools are discovered from src/tools: adding a tool means adding a file.
 //
 //   claude mcp add ukiyo -- bun /path/to/ukiyo/tools/mcp/src/server.ts
-//   UKIYO_ROOT=/path/to/ukiyo   (optional; defaults to the repository this file lives in)
-import { readdirSync } from "node:fs";
+//   UKIYO_ROOT=/path/to/ukiyo   (optional; defaults to the repository this file lives in; a real path, see README)
 import { createInterface } from "node:readline";
-import { dirname, join } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { findRepoRoot } from "./engine.ts";
 import {
   ErrorCode,
@@ -16,9 +15,9 @@ import {
   failure,
   validate,
   type JsonRpcRequest,
-  type Tool,
   type ToolContext,
 } from "./protocol.ts";
+import { loadTools } from "./tool-registry.ts";
 
 const SERVER_INFO = { name: "ukiyo", title: "ukiyo engine", version: "0.1.0" };
 const here = dirname(fileURLToPath(import.meta.url));
@@ -37,24 +36,6 @@ Skills with the APIs per area live in skills/; ukiyo_skills lists or installs th
 
 function log(level: "debug" | "info" | "warn" | "error", event: string, data: Record<string, unknown> = {}) {
   process.stderr.write(`${JSON.stringify({ time: new Date().toISOString(), level, source: "ukiyo-mcp", event, ...data })}\n`);
-}
-
-async function loadTools(): Promise<Map<string, Tool>> {
-  const tools = new Map<string, Tool>();
-  const dir = join(here, "tools");
-  for (const file of readdirSync(dir).filter((f) => f.endsWith(".ts") && !f.endsWith(".test.ts")).sort()) {
-    const module = (await import(pathToFileURL(join(dir, file)).href)) as { default?: Tool | Tool[] };
-    const exported = module.default;
-    if (!exported) throw new Error(`[MCP]: ${file} has no default export`);
-    for (const tool of Array.isArray(exported) ? exported : [exported]) {
-      if (!/^[a-z][a-z0-9_]{2,63}$/.test(tool.name) || typeof tool.run !== "function" || tool.inputSchema?.type !== "object") {
-        throw new TypeError(`[MCP]: ${file} exports an invalid tool ${JSON.stringify(tool.name)}`);
-      }
-      if (tools.has(tool.name)) throw new Error(`[MCP]: duplicate tool ${tool.name} in ${file}`);
-      tools.set(tool.name, tool);
-    }
-  }
-  return tools;
 }
 
 const tools = await loadTools();
