@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- Browser host: the same Shared C# compiled to .NET WebAssembly, presented by the Three.js adapter. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>rotating-cube-web</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.RotatingCube</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UkiyoGameDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '..', '..'))</UkiyoGameDir>
+    <!-- Directory.Build.targets serves Www/ as the web root and syncs the adapter, the shell and three into Www/lib. -->
+    <UkiyoBrowserHost>true</UkiyoBrowserHost>
+    <UkiyoWebRoot>$(UkiyoGameDir)Www/</UkiyoWebRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="$(UkiyoGameDir)Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Browser-only code (JSImport and friends): compiled only here, not part of the shared hash. -->
+    <Compile Include="$(UkiyoGameDir)Platform/Browser/**/*.cs" Link="Platform/Browser/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="$(UkiyoRoot)src/Ukiyo.Platform.Browser/Ukiyo.Platform.Browser.csproj" />
+    <SupportedPlatform Include="browser" />
+    <!-- This assembly only runs in the browser; declared here so the shared Program.cs stays platform-free. -->
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>browser</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

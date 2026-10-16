@@ -40,7 +40,8 @@ public async Task Holding_right_moves_the_player_and_is_deterministic()
 ```
 
 Link the game's Shared files (not `Program.cs`) into `tests/Ukiyo.Tests/Ukiyo.Tests.csproj`:
-`<Compile Include="../../games/MyGame/Shared/MyGame.cs" Link="Shared/MyGame.cs" />` and reference any engine module
+`<Compile Include="../../games/MyGame/Shared/Game.cs" Link="Shared/MyGame/Game.cs" />` (plus any other files under
+`Shared/` it uses) and reference any engine module
 it uses (Physics, UI).
 
 ## Frames in tests

@@ -10,7 +10,7 @@ bridge: a TCP server on `127.0.0.1` speaking newline-delimited JSON, guarded by 
 writes a discovery file `~/.ukiyo/live/<pid>.json` (mode 0600) with port and token; it is removed on exit. Exported
 builds do not contain the bridge. Disable it with `UKIYO_DEV_BRIDGE=0`; pin the port with `UKIYO_DEV_BRIDGE_PORT`.
 
-Start a game: `dotnet run --project games/<Name>/Desktop` (or `samples/LanternRun/Desktop`). Then:
+Start a game: `dotnet run --project games/<Name>/Hosts/Desktop` (or `samples/LanternRun/Desktop`). Then:
 
 | `ukiyo_live` action | Does |
 |---|---|

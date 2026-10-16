@@ -12,6 +12,8 @@ native/.work/
 # JS dependencies and synced web assets
 node_modules/
 samples/*/Browser/wwwroot/lib/
+games/*/Browser/wwwroot/lib/
+**/Www/lib/
 
 # MCP sprite tool scratch output (generated sprites land in the game's Shared/assets instead)
 .ukiyo/

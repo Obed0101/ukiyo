@@ -12,17 +12,21 @@ captured frames and tests.
 ## Layout of a game
 
 ```
-games/<Name>/                  (samples/ holds the engine's own examples)
+games/<Name>/                  (samples/ holds the engine's own examples; template: templates/game)
   Shared/Program.cs            the only entry point, identical for every host
-  Shared/<Name>Game.cs         your IGame; other .cs under Shared/ compile into every host (host csproj glob ../Shared/**/*.cs)
+  Shared/Game.cs               your IGame; every .cs under Shared/ compiles into every host (Shared/**/*.cs)
+  Shared/Scenes/ Entities/ Systems/ Lib/   game code split by role
   Shared/gen/*.g.cs            imported art (tools/Ukiyo.Import): pixels compiled in, nothing decoded at runtime
   Shared/assets/**             embedded into every host as assets/<path>
+  Platform/Desktop/ Browser/   C# compiled only by that host (no #if needed)
+  Hosts/<Host>/<Name>.<Host>.csproj   Headless, Desktop, Browser, Export.Desktop: one csproj each, nothing else
+  Www/                         browser page (index.html, main.js)
   art/                         source PNGs + *.import.json; never shipped (see docs/assets.md)
-  Headless/ Desktop/ Browser/  one csproj per host, nothing else
 ```
 
 Never add `#if`, platform checks or host-specific code to `Shared/`. Create a new game with the MCP tool
-`ukiyo_new_game` (or copy `samples/LanternRun`).
+`ukiyo_new_game` or by copying `templates/game` (docs/game-layout.md). Older samples (LanternRun, TexturedQuad,
+SceneHop, LitCube) still use `<game>/<Host>/` folders without `Hosts/`; both layouts build and both work with the tools.
 
 ## The loop
 

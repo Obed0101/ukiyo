@@ -9,7 +9,7 @@
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="../../samples/RotatingCube/Shared/CubeGame.cs" Link="Shared/CubeGame.cs" />
+    <Compile Include="../../samples/RotatingCube/Shared/Game.cs" Link="Shared/RotatingCube/Game.cs" />
     <Compile Include="../../samples/LanternRun/Shared/LanternRunGame.cs" Link="Shared/LanternRunGame.cs" />
     <Compile Include="../../samples/LanternRun/Shared/LanternArt.cs" Link="Shared/LanternArt.cs" />
     <Compile Include="../../samples/TexturedQuad/Shared/TexturedQuadGame.cs" Link="Shared/TexturedQuadGame.cs" />

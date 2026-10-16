@@ -1,9 +1,13 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, relative } from "node:path";
 import { text, ToolInputError, type Tool } from "../protocol.ts";
 
 type Template = "2d" | "3d";
-type Host = "Headless" | "Desktop" | "Browser";
+type Host = "Headless" | "Desktop" | "Browser" | "Export.Desktop";
+const HOSTS: Host[] = ["Headless", "Desktop", "Browser", "Export.Desktop"];
+
+/** The game layout every scaffold copies (docs/game-layout.md). Its identity tokens are MyGame and my-game. */
+export const TEMPLATE_DIR = join("templates", "game");
 
 const gameSource = (name: string, template: Template) =>
   template === "2d"
@@ -144,8 +148,8 @@ public sealed class ${name}Game : IGame
 }
 `;
 
-const programSource = (name: string) => `// The only entry point of ${name}. Every host compiles this exact file; each host assembly provides its own
-// Ukiyo.Hosting.PlatformBootstrap. No #if, no platform branches.
+const programSource = (name: string) => `// The only entry point of ${name}. Desktop, browser and headless hosts compile this exact file; each host
+// assembly provides its own Ukiyo.Hosting.PlatformBootstrap. No #if, no platform branches.
 using Ukiyo;
 using Ukiyo.Hosting;
 using Ukiyo.Games.${name};
@@ -153,106 +157,62 @@ using Ukiyo.Games.${name};
 return await GameApplication.RunAsync(new ${name}Game(), PlatformBootstrap.Create(args));
 `;
 
-const extraReferences = (template: Template) =>
-  template === "2d"
-    ? `
-    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
-    <ProjectReference Include="../../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
-    <ProjectReference Include="../../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />`
-    : "";
+/** The 2d template uses optional engine systems; their references go right after the host's platform reference. */
+const EXTRA_REFERENCES: Record<Template, string[]> = { "2d": ["Ukiyo.Physics", "Ukiyo.UI", "Ukiyo.Audio"], "3d": [] };
+const PLATFORM_REFERENCE = /^( *)<ProjectReference Include="\$\(UkiyoRoot\)src\/Ukiyo\.Platform\.\w+\/Ukiyo\.Platform\.\w+\.csproj" \/>$/m;
 
-// Recursive so imported art (Shared/gen/*.g.cs from tools/Ukiyo.Import) is compiled and hashed like the game code.
-const shared = `
-    <UkiyoSharedSource Include="../Shared/**/*.cs" />
-    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />`;
+const kebabCase = (name: string) => name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
 
-function hostProject(name: string, host: Host, template: Template): string {
-  const kebab = name.replace(/([a-z0-9])([A-Z])/g, "$1-$2").toLowerCase();
-  if (host === "Headless") {
-    return `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <AssemblyName>${kebab}-headless</AssemblyName>
-    <RootNamespace>Ukiyo.Games.${name}</RootNamespace>
-  </PropertyGroup>
-  <ItemGroup>${shared}
-    <ProjectReference Include="../../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />${extraReferences(template)}
-  </ItemGroup>
-</Project>
-`;
+/** Files of the template, relative and with "/" separators, without build output and the synced web adapter. */
+export function templateFiles(templateDir: string, prefix = ""): string[] {
+  const files: string[] = [];
+  for (const entry of readdirSync(join(templateDir, prefix), { withFileTypes: true }).sort((a, b) => (a.name < b.name ? -1 : 1))) {
+    const path = prefix ? `${prefix}/${entry.name}` : entry.name;
+    if (entry.isDirectory()) {
+      if (entry.name === "bin" || entry.name === "obj" || path === "Www/lib") continue;
+      files.push(...templateFiles(templateDir, path));
+    } else if (entry.name !== ".DS_Store") {
+      files.push(path);
+    }
   }
-  if (host === "Desktop") {
-    return `<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <AssemblyName>${kebab}-desktop</AssemblyName>
-    <RootNamespace>Ukiyo.Games.${name}</RootNamespace>
-    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
-    <SelfContained>false</SelfContained>
-    <UkiyoDevBridge>true</UkiyoDevBridge>
-  </PropertyGroup>
-  <ItemGroup>${shared}
-    <ProjectReference Include="../../../src/Ukiyo.Platform.Desktop/Ukiyo.Platform.Desktop.csproj" />${extraReferences(template)}
-    <None Include="$(UkiyoNativeDir)lib/libwgpu_native.dylib;$(UkiyoNativeDir)lib/libSDL3.dylib" CopyToOutputDirectory="PreserveNewest" Visible="false" />
-  </ItemGroup>
-  <Target Name="UkiyoRequireNative" BeforeTargets="Build" Condition="!Exists('$(UkiyoNativeDir)lib/libwgpu_native.dylib')">
-    <Error Text="Native dependencies missing. Run scripts/fetch-native.sh first." />
-  </Target>
-</Project>
-`;
-  }
-  return `<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
-  <PropertyGroup>
-    <OutputType>Exe</OutputType>
-    <AssemblyName>${kebab}-web</AssemblyName>
-    <RootNamespace>Ukiyo.Games.${name}</RootNamespace>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
-    <UkiyoBrowserHost>true</UkiyoBrowserHost>
-  </PropertyGroup>
-  <ItemGroup>${shared}
-    <ProjectReference Include="../../../src/Ukiyo.Platform.Browser/Ukiyo.Platform.Browser.csproj" />${extraReferences(template)}
-    <SupportedPlatform Include="browser" />
-    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
-      <_Parameter1>browser</_Parameter1>
-    </AssemblyAttribute>
-  </ItemGroup>
-</Project>
-`;
+  return files;
 }
 
-const browserIndex = (name: string) => `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ukiyo · ${name} · web</title>
-  <style>
-    html, body { margin: 0; height: 100%; background: #000; color: #a8a8a8; font: 12px ui-monospace, monospace; }
-    canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
-    canvas:focus { outline: none; }
-    #status { position: fixed; left: 12px; bottom: 10px; }
-  </style>
-  <script type="importmap">{ "imports": { "three": "./lib/three/three.module.js" } }</script>
-</head>
-<body>
-  <canvas id="ukiyo-canvas" tabindex="0" aria-label="${name}"></canvas>
-  <div id="status">loading .NET WebAssembly…</div>
-  <script type="module" src="./main.js"></script>
-</body>
-</html>
-`;
+/** Which host a template file belongs to, or null for files every game gets (Shared/, Platform/). */
+function fileHost(path: string): Host | "web" | null {
+  const host = path.match(/^Hosts\/([^/]+)\//)?.[1];
+  if (host) {
+    if (!HOSTS.includes(host as Host)) throw new Error(`[NEW_GAME]: unknown host folder in ${TEMPLATE_DIR}: ${host}`);
+    return host as Host;
+  }
+  return path.startsWith("Www/") ? "web" : null;
+}
 
-const browserMain = `import { dotnet } from "./_framework/dotnet.js";
-import { boot } from "./lib/ukiyo-host.js";
-
-const status = document.getElementById("status");
-const canvas = document.getElementById("ukiyo-canvas");
-canvas.focus();
-boot({ dotnet, canvas, status }).catch((error) => {
-  status.textContent = \`error: \${error.message}\`;
-  console.error(error);
-});
-`;
+/**
+ * The template with the game's names filled in: MyGame → Name, my-game → kebab-name, and its 2d/3d starting code in
+ * Shared/Program.cs and Shared/Game.cs. Paths are relative to the new game folder.
+ */
+export function scaffoldFiles(templateDir: string, name: string, template: Template, hosts: Host[]): Record<string, string> {
+  const kebab = kebabCase(name);
+  const files: Record<string, string> = {};
+  for (const path of templateFiles(templateDir)) {
+    const host = fileHost(path);
+    if (host === "web" ? !hosts.includes("Browser") : host !== null && !hosts.includes(host)) continue;
+    let content = readFileSync(join(templateDir, path), "utf8").replaceAll("MyGame", name).replaceAll("my-game", kebab);
+    if (path.endsWith(".csproj") && EXTRA_REFERENCES[template].length > 0) {
+      if (!PLATFORM_REFERENCE.test(content)) throw new Error(`[NEW_GAME]: ${TEMPLATE_DIR}/${path} has no Ukiyo.Platform.* reference to extend`);
+      content = content.replace(PLATFORM_REFERENCE, (line, indent: string) =>
+        [line, ...EXTRA_REFERENCES[template].map((p) => `${indent}<ProjectReference Include="$(UkiyoRoot)src/${p}/${p}.csproj" />`)].join("\n"));
+    }
+    files[path.replaceAll("MyGame", name)] = content;
+  }
+  for (const required of ["Shared/Program.cs", "Shared/Game.cs"]) {
+    if (!(required in files)) throw new Error(`[NEW_GAME]: ${TEMPLATE_DIR}/${required} is missing`);
+  }
+  files["Shared/Program.cs"] = programSource(name);
+  files["Shared/Game.cs"] = gameSource(name, template);
+  return files;
+}
 
 function addToSolution(root: string, projects: string[]) {
   const path = join(root, "Ukiyo.slnx");
@@ -270,7 +230,7 @@ const newGame: Tool = {
   name: "ukiyo_new_game",
   title: "Create a game",
   description:
-    "Scaffolds games/<Name> with one shared Program.cs and game class plus the hosts you ask for (Headless, Desktop with the dev bridge, Browser), and adds them to Ukiyo.slnx. Template 2d: sprite + physics + input + HUD; 3d: a mesh turned by input. Never overwrites an existing game.",
+    "Scaffolds games/<Name> from templates/game (docs/game-layout.md): Shared/ (Program.cs, Game.cs, Scenes/ Entities/ Systems/ Lib/ gen/ assets/), Platform/{Desktop,Browser}/, Hosts/<Host>/ with one csproj per host you ask for (Headless, Desktop with the dev bridge, Browser, Export.Desktop NativeAOT) and Www/ for the browser page, and adds the hosts to Ukiyo.slnx. Template 2d: sprite + physics + input + HUD + a scene registry; 3d: a mesh turned by input. Never overwrites an existing game.",
   inputSchema: {
     type: "object",
     required: ["name"],
@@ -278,7 +238,7 @@ const newGame: Tool = {
     properties: {
       name: { type: "string", pattern: "^[A-Z][A-Za-z0-9]{1,39}$", description: "PascalCase, e.g. SkyLantern." },
       template: { type: "string", enum: ["2d", "3d"], default: "2d" },
-      hosts: { type: "array", items: { type: "string", enum: ["Headless", "Desktop", "Browser"] }, minItems: 1, default: ["Headless", "Desktop", "Browser"] },
+      hosts: { type: "array", items: { type: "string", enum: HOSTS }, minItems: 1, default: HOSTS },
     },
   },
   async run(args, { root, log }) {
@@ -287,28 +247,21 @@ const newGame: Tool = {
     const hosts = [...new Set(args.hosts as Host[])];
     const dir = join(root, "games", name);
     if (existsSync(dir)) throw new ToolInputError(`games/${name} already exists`);
+    const templateDir = join(root, TEMPLATE_DIR);
+    if (!existsSync(templateDir)) throw new Error(`[NEW_GAME]: ${TEMPLATE_DIR} not found in ${root}; the scaffold copies it`);
 
-    const files: Record<string, string> = {
-      [join(dir, "Shared", "Program.cs")]: programSource(name),
-      [join(dir, "Shared", `${name}Game.cs`)]: gameSource(name, template),
-      [join(dir, "Shared", "assets", ".gitkeep")]: "",
-    };
-    for (const host of hosts) files[join(dir, host, `${name}.${host}.csproj`)] = hostProject(name, host, template);
-    if (hosts.includes("Browser")) {
-      files[join(dir, "Browser", "wwwroot", "index.html")] = browserIndex(name);
-      files[join(dir, "Browser", "wwwroot", "main.js")] = browserMain;
-    }
+    const files = scaffoldFiles(templateDir, name, template, hosts);
     for (const [path, content] of Object.entries(files)) {
-      mkdirSync(dirname(path), { recursive: true });
-      writeFileSync(path, content);
+      mkdirSync(dirname(join(dir, path)), { recursive: true });
+      writeFileSync(join(dir, path), content);
     }
-    addToSolution(root, hosts.map((h) => `games/${name}/${h}/${name}.${h}.csproj`));
+    addToSolution(root, hosts.map((h) => `games/${name}/Hosts/${h}/${name}.${h}.csproj`));
     log("info", "game.created", { name, template, hosts });
 
-    const created = Object.keys(files).map((f) => relative(root, f));
+    const created = Object.keys(files).map((f) => relative(root, join(dir, f)));
     return {
       content: [
-        text(`Created games/${name} (${template}).\n${created.join("\n")}\n\nNext: ukiyo_run {"game":"${name}"} to prove it ticks, ukiyo_capture to see it, then dotnet run --project games/${name}/Desktop for a live window (the dev bridge attaches automatically).`),
+        text(`Created games/${name} (${template}).\n${created.join("\n")}\n\nNext: ukiyo_run {"game":"${name}"} to prove it ticks, ukiyo_capture to see it, then dotnet run --project games/${name}/Hosts/Desktop for a live window (the dev bridge attaches automatically).`),
       ],
       structuredContent: { name, template, hosts, files: created },
     };

@@ -116,7 +116,7 @@ public sealed class CoreTests
     public void Shared_game_sources_contain_no_platform_branches_or_backend_references()
     {
         var shared = Path.Combine(RepoRoot(), "samples", "RotatingCube", "Shared");
-        foreach (var file in Directory.GetFiles(shared, "*.cs"))
+        foreach (var file in Directory.GetFiles(shared, "*.cs", SearchOption.AllDirectories))
         {
             var code = File.ReadAllLines(file).Where(line => !line.TrimStart().StartsWith("//", StringComparison.Ordinal)).ToArray();
             Assert.DoesNotContain(code, line => line.TrimStart().StartsWith('#'));

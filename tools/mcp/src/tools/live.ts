@@ -24,7 +24,7 @@ const live: Tool = {
     const sessions = liveSessions();
     if (args.action === "list") {
       const list = publicSessions(sessions);
-      return { content: [text(list.length ? JSON.stringify(list, null, 2) : "No running dev builds. Start one: dotnet run --project games/<Name>/Desktop")], structuredContent: { sessions: list } };
+      return { content: [text(list.length ? JSON.stringify(list, null, 2) : "No running dev builds. Start one: dotnet run --project games/<Name>/Hosts/Desktop")], structuredContent: { sessions: list } };
     }
 
     const session = args.pid === undefined ? sessions[0] : sessions.find((s) => s.pid === args.pid);
