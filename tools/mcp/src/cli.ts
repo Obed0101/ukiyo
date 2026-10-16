@@ -32,6 +32,7 @@ export const HELP = `ukiyo live <list|status|pause|resume|step|snapshot|capture|
   --events FILE     input: JSON array of key/pointer events
   --on true|false   record: explicit start/stop
   --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
+  --pass N          capture: one camera of a multi-camera frame alone (pass id 0, 1, …; default the composed frame)
   --out FILE        capture: PNG; record: input script; others: result JSON
 Output files are created exclusively: existing files are never overwritten.
 ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
@@ -43,6 +44,7 @@ Examples:
   bun tools/mcp/src/cli.ts live list
   bun tools/mcp/src/cli.ts live step --pid 123 --ticks 60
   bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
+  bun tools/mcp/src/cli.ts live capture --pid 123 --pass 1 --out minimap.png
   bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json
   bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches patches.json`;
 
@@ -67,11 +69,12 @@ export function parseArgs(args: string[]) {
   if (args[0] !== "live") throw new Error("expected 'live' or 'run'; use --help");
   const action = args[1];
   if (action !== "list" && !(BRIDGE_COMMANDS as readonly string[]).includes(action ?? "")) throw new Error("unknown live action");
-  const perAction: Record<string, string[]> = { step: ["--ticks"], input: ["--events"], record: ["--on"], patch: ["--patch"] };
+  const perAction: Record<string, string[]> = { step: ["--ticks"], input: ["--events"], record: ["--on"], patch: ["--patch"], capture: ["--pass"] };
   const given = options(args.slice(2), new Set(["--pid", "--out", ...(perAction[action!] ?? [])]));
   const pid = given["--pid"] === undefined ? undefined : integer(given["--pid"], 1, 2147483647);
   const request: Record<string, unknown> = { cmd: action };
   if (action === "step") request.ticks = integer(given["--ticks"] ?? "1", 0, 36000);
+  if (action === "capture" && given["--pass"] !== undefined) request.pass = integer(given["--pass"], 0, 2147483647);
   if (action === "record") {
     if (!["true", "false"].includes(given["--on"] ?? "")) throw new Error("record needs --on true|false");
     request.on = given["--on"] === "true";
@@ -144,16 +147,37 @@ export async function toolCommands(): Promise<Map<string, Tool>> {
   return discovered;
 }
 
-/** Copies the files a result lists under `keys` into `dir` and points the result at the copies. Never overwrites. */
+/** Every string inside `value` (a path, a list of paths, or objects holding them such as `passes`), in order. */
+function pathsIn(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(pathsIn);
+  if (typeof value === "object" && value !== null) return Object.values(value).flatMap(pathsIn);
+  return [];
+}
+
+/** `value` with every string replaced through `to`; numbers, booleans and null stay. */
+function remap(value: unknown, to: (path: string) => string): unknown {
+  if (typeof value === "string") return to(value);
+  if (Array.isArray(value)) return value.map((item) => remap(item, to));
+  if (typeof value === "object" && value !== null) return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, remap(item, to)]));
+  return value;
+}
+
+/**
+ * Copies the files a result lists under `keys` into `dir` and points the result at the copies. Every string under
+ * those keys is a file path (`captures`: a list; `passes`: objects with `frame` and `path`); a file listed twice is
+ * copied once. Keys the result does not have stay absent. Never overwrites.
+ */
 export function copyOutputs(result: Record<string, unknown>, keys: string[], dir: string): Record<string, unknown> {
   const out = resolve(dir);
-  const copies = keys.flatMap((key) => (Array.isArray(result[key]) ? (result[key] as string[]) : []).map((from) => ({ key, from, to: join(out, basename(from)) })));
-  const taken = copies.find(({ to }) => existsSync(to));
+  const present = keys.filter((key) => result[key] !== undefined);
+  const targets = new Map(present.flatMap((key) => pathsIn(result[key])).map((from) => [from, join(out, basename(from))]));
+  const taken = [...targets].find(([, to]) => existsSync(to));
   // The tool already succeeded: its result (with the temp paths) still goes to stdout, the exit code says the copy failed.
-  if (taken) throw new ToolFailure(`${taken.to} already exists; choose a new --out directory (the files are still at ${taken.from})`, result);
+  if (taken) throw new ToolFailure(`${taken[1]} already exists; choose a new --out directory (the files are still at ${taken[0]})`, result);
   mkdirSync(out, { recursive: true });
-  for (const { from, to } of copies) copyFileSync(from, to, constants.COPYFILE_EXCL);
-  const moved = Object.fromEntries(keys.map((key) => [key, copies.filter((c) => c.key === key).map((c) => c.to)]));
+  for (const [from, to] of targets) copyFileSync(from, to, constants.COPYFILE_EXCL);
+  const moved = Object.fromEntries(present.map((key) => [key, remap(result[key], (from) => targets.get(from)!)]));
   return { ...result, ...moved, out };
 }
 

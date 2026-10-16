@@ -15,6 +15,7 @@ ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch> [
   --events FILE     input: JSON array of key/pointer events
   --on true|false   record: explicit start/stop
   --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
+  --pass N          capture: one camera of a multi-camera frame alone (pass id 0, 1, …; default the composed frame)
   --out FILE        capture: PNG; record: input script; others: result JSON
 Output files are created exclusively: existing files are never overwritten.
 ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
@@ -26,6 +27,7 @@ Examples:
   bun tools/mcp/src/cli.ts live list
   bun tools/mcp/src/cli.ts live step --pid 123 --ticks 60
   bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
+  bun tools/mcp/src/cli.ts live capture --pid 123 --pass 1 --out minimap.png
   bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json
   bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches patches.json
 ukiyo capture <game> [options]   Capture frames (ukiyo_capture)
@@ -37,7 +39,7 @@ ukiyo capture <game> [options]   Capture frames (ukiyo_capture)
   --size TEXT                   Drawing-buffer size, e.g. 640x360; default 640x360
   --audio [true|false]          Mix every sound the run plays into a WAV and report duration, sound count, peak and RMS (silence is peak 0); default false
   --timeout-seconds N           10..900; default 240
-  --out DIR                     copy captures into DIR (created; existing files are never overwritten)
+  --out DIR                     copy captures, passes into DIR (created; existing files are never overwritten)
 ukiyo import [specs…] [options]   Import assets (ukiyo_import)
   <specs>                       Spec files or folders, repository-relative or absolute inside the repository
   --check                       report stale outputs, write nothing (without it: run, regenerating them)

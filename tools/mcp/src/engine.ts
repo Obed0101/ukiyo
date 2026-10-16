@@ -1,5 +1,6 @@
 // Everything the tools need to drive the engine: locating the repo, resolving games, running dotnet/bun with a
-// timeout, and parsing the line protocol the headless host prints ("snapshot {json}", "capture <path>").
+// timeout, and parsing the line protocol the headless host prints ("snapshot {json}", "capture <path>",
+// "capture-pass K primary=true|false <path>").
 import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, isAbsolute, join, relative, resolve } from "node:path";
@@ -103,13 +104,44 @@ export type AudioSummary = { path: string; seconds: number; sounds: number; peak
 
 export type PatchLogSummary = { path: string; submitted: number };
 
-export type HeadlessOutput = { snapshots: Record<string, unknown>[]; captures: string[]; audio: AudioSummary | null; patches: PatchLogSummary | null; info: string[] };
+/** One camera of a multi-camera frame, captured alone at its rect size (docs/rendering-passes.md). */
+export type PassCapture = { pass: number; primary: boolean; path: string };
+
+/** The per-pass captures of one checkpoint: `frame` is the composed capture they belong to (the `capture` line before them). */
+export type CheckpointPasses = { tick: number | null; frame: string; passes: PassCapture[] };
+
+export type HeadlessOutput = {
+  snapshots: Record<string, unknown>[];
+  captures: string[];
+  /** Only multi-camera frames print `capture-pass` lines; empty for single-camera games. */
+  passes: CheckpointPasses[];
+  audio: AudioSummary | null;
+  patches: PatchLogSummary | null;
+  info: string[];
+};
 
 export function parseHeadless(stdout: string): HeadlessOutput {
-  const output: HeadlessOutput = { snapshots: [], captures: [], audio: null, patches: null, info: [] };
+  const output: HeadlessOutput = { snapshots: [], captures: [], passes: [], audio: null, patches: null, info: [] };
+  // The passes of the checkpoint whose capture line came last; a new capture line starts the next checkpoint.
+  let checkpoint: CheckpointPasses | undefined;
   for (const line of stdout.split("\n")) {
     if (line.startsWith("snapshot ")) output.snapshots.push(JSON.parse(line.slice("snapshot ".length)));
-    else if (line.startsWith("capture ")) output.captures.push(line.slice("capture ".length).trim());
+    else if (line.startsWith("capture ")) {
+      output.captures.push(line.slice("capture ".length).trim());
+      checkpoint = undefined;
+    }
+    else if (line.startsWith("capture-pass ")) {
+      // capture-pass K primary=true|false <path> (the path may contain spaces), after the checkpoint's capture line
+      const match = /^capture-pass (\d+) primary=(true|false) (.+)$/.exec(line.trim());
+      const frame = output.captures.at(-1);
+      if (!match || frame === undefined) continue;
+      if (!checkpoint) {
+        const tick = output.snapshots.at(-1)?.tick;
+        checkpoint = { tick: typeof tick === "number" ? tick : null, frame, passes: [] };
+        output.passes.push(checkpoint);
+      }
+      checkpoint.passes.push({ pass: Number(match[1]), primary: match[2] === "true", path: match[3]! });
+    }
     else if (line.startsWith("audio ")) {
       // audio <path> seconds=… sounds=… peak=… rms=…
       const [, path = "", ...pairs] = line.trim().split(" ");

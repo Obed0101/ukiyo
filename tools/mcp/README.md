@@ -35,7 +35,8 @@ bun tools/mcp/src/cli.ts skills install --preset engine --target claude
   repository-relative or absolute inside the repository, as in MCP. The input is then checked by the tool's own schema.
 - A tool can refine its spelling with optional `cli` hints on its module (`CliHints` in protocol.ts): `ukiyo_import`
   takes its specs as positional paths, `--check` for `action: "check"` and `run` by default; `ukiyo_capture` lists
-  `captures` as output files, which `--out DIR` copies into DIR and points the result at. A file name already in DIR
+  `captures` and `passes` as output files, which `--out DIR` copies into DIR (every path under those keys, each file
+  once; a single-camera result gets no `passes` key) and points the result at. A file name already in DIR
   is exit 1, with the result (still pointing at the temp files) on stdout; nothing is overwritten.
 - stdout is the tool's `structuredContent` as one JSON line; logs and `[UKIYO]: …` errors go to stderr. Exit 2 is a
   usage error (unknown command or option, missing argument, unreadable FILE, or input the schema or the tool refuses
@@ -69,15 +70,32 @@ the actual transcript to `artifacts/cli-flow/actual.txt` and exits 1. After an i
 |---|---|
 | `ukiyo_status` | Orientation: engine version, toolchain, games and hosts, skills, live sessions; per game its render profile, scene registry and import specs (below) |
 | `ukiyo_run` | Headless build + run with scripted input; JSON snapshots at checkpoint ticks |
-| `ukiyo_capture` | `ukiyo_run` plus CPU-renderer PNG frames at each checkpoint |
+| `ukiyo_capture` | `ukiyo_run` plus CPU-renderer PNG frames at each checkpoint; multi-camera games also each pass alone (below) |
 | `ukiyo_test` | C# tests (xunit) and/or the three.js adapter tests |
 | `ukiyo_import` | Dev-time asset importer on `*.import.json` specs: `run` regenerates, `check` reports stale files (below) |
-| `ukiyo_live` | Dev bridge of a running desktop build: pause, step, snapshot, GPU capture, input, recording |
+| `ukiyo_live` | Dev bridge of a running desktop build: pause, step, snapshot, GPU capture (whole frame or one `pass`), input, recording, patches |
 | `ukiyo_new_game` | Scaffolds `games/<Name>` from `templates/game` (docs/game-layout.md) with the hosts you ask for under `Hosts/` |
 | `ukiyo_sprite_generate` · `_process` · `_sheet` | Image model or existing PNG → pixel-art PNG + atlas JSON; pack atlases |
 | `ukiyo_sound_generate` | Seeded synth sound effect as a JSON asset |
 | `ukiyo_studio` | What the person sees in the Studio; notify them; compose layouts, themes, panels |
 | `ukiyo_skills` | List or install skills and presets |
+
+## Multi-camera passes
+
+A game that adds passes (minimap, split screen; [docs/rendering-passes.md](../../docs/rendering-passes.md)) is drawn
+by several cameras. The tools show the composed frame as before and each camera alone at its rect size.
+
+- `ukiyo_capture`: the headless host prints `capture-pass K primary=true|false <path>` after each checkpoint's
+  `capture <path>` line, only for multi-camera frames. The result then has `passes` next to `captures`, one entry per
+  checkpoint: `{"tick":60,"frame":"…/headless-tick-000060.png","passes":[{"pass":0,"primary":true,"path":"…-pass-0.png"},{"pass":1,"primary":false,"path":"…-pass-1.png"}]}`.
+  The MCP content adds the pass images of the last checkpoint. Single-camera games print no such lines and their
+  result has no `passes` key, byte for byte what it was before. CLI: `capture Minimap --checkpoints 0,60 --out DIR`
+  copies the frames and the pass PNGs.
+- `ukiyo_live {"action":"capture","pass":K}` (CLI `live capture --pass K --out FILE`) asks the dev bridge for pass K
+  alone (GPU readback); the result adds `pass`, `passes` and `primaryPass`. Without `pass` it is the composed frame,
+  unchanged. A pass the frame does not have is refused by the engine: an `isError` result whose text carries
+  `[RENDER:OutOfRange]` and whose structured result is `{"error": …, "code": "RENDER:OutOfRange"}`; the CLI exits 1
+  with that message. Every bridge refusal comes back this way (`code` is null when the message has no typed code).
 
 ## `ukiyo_import`
 
