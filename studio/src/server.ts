@@ -12,6 +12,8 @@ import { BRIDGE_COMMANDS, bridgeRequest, liveSessions, publicSessions } from "..
 import { writeDiscovery } from "./discovery.ts";
 import { MAX_BODY_BYTES, SECURITY_HEADERS, refuse, safeName } from "./guard.ts";
 import { STUDIO_DIR, StudioFileError, readManifest, writeComposition, type CompositionPatch } from "./manifest.ts";
+import { Launcher } from "./launcher.ts";
+import { runRoutes } from "./run-routes.ts";
 
 const VERSION = "0.1.0";
 const REPO_ROOT = resolve(STUDIO_DIR, "..");
@@ -135,6 +137,9 @@ for (const where of [".", "panels", "layouts", "themes"]) {
   if (existsSync(directory)) watchers.push(watch(directory, (_event, name) => changed(where, name)));
 }
 
+/** Runs and reloads the games listed by GET /api/games; stops what it started when the Studio exits. */
+const launcher = new Launcher({ repoRoot: REPO_ROOT, sessions: liveSessions, bridge: bridgeRequest });
+
 // ── routes ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 async function page(): Promise<Response> {
@@ -183,6 +188,9 @@ async function route(request: Request, url: URL): Promise<Response> {
     return found ? file(found, "max-age=86400") : fail(404, "font not installed (cd site && bun install)");
   }
   if (get && pathname === "/brand/mark.svg") return file(join(REPO_ROOT, ".github/assets/brand/ukiyo-mark.svg"), "max-age=86400");
+
+  const launched = await runRoutes(launcher, request, pathname, (event, data) => log("info", event, data));
+  if (launched) return launched;
 
   switch (`${request.method} ${pathname}`) {
     case "GET /api/health":
@@ -267,10 +275,11 @@ const discovery = writeDiscovery({ pid: process.pid, port: server.port!, token, 
 log("info", "studio.ready", { url, discovery });
 process.stdout.write(`ukiyo Studio → ${url}\n`);
 
-function shutdown() {
+async function shutdown() {
   for (const watcher of watchers) watcher.close();
   rmSync(discovery, { force: true });
   server.stop(true);
+  await launcher.stopAll();
   process.exit(0);
 }
 process.on("SIGINT", shutdown);

@@ -116,6 +116,12 @@ public sealed class InputCollector
 
     public IReadOnlyList<ScriptedInput> Recorded => _recorded;
 
+    /// <summary>Events pushed but not latched yet.</summary>
+    public IReadOnlyList<InputEvent> Pending => _queue;
+
+    /// <summary>When set, every latched event is also appended here (the runtime's whole-session replay log).</summary>
+    internal ReplayLog? History { get; set; }
+
     public void Push(InputEvent inputEvent)
     {
         if (!Enum.IsDefined(inputEvent.Kind) || (int)inputEvent.Key >= 128)
@@ -137,11 +143,18 @@ public sealed class InputCollector
         var pressed = InputState.NewKeys();
         var released = InputState.NewKeys();
         byte buttonsPressed = 0, buttonsReleased = 0;
-        foreach (var e in _queue)
+        for (var index = 0; index < _queue.Count; index++)
         {
+            var e = _queue[index];
             if (Recording)
             {
                 _recorded.Add(new ScriptedInput(tick, e));
+            }
+
+            // A move followed by another pointer event in the same latch is overwritten by it: not worth replaying.
+            if (History is { } history && !(e.Kind == InputEventKind.PointerMove && index + 1 < _queue.Count && _queue[index + 1].Kind >= InputEventKind.PointerMove))
+            {
+                history.AddInput(tick, e);
             }
 
             switch (e.Kind)

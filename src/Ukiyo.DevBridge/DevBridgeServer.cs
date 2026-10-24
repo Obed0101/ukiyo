@@ -54,6 +54,7 @@ public sealed class DevBridgeServer : IDevSession
         }
 
         var port = int.TryParse(Environment.GetEnvironmentVariable("UKIYO_DEV_BRIDGE_PORT"), out var p) ? p : 0;
+        RestoreRequested(runtime);
         try
         {
             var server = new DevBridgeServer(runtime, target, port);
@@ -65,6 +66,25 @@ public sealed class DevBridgeServer : IDevSession
             Console.Error.WriteLine($"[ukiyo] dev bridge disabled: {error.Message}");
             return null;
         }
+    }
+
+    /// <summary>
+    /// Controlled reload (Studio, <c>ukiyo_live reload</c>): <c>UKIYO_RESTORE=&lt;replay log file&gt;</c> replays the log of
+    /// the previous process to its tick before this one announces itself, then leaves the game paused at that boundary.
+    /// A log that cannot be replayed stops the start with its reason instead of announcing a game in the wrong state.
+    /// </summary>
+    private static void RestoreRequested(GameRuntime runtime)
+    {
+        if (Environment.GetEnvironmentVariable("UKIYO_RESTORE") is not { Length: > 0 } path)
+        {
+            return;
+        }
+
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var (log, tick) = ReplayLog.Parse(File.ReadAllText(path));
+        runtime.RestoreFrom(log, tick);
+        runtime.Paused = true;
+        Console.WriteLine($"[ukiyo] restored tick={runtime.Tick} paused in {started.ElapsedMilliseconds} ms ({log.Input.Count} input events, {log.Patches.Count} patches replayed)");
     }
 
     public void Pump()
@@ -231,8 +251,21 @@ public sealed class DevBridgeServer : IDevSession
 
             case "patch":
                 return SubmitPatch(id, request);
+            case "history":
+                // The replay log from tick 0 (input, patch submissions, viewport) as of this boundary: what a fresh
+                // process of the same code needs to reach this tick again.
+                return Ok(id, json =>
+                {
+                    json.WriteStartObject();
+                    json.WriteNumber("tick", _runtime.Tick);
+                    json.WriteBoolean("paused", _runtime.Paused);
+                    json.WriteBoolean("complete", !_runtime.History.Truncated);
+                    json.WritePropertyName("log");
+                    json.WriteRawValue(_runtime.ExportHistoryJson());
+                    json.WriteEndObject();
+                });
             default:
-                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record, patch");
+                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record, patch, history");
         }
     }
 
