@@ -12,6 +12,7 @@ frontmatter) that Claude Code, Codex-style agents and other skill-aware tools lo
 | `ukiyo-physics` | 2D rigid bodies, platformer control, sensors, raycasts, layers |
 | `ukiyo-input` | keys, pointer, axes, input scripts, recording and replay |
 | `ukiyo-ui` | HUDs and menus with `GameUi`, focus, themes |
+| `ukiyo-animation` | gameplay cameras (follow, orbit, rail, shake, blends), tweens, easing, keyframe tracks, tick sequences |
 | `ukiyo-audio` | synthesized sound effects, WAV assets, playing sounds, proving them headless |
 | `ukiyo-testing` | tests, snapshots, CPU captures, parity — what each proves |
 | `ukiyo-live` | pause, step, capture and inject input into a running build |

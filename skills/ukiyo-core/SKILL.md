@@ -122,4 +122,4 @@ dir), so compare only their `snapshots`.
 Sounds: `tick.Audio.Play(handle)` in `Update` (see ukiyo-audio); they are events, never state.
 
 Related skills: ukiyo-new-game, ukiyo-scenes-assets (scenes, patches, imported art), ukiyo-hosts (hosts, flags,
-exports), ukiyo-rendering, ukiyo-sprites, ukiyo-physics, ukiyo-input, ukiyo-ui, ukiyo-audio, ukiyo-testing, ukiyo-live.
+exports), ukiyo-rendering, ukiyo-sprites, ukiyo-physics, ukiyo-input, ukiyo-ui, ukiyo-audio, ukiyo-animation, ukiyo-testing, ukiyo-live.
