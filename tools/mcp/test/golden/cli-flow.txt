@@ -107,6 +107,7 @@ ukiyo studio <action> [options]   Studio (the person's view) (ukiyo_studio)
   --show A,B,…                  Panels to show in addition to the layout (they go to the dock row). Replaces the current list
   --hide A,B,…                  Panels of the layout to hide. Replaces the current list
   --panel-options FILE          Per-panel options, e.g. {"values":{"pin":["score","lives"]}}. null removes a panel's options; JSON object, passed inline
+  --target user|repo            compose only: which studio.json to write. Default: the user's when it exists, else the repo's
   --text TEXT
   --level info|success|warn|error  default info
 ukiyo test [options]   Run tests (ukiyo_test)
@@ -225,6 +226,29 @@ $ ukiyo status
       }
     },
     {
+      "name": "Patrol",
+      "dir": "samples/Patrol",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Export.Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
       "name": "RotatingCube",
       "dir": "samples/RotatingCube",
       "hosts": [
@@ -326,6 +350,7 @@ $ ukiyo status
     "profile and scenes come from each game's source, not from a run: the headless [ukiyo] renderer line shows the renderer's profile, not the game's."
   ],
   "skills": [
+    "ukiyo-ai",
     "ukiyo-audio",
     "ukiyo-core",
     "ukiyo-engine",
@@ -694,5 +719,5 @@ exit 0
 games/ absent; Ukiyo.slnx identical to before new-game
 
 $ ukiyo run CiProbe --checkpoints 0
-stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: ImportedMesh, LanternRun, LitCube, Minimap, RotatingCube, SceneHop, Sparks, TexturedQuad
+stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: ImportedMesh, LanternRun, LitCube, Minimap, Patrol, RotatingCube, SceneHop, Sparks, TexturedQuad
 exit 1

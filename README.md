@@ -75,6 +75,7 @@ still open. [G1](docs/G1.md) and [G3](docs/G3.md) list what ran, what passed and
   animations, on wgpu/Metal, three.js and a new CPU renderer that captures frames headless.
 - **Input.** Keyboard and pointer latched per tick, deterministic input scripts, recording and replay.
 - **Physics.** `Ukiyo.Physics`: a deterministic 2D rigid-body world with sensors, raycasts and layers.
+- **NPC behaviour.** `Ukiyo.AI`: state machines, behavior trees, deterministic grid A* and steering, readable in snapshots.
 - **Game UI.** `Ukiyo.UI`: immediate-mode HUDs and menus, pixel font, keyboard and pointer focus.
 - **Audio.** `Ukiyo.Audio`: sounds as events from `Update`, a shared mixer, WAV assets and a seeded sound-effect
   synthesizer, played through SDL3 on desktop and Web Audio in the browser, recorded to WAV headless.
@@ -180,6 +181,7 @@ src/Ukiyo.Render.*            Null · Software (CPU) · Wgpu · Three
 src/Ukiyo.Platform.*          Headless · Desktop (SDL3 + Metal) · Browser (WASM)
 src/Ukiyo.Physics             deterministic 2D physics            (G1)
 src/Ukiyo.UI                  game UI: HUDs, menus, pixel font    (G1)
+src/Ukiyo.AI                  NPC behaviour: FSM, BT, A*, steering
 src/Ukiyo.Audio               mixer, WAV, sound synthesizer       (G1)
 src/Ukiyo.DevBridge           live control of dev builds          (G1)
 templates/game                the layout every new game copies    (docs/game-layout.md)
