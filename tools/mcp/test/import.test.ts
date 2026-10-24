@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, relative } from "node:path";
-import { findRepoRoot } from "../src/engine.ts";
+import { findRepoRoot, listGames } from "../src/engine.ts";
 import {
   assertSpecInsideRoot,
   findSpecs,
@@ -70,6 +70,21 @@ describe("spec discovery and path validation (fixture repository)", () => {
   ])("refuses %j", (input, message) => {
     expect(() => resolveSpecTargets(root, input)).toThrow(ToolInputError);
     expect(() => resolveSpecTargets(root, input)).toThrow(message);
+  });
+
+  test("whenEmpty all sweeps every spec of every game; without it, or with nothing to sweep, it is refused", () => {
+    expect(resolveSpecTargets(root, { whenEmpty: "all" }).map((p) => relative(root, p))).toEqual([
+      "samples/Fake/art/a.import.json",
+      "samples/Fake/art/b.import.json",
+      "samples/Fake/art/meshes/ship.import.json",
+    ]);
+    const empty = mkdtempSync(join(tmpdir(), "ukiyo-import-empty-"));
+    try {
+      write(join(empty, "samples/Bare/Shared/Game.cs"), "");
+      expect(() => resolveSpecTargets(empty, { whenEmpty: "all" })).toThrow("no *.import.json in any game");
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 
   test("a spec whose output or inputs leave the repository is refused before the importer runs", () => {
@@ -174,6 +189,15 @@ describe("ukiyo_import against the real importer", () => {
         outputs: [expect.objectContaining({ state: "up-to-date", output: "samples/TexturedQuad/Shared/gen/QuadArt.g.cs", contentHash: expectedHash })],
       }),
     ]);
+  }, 180_000);
+
+  test("check with no target covers every spec in the repository; run with no target is refused", async () => {
+    const all = await call({ action: "check" });
+    expect(all.isError).toBe(false);
+    const specs = (all.structuredContent.specs as { spec: string }[]).map((s) => s.spec);
+    expect(specs).toContain("samples/TexturedQuad/art/quad.import.json");
+    expect(specs.length).toBe(listGames(repo).flatMap((g) => findSpecs(g.dir)).length);
+    await expect(call({ action: "run" })).rejects.toThrow("pass a game");
   }, 180_000);
 
   test("check reports a missing output as stale, run writes it, and check then passes", async () => {

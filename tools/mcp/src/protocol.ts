@@ -6,7 +6,10 @@ export const SUPPORTED_PROTOCOL_VERSIONS = ["2025-11-25", "2025-06-18", "2025-03
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
 
 export type JsonSchema = {
-  type: "object" | "string" | "number" | "integer" | "boolean" | "array";
+  /** Absent only on an `anyOf` schema, whose alternatives carry the types. */
+  type?: "object" | "string" | "number" | "integer" | "boolean" | "array";
+  /** The value must satisfy at least one alternative (the first that does is used). */
+  anyOf?: JsonSchema[];
   description?: string;
   properties?: Record<string, JsonSchema>;
   required?: string[];
@@ -86,6 +89,18 @@ export class ToolInputError extends Error {
 /** Validates and fills defaults. Throws ToolInputError naming the exact path that failed. */
 export function validate(schema: JsonSchema, value: unknown, path = "arguments"): unknown {
   if (value === undefined && schema.default !== undefined) return structuredClone(schema.default);
+  if (schema.anyOf) {
+    const failures: string[] = [];
+    for (const alternative of schema.anyOf) {
+      try {
+        return validate(alternative, value, path);
+      } catch (error) {
+        if (!(error instanceof ToolInputError)) throw error;
+        failures.push(error.message.replace("[MCP:InvalidParams]: ", ""));
+      }
+    }
+    throw new ToolInputError(`${path} matches none of its allowed forms: ${failures.join("; ")}`);
+  }
   switch (schema.type) {
     case "object": {
       if (typeof value !== "object" || value === null || Array.isArray(value)) throw new ToolInputError(`${path} must be an object`);

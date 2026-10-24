@@ -19,7 +19,7 @@ const SCALAR = new Set(["string", "integer", "number"]);
 
 /** Properties given as JSON files: objects and arrays whose items are not scalars. */
 const takesFile = (schema: JsonSchema) =>
-  schema.type === "object" || (schema.type === "array" && !(schema.items && SCALAR.has(schema.items.type)));
+  schema.type === "object" || (schema.type === "array" && !(schema.items?.type && SCALAR.has(schema.items.type)));
 
 function positionalProperties(tool: Tool): string[] {
   const properties = tool.inputSchema.properties ?? {};
@@ -33,6 +33,8 @@ function optionProperties(tool: Tool): Map<string, string> {
 }
 
 function scalar(schema: JsonSchema, value: string, where: string): string | number {
+  // A schema that also allows a number (anyOf) takes digits as a number and anything else as text for validation to judge.
+  if (schema.anyOf?.some((alternative) => alternative.type === "integer" || alternative.type === "number")) return /^\d+(\.\d+)?$/.test(value) ? Number(value) : value;
   if (schema.type !== "integer" && schema.type !== "number") return value;
   if (!/^-?\d+(\.\d+)?$/.test(value)) throw new CliUsageError(`${where} expects a number, got ${JSON.stringify(value)}`);
   return Number(value);
@@ -120,6 +122,7 @@ function valueHint(schema: JsonSchema): string {
   if (takesFile(schema)) return "FILE";
   if (schema.type === "array") return "A,B,…";
   if (schema.enum) return schema.enum.join("|");
+  if (schema.anyOf) return schema.anyOf.map((alternative) => (alternative.enum ? alternative.enum.join("|") : "N")).join("|");
   return schema.type === "string" ? "TEXT" : "N";
 }
 
