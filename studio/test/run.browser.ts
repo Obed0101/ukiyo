@@ -44,7 +44,7 @@ try {
   await panel.getByRole("button", { name: "Run LanternRun", exact: true }).first().click();
   stopGame = async () => { await api("/api/run/stop", { game: "sample/LanternRun" }); };
   await panel.getByRole("button", { name: "Reload LanternRun at the same tick" }).waitFor({ timeout: 240_000 });
-  await page.waitForFunction(() => document.querySelector('[data-panel="sessions"]')?.textContent?.includes("running: Attached"), null, { timeout: 60_000 });
+  await page.waitForFunction(() => document.querySelector('[data-panel="sessions"]')?.querySelector('.game-state[data-state="running"]'), null, { timeout: 60_000 });
   const first = (await api("/api/games")).runs.at(-1);
   assert.equal(first.state, "running");
   await panel.screenshot({ path: `${out}/running.png` });

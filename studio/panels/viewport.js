@@ -41,6 +41,7 @@ export default {
     let watchGeneration = 0;
 
     let captureError = "";
+    let autoCaptured = false;
 
     async function captureOnce() {
       try {
@@ -67,9 +68,62 @@ export default {
       if (watching) timer = setTimeout(() => watchLoop(generation), 1000 / fps);
     }
 
-    /** @param {{ icon?: string, title: string, text?: string, command?: string, retry?: boolean }} options */
-    function showMessage({ icon: name, title, text, command, retry }) {
-      const action = retry ? h("button", { type: "button", class: "button", onClick: () => captureOnce() }, icon("camera"), "Capture frame") : undefined;
+    /** Games the Studio can run, so the empty state can offer the one-click action instead of a command. */
+    /** @type {{ games: import("../web/types").GameEntry[], runs: import("../web/types").GameRun[] }} */
+    let launch = { games: [], runs: [] };
+    let launchTimer = 0;
+    let launchError = "";
+    let disposed = false;
+
+    async function pollLaunch() {
+      clearTimeout(launchTimer);
+      if (disposed || studio.session) return;
+      try {
+        const next = await studio.launcher.list();
+        const changed = JSON.stringify([next.games, next.runs.map((r) => [r.id, r.state, r.detail])]) !== JSON.stringify([launch.games, launch.runs.map((r) => [r.id, r.state, r.detail])]);
+        launch = next;
+        if (changed && !studio.session) render();
+      } catch {
+        // The Games panel reports a failing launcher; here the empty state just keeps its plain text.
+      }
+      launchTimer = window.setTimeout(pollLaunch, launch.runs.some((r) => r.state === "building" || r.state === "starting") ? 700 : 3000);
+    }
+
+    /** The empty state with no game attached: starting, or the one game to run. */
+    function showNoGame() {
+      const starting = launch.runs.find((r) => r.state === "building" || r.state === "starting");
+      if (starting) {
+        showMessage({ icon: "monitor", title: `Starting ${starting.name}`, text: starting.detail || "Building…" });
+        return;
+      }
+      const game = launch.games.find((g) => g.bridge && g.name === "LanternRun") ?? launch.games.find((g) => g.bridge);
+      if (!game) {
+        showMessage({ icon: "unplug", title: "No game running", text: "Start a development build and it connects here." });
+        return;
+      }
+      const run = h("button", {
+        type: "button", class: "button primary", "aria-label": `Run ${game.name}`,
+        onClick: async () => {
+          launchError = "";
+          try {
+            await studio.launcher.start(game.id);
+          } catch (error) {
+            launchError = error instanceof Error ? error.message : String(error);
+          }
+          pollLaunch();
+          render();
+        },
+      }, icon("play"), `Run ${game.name}`);
+      showMessage({
+        icon: "unplug", title: "No game running",
+        text: launchError || (launch.games.length > 1 ? "Run a game, or choose another in Games." : "Run a game and it connects here."),
+        action: run,
+      });
+    }
+
+    /** @param {{ icon?: string, title: string, text?: string, command?: string, retry?: boolean, action?: HTMLElement }} options */
+    function showMessage({ icon: name, title, text, command, retry, action: given }) {
+      const action = given ?? (retry ? h("button", { type: "button", class: "button", onClick: () => captureOnce() }, icon("camera"), "Capture frame") : undefined);
       message.replaceChildren(emptyState({ icon: name ? icon(name) : undefined, title, text, command, action }));
       screen.replaceChildren(message);
     }
@@ -80,8 +134,9 @@ export default {
       watchButton.toggleAttribute("disabled", !studio.session);
       playButton.toggleAttribute("disabled", !studio.session);
       if (!studio.session) {
-        showMessage({ icon: "unplug", title: "No game running", text: "Start a development build and it connects here.", command: "dotnet run --project samples/LanternRun/Desktop" });
+        showNoGame();
         caption.textContent = "";
+        if (!launchTimer) pollLaunch();
         return;
       }
       if (studio.status && !studio.status.capture) {
@@ -93,6 +148,11 @@ export default {
         return;
       }
       if (!frame) {
+        // The first frame of a newly attached game is read once on its own; later ones are the person's call.
+        if (!autoCaptured) {
+          autoCaptured = true;
+          captureOnce();
+        }
         showMessage({ icon: "monitor", title: "No frame yet", text: "Capture reads the real frame from the running game.", retry: true });
         caption.textContent = "";
         return;
@@ -220,13 +280,17 @@ export default {
       clearTimeout(timer);
       lastTick = -1;
       captureError = "";
+      autoCaptured = false;
       render();
       if (watching) watchLoop();
+      if (!studio.session) pollLaunch();
     });
     studio.on("status", render);
     render();
 
     return () => {
+      disposed = true;
+      clearTimeout(launchTimer);
       watching = false;
       watchGeneration++;
       clearTimeout(timer);

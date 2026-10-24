@@ -7,8 +7,8 @@ import { emptyState } from "../web/dom.js";
 const ACTIVE = new Set(["building", "starting", "running", "reloading", "stopping"]);
 
 /**
- * Games: the ones the Studio can run from this repository (Run, Reload, Stop), and the development builds that are
- * running (each writes ~/.ukiyo/live/<pid>.json). The newest running build is followed unless the person pins one.
+ * Games: the ones the Studio can run from this repository (Run, Reload, Stop). When several development builds are
+ * attached (each writes ~/.ukiyo/live/<pid>.json) the newest is followed unless the person pins one.
  * @type {PanelModule}
  */
 export default {
@@ -59,43 +59,43 @@ export default {
       const run = runOf(game.id);
       const active = run && ACTIVE.has(run.state) ? run : null;
       const busy = active !== null && active.state !== "running";
-      const buttons = h("span", { class: "row" });
+      const actions = h("span", { class: "game-actions" });
       if (!active) {
-        buttons.append(h("button", {
+        actions.append(h("button", {
           type: "button", class: "button", "aria-label": `Run ${game.name}`, disabled: !game.bridge,
           onClick: () => act(() => studio.launcher.start(game.id)),
         }, icon("play"), "Run"));
       } else {
-        buttons.append(
+        actions.append(
           h("button", {
-            type: "button", class: "button", "aria-label": `Reload ${game.name} at the same tick`, disabled: busy,
+            type: "button", class: "icon-button", "aria-label": `Reload ${game.name} at the same tick`, title: "Reload at the same tick", disabled: busy,
             onClick: () => act(() => studio.launcher.reload(active.id)),
-          }, icon("refresh-cw"), "Reload"),
+          }, icon("refresh-cw")),
           h("button", {
             type: "button", class: "button", "aria-label": `Stop ${game.name}`, disabled: active.state === "stopping",
             onClick: () => act(() => studio.launcher.stop(active.id)),
           }, icon("x"), "Stop"));
       }
 
+      const tag = active
+        ? h("span", { class: "game-state", dataset: { state: active.state }, text: active.state[0].toUpperCase() + active.state.slice(1) })
+        : h("span", { class: "game-tag", text: game.kind });
       const lines = [];
       if (run) {
-        const summary = run.state === "failed" ? run.detail
-          : active ? (run.state === "running" && run.reload ? "" : `${run.state}: ${run.detail}`)
-          : run.reload ? "" : run.state === "stopped" ? "Stopped" : "";
-        if (summary) lines.push(h("p", { class: "muted", text: summary }));
+        if (active && run.state !== "running" && run.detail) lines.push(h("p", { class: "game-note", text: run.detail }));
+        else if (!active && run.state === "failed") lines.push(h("p", { class: "game-note", text: run.detail || "Failed" }));
         const reload = reloadSummary(run);
-        if (reload) lines.push(h("p", { class: run.reload && !run.reload.ok ? "panel-error" : "muted", text: reload }));
+        if (reload) lines.push(h("p", { class: run.reload && !run.reload.ok ? "game-note panel-error" : "game-note", text: reload }));
         const problems = run.state === "failed" ? (run.errors.length ? run.errors : run.output.slice(-8)) : run.reload && !run.reload.ok ? run.reload.errors ?? [] : [];
-        if (problems.length) lines.push(h("pre", { class: "script mono", role: "alert", "aria-label": `${game.name} errors`, text: problems.join("\n") }));
+        if (problems.length) lines.push(h("pre", { class: "script mono game-errors", role: "alert", "aria-label": `${game.name} errors`, text: problems.slice(-6).join("\n") }));
       } else if (!game.bridge) {
-        lines.push(h("p", { class: "muted", text: "No dev bridge in this host, so the Studio could not attach." }));
+        lines.push(h("p", { class: "game-note", text: "No dev bridge in this host, so the Studio could not attach." }));
       }
 
-      return h("li", null,
-        h("div", { class: "row" },
-          h("span", { class: "session-game", text: game.name }),
-          h("span", { class: "mono muted", text: game.kind }),
-          buttons),
+      return h("li", { class: "game-row" },
+        h("div", { class: "game-line" },
+          h("span", { class: "game-id" }, h("span", { class: "session-game", text: game.name }), tag),
+          actions),
         ...lines);
     }
 
@@ -110,25 +110,12 @@ export default {
       root.replaceChildren();
 
       if (loadError) root.append(h("p", { class: "panel-error", role: "alert", text: loadError }));
-      if (games.length > 0) {
-        root.append(h("p", { class: "muted", text: "Run" }), h("ul", { class: "session-list", role: "list" }, ...games.map(gameRow)));
-      }
+      if (games.length > 0) root.append(h("ul", { class: "session-list games-list", role: "list" }, ...games.map(gameRow)));
+      else if (!loadError) root.append(emptyState({ title: "No games found", text: "Games under games/ and samples/ with a desktop host show up here." }));
 
-      root.append(h("p", { class: "muted", text: "Running" }));
-      if (sessions.length === 0) {
-        const first = games.find((g) => g.bridge && !runOf(g.id)?.state.match(/^(building|starting|running|reloading|stopping)$/));
-        root.append(first
-          ? emptyState({
-            title: "No game running",
-            text: "Run one and it appears here.",
-            action: h("button", {
-              type: "button", class: "button", "aria-label": `Run ${first.name}`,
-              onClick: () => act(() => studio.launcher.start(first.id)),
-            }, icon("play"), `Run ${first.name}`),
-          })
-          : emptyState({ title: "No game running", text: "Start a development build and it appears here.", command: "dotnet run --project samples/LanternRun/Desktop" }));
-      } else {
-        const list = h("ul", { class: "session-list", role: "list" });
+      // Several builds can announce themselves; only then is there something to choose.
+      if (sessions.length > 1) {
+        const list = h("ul", { class: "session-list", role: "list", "aria-label": "Attached builds" });
         for (const session of sessions) {
           const current = studio.session?.pid === session.pid;
           const started = new Date(session.startedAt);
@@ -143,7 +130,7 @@ export default {
             h("span", { class: "session-game", text: session.game }),
             h("span", { class: "mono muted", text: `${session.target} · pid ${session.pid} · ${started.toLocaleTimeString()}` }))));
         }
-        root.append(list, h("p", { class: "muted", text: "Selecting a game pins it; select it again to follow the newest build." }));
+        root.append(h("p", { class: "section-label", text: "Attached builds" }), list, h("p", { class: "muted", text: "Select a build to pin it; select it again to follow the newest." }));
       }
 
       if (focusKey) {
