@@ -76,6 +76,9 @@ button, input, select, textarea { font: inherit; color: inherit; }
   border-bottom: 1px solid var(--line);
 }
 
+/* Hosted by the Mac app (apps/mac): the page draws behind a transparent titlebar, so keep clear of the window buttons. */
+html[data-host="mac"] .topbar { padding-left: 84px; }
+
 .brand { display: flex; align-items: center; gap: 10px; }
 .mark {
   width: 22px; height: 20px; background: var(--fg);
