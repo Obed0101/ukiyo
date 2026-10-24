@@ -19,7 +19,7 @@ const HIDDEN_INTERVAL_MS = 1000;
 const SESSIONS_INTERVAL_MS = 2000;
 const CACHE_KEY = "ukiyo.studio.cache.v1";
 const PIN_KEY = "ukiyo.studio.session";
-const LAYOUT_ORDER = ["simple", "balanced", "complete"];
+const LAYOUT_ORDER = ["simple", "focus", "balanced", "wide", "complete"];
 
 const token = document.querySelector('meta[name="ukiyo-studio-token"]')?.getAttribute("content") ?? "";
 const api = createApi(token);
@@ -275,6 +275,8 @@ function mountPanel(id, section) {
   const titleId = `panel-title-${id}`;
   section.setAttribute("aria-labelledby", titleId);
   section.dataset.version = String(modules.get(id)?.version ?? "");
+  if (module?.chrome === "bare") section.dataset.chrome = "bare";
+  else delete section.dataset.chrome;
   append(header, module ? icon(safeIcon(module.icon)) : icon("x"), h("h2", { id: titleId, text: module?.title ?? id }), actions);
   append(section, header, body);
 
@@ -441,7 +443,9 @@ function reload() {
 async function applyManifest() {
   const manifest = await api.get("/api/manifest");
   state.manifest = manifest;
-  state.fileError = null;
+  // A broken file in the person's own config is skipped by the server; say so instead of failing silently.
+  state.fileError = manifest.problems?.length ? manifest.problems.map((/** @type {{ layer: string, message: string }} */ p) => `[${p.layer}] ${p.message}`).join("; ") : null;
+  document.getElementById("user-css")?.setAttribute("href", `/user.css?v=${manifest.userCss ?? 0}`);
   const { composition, layouts } = manifest;
   const shape = JSON.stringify({ layout: layouts[composition.layout], composition: { ...composition, theme: undefined, auto: undefined } });
   applyTheme();
@@ -474,25 +478,30 @@ const chrome = {
 
 function renderChrome() {
   const { session, status } = state;
-  chrome.game.textContent = session ? session.game : "No game connected";
+  chrome.game.textContent = session ? session.game : "No game";
+  chrome.game.toggleAttribute("data-empty", !session);
   chrome.game.title = session ? `${session.game} · ${session.target} · pid ${session.pid}` : "";
 
   const live = Boolean(session && status && !status.paused);
-  const label = !state.serverOnline ? "Studio server offline" : !session ? "Waiting for a dev build" : !status ? "Connecting" : status.paused ? "Paused" : "Running";
+  const label = !state.serverOnline ? "Studio offline" : !session ? "Waiting for a game" : !status ? "Connecting" : status.paused ? "Paused" : "Running";
   chrome.state.dataset.state = !state.serverOnline ? "offline" : !session || !status ? "idle" : live ? "live" : "paused";
   chrome.state.textContent = label;
   chrome.tick.textContent = status ? String(status.tick) : "—";
+  chrome.tick.parentElement?.toggleAttribute("data-idle", !status);
 
   if (state.manifest) renderLayoutSwitch();
 
+  // Essentials only: what is rendering and at what size, a warning when ticks were dropped, bridge latency on the right.
   const items = [];
   if (status) {
-    items.push(`${status.renderer} · ${status.backend}`, `${status.width}×${status.height}`, `dropped ${status.droppedTicks}`);
+    items.push(h("span", { text: `${status.backend} · ${status.width}×${status.height}`, title: status.renderer }));
+    if (status.droppedTicks > 0) items.push(h("span", { class: "statusbar-warn", text: `${status.droppedTicks} ticks dropped` }));
+  } else {
+    items.push(h("span", { text: session ? "Connecting to the game" : "No game connected" }));
   }
-  if (state.bridgeMs !== null && session) items.push(`bridge ${state.bridgeMs} ms`);
-  if (state.manifest) items.push(`layout ${state.manifest.composition.layout} · theme ${state.themeName} · studio/studio.json`);
+  if (state.bridgeMs !== null && session) items.push(h("span", { class: "push", text: `${state.bridgeMs} ms`, title: "Bridge round trip" }));
   clear(chrome.statusbar);
-  for (const item of items) chrome.statusbar.append(h("span", { text: item }));
+  for (const item of items) chrome.statusbar.append(item);
   if (state.fileError) chrome.statusbar.append(h("span", { class: "statusbar-error", role: "alert", text: state.fileError }));
 }
 
@@ -519,9 +528,9 @@ function renderLayoutSwitch() {
   }
 
   clear(chrome.theme);
-  chrome.theme.append(h("option", { value: "auto", text: "Theme: system", selected: composition.theme === "auto" }));
+  chrome.theme.append(h("option", { value: "auto", text: "System", selected: composition.theme === "auto" }));
   for (const name of Object.keys(themes).sort()) {
-    chrome.theme.append(h("option", { value: name, text: `Theme: ${name}`, selected: composition.theme === name }));
+    chrome.theme.append(h("option", { value: name, text: name[0].toUpperCase() + name.slice(1), selected: composition.theme === name }));
   }
 }
 
@@ -537,7 +546,7 @@ chrome.theme.addEventListener("change", () => compose({ theme: chrome.theme.valu
 function showNotice(notice) {
   const close = h("button", { type: "button", class: "icon-button", "aria-label": "Dismiss" }, icon("x"));
   const card = h("div", { class: "notice", dataset: { level: notice.level }, role: notice.level === "error" ? "alert" : "status" },
-    h("span", { class: "notice-from" }, icon("send", { size: 14 }), notice.from),
+    h("span", { class: "notice-from" }, icon("send"), notice.from),
     h("p", { text: notice.text }),
     close);
   const dismiss = () => card.remove();

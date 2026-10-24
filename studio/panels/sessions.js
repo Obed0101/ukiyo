@@ -2,6 +2,7 @@
 /** @typedef {import("../web/types").PanelModule} PanelModule */
 /** @typedef {import("../web/types").GameEntry} GameEntry */
 /** @typedef {import("../web/types").GameRun} GameRun */
+import { emptyState } from "../web/dom.js";
 
 const ACTIVE = new Set(["building", "starting", "running", "reloading", "stopping"]);
 
@@ -113,9 +114,17 @@ export default {
 
       root.append(h("p", { class: "muted", text: "Running" }));
       if (sessions.length === 0) {
-        root.append(h("p", { class: "empty" },
-          games.length > 0 ? "Nothing is running. Run a game above; it appears here once it has started." : "No development build is running. Start one and it appears here within two seconds: ",
-          games.length > 0 ? "" : h("code", { text: "dotnet run --project samples/LanternRun/Desktop" })));
+        const first = games.find((g) => g.bridge && !runOf(g.id)?.state.match(/^(building|starting|running|reloading|stopping)$/));
+        root.append(first
+          ? emptyState({
+            title: "No game running",
+            text: "Run one and it appears here.",
+            action: h("button", {
+              type: "button", class: "button", "aria-label": `Run ${first.name}`,
+              onClick: () => act(() => studio.launcher.start(first.id)),
+            }, icon("play"), `Run ${first.name}`),
+          })
+          : emptyState({ title: "No game running", text: "Start a development build and it appears here.", command: "dotnet run --project samples/LanternRun/Desktop" }));
       } else {
         const list = h("ul", { class: "session-list", role: "list" });
         for (const session of sessions) {

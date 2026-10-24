@@ -120,6 +120,8 @@ export type PanelModule = {
   /** Name from studio/web/icons.js. */
   icon: string;
   description: string;
+  /** "bare" drops the visible header (a toolbar such as Transport); the title stays for assistive tech. */
+  chrome?: "bare";
   /** Builds the panel inside root. Returns a cleanup that undoes timers and listeners not registered through studio.on. */
   mount(root: HTMLElement, studio: Studio): void | (() => void);
 };

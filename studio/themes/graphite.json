@@ -1,0 +1,30 @@
+{
+  "description": "Neutral graphite dark with a calm blue accent.",
+  "colorScheme": "dark",
+  "tokens": {
+    "bg": "#16181b",
+    "panel": "#1c1f23",
+    "panel-raised": "#23272c",
+    "line": "#2b3036",
+    "line-strong": "#3a4048",
+    "fg": "#e6e8eb",
+    "muted": "#a6adb6",
+    "subtle": "#8e96a0",
+    "accent": "#6aa7e8",
+    "accent-fg": "#0f1317",
+    "ok": "#62c98f",
+    "warn": "#e2ae4c",
+    "danger": "#f2817a",
+    "screen": "#0c0d0f",
+    "screen-fg": "#e6e8eb",
+    "screen-muted": "#9aa0a8",
+    "screen-line": "#262a2f",
+    "selection": "#e6e8eb",
+    "selection-fg": "#16181b",
+    "radius-control": "6px",
+    "radius-panel": "10px",
+    "font-sans": "\"Geist\", ui-sans-serif, system-ui, sans-serif",
+    "font-mono": "\"Geist Mono\", ui-monospace, monospace",
+    "font-pixel": "\"Geist Pixel Square\", \"Geist Mono\", ui-monospace, monospace"
+  }
+}

@@ -29,12 +29,33 @@ the same files or call `ukiyo_studio compose`. Either way it is one file, visibl
 The panel contract and the `studio` object every panel receives are typed in `web/types.d.ts`. Panels talk to the
 game only through `studio.call` / `studio.control` / `studio.capture`, never to the server directly.
 
+## Your own config (the rice)
+
+Your dotfiles layer over the repo without forking it. The directory is `$UKIYO_STUDIO_CONFIG`, else
+`$XDG_CONFIG_HOME/ukiyo/studio`, else `~/.config/ukiyo/studio`, with the same shape as `studio/`:
+`studio.json`, `themes/`, `layouts/`, `panels/` and an optional `user.css` (loaded after `web/studio.css`).
+
+- A user file replaces the repo file of the same name; new names are added. User `studio.json` fields override the
+  repo's (`hide`/`show` replace, `auto` and each panel's options merge). A user theme may say `"extends": "ink"` and
+  list only the tokens it changes.
+- Everything live-reloads, including a config directory created while the Studio runs. Theme colors are set inline by
+  the active theme, so recolor with a theme, not `user.css`; `user.css` is for everything else.
+- A broken user file never stops the Studio: it is skipped (the repo file of that name stays in effect), shown in the
+  status bar and reported by `ukiyo_studio list`/`check` as `[user] …`. A broken repo file is `[repo] …` and fatal, as before.
+- Where compose writes: the person's own UI (layout switch, theme menu) writes the user `studio.json`, creating it, so
+  the repo stays clean. `ukiyo_studio compose` writes the user `studio.json` when it exists (a repo write would be
+  shadowed by it), otherwise the repo's, as before; `target: "user" | "repo"` forces one. The reply names the file.
+
+Start from [`examples/rice/`](examples/rice): `cp -R studio/examples/rice ~/.config/ukiyo/studio`. Shipped extras:
+themes `graphite`, `contrast`, `linen` (all text at least 4.5:1, checked in `test/studio.test.ts`), layouts `focus`
+and `wide`. Layering lives in `src/layers.ts`.
+
 ## What agents get
 
 - `ukiyo_studio view`: what the person is looking at — layout, theme, focused panel, selected entity and its pose,
   tick, paused, whether they are watching or playing, panel load errors.
 - `ukiyo_studio notify`: a message shown to the person in the Studio.
-- `ukiyo_studio compose | list | check`: composition changes and validation of every Studio file.
+- `ukiyo_studio compose | list | check`: composition changes and validation of every Studio file in both layers; `list` tags each panel, layout and theme `repo` or `user`.
 - The `ukiyo-studio` skill explains how to change panels, themes and layouts.
 
 ## Security
@@ -52,3 +73,6 @@ ticking number. The game frame is a dark screen in every theme, scaled with near
 choreography; presses scale to 0.96; notices rise 8 px in 200 ms; reduced motion keeps only opacity. Below 900 px
 panels stack in the layout's reading order. Fonts come from `site/node_modules/geist` when installed, otherwise
 system fonts.
+
+**Mac app**: `scripts/mac-app.sh` installs the Studio as `/Applications/Ukiyo.app` (native window, starts and stops the
+server itself); see [apps/mac](../apps/mac/README.md).

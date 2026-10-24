@@ -6,12 +6,13 @@
 //   bun studio/src/server.ts            → http://127.0.0.1:4100
 //   UKIYO_STUDIO_PORT=4200              (0 = any free port)
 import { randomBytes } from "node:crypto";
-import { existsSync, rmSync, watch, type FSWatcher } from "node:fs";
+import { existsSync, rmSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { BRIDGE_COMMANDS, bridgeRequest, liveSessions, publicSessions } from "../../tools/mcp/src/bridge.ts";
 import { writeDiscovery } from "./discovery.ts";
 import { MAX_BODY_BYTES, SECURITY_HEADERS, refuse, safeName } from "./guard.ts";
-import { STUDIO_DIR, StudioFileError, readManifest, writeComposition, type CompositionPatch } from "./manifest.ts";
+import { readLayeredManifest, resolvePanel, problemText, userConfigDir, watchLayers, writeLayeredComposition, type CompositionTarget } from "./layers.ts";
+import { STUDIO_DIR, StudioFileError, type CompositionPatch } from "./manifest.ts";
 import { Launcher } from "./launcher.ts";
 import { runRoutes } from "./run-routes.ts";
 
@@ -107,22 +108,20 @@ function events(): Response {
 
 // ── file watching: editing a panel, layout, theme or studio.json updates every open page ─────────────────────────────
 
-const watchers: FSWatcher[] = [];
 let pending = new Set<string>();
 let flush: ReturnType<typeof setTimeout> | undefined;
 
-function changed(where: string, name: string | null) {
-  if (!name || name.endsWith(".tmp") || name.startsWith(".")) return;
-  if (where === "." && name !== "studio.json") return;
-  pending.add(where === "." ? name : `${where}/${name}`);
+function changed(label: string) {
+  pending.add(label);
   clearTimeout(flush);
   flush = setTimeout(() => {
     const files = [...pending].sort();
     pending = new Set();
     try {
-      readManifest();
-      broadcast("manifest", { files });
+      const { problems } = readLayeredManifest();
+      broadcast("manifest", { files, problems: problems.map(problemText) });
       log("info", "studio.files.changed", { files });
+      for (const problem of problems) log("warn", "studio.files.user-invalid", { error: problemText(problem) });
     } catch (error) {
       // A half-written or invalid file: tell the page (and the agent reading the log) instead of applying it.
       const message = error instanceof Error ? error.message : String(error);
@@ -132,10 +131,7 @@ function changed(where: string, name: string | null) {
   }, 120);
 }
 
-for (const where of [".", "panels", "layouts", "themes"]) {
-  const directory = join(STUDIO_DIR, where);
-  if (existsSync(directory)) watchers.push(watch(directory, (_event, name) => changed(where, name)));
-}
+const stopWatching = watchLayers({}, changed);
 
 /** Runs and reloads the games listed by GET /api/games; stops what it started when the Studio exits. */
 const launcher = new Launcher({ repoRoot: REPO_ROOT, sessions: liveSessions, bridge: bridgeRequest });
@@ -180,7 +176,12 @@ async function route(request: Request, url: URL): Promise<Response> {
   }
   if (get && pathname.startsWith("/panels/")) {
     const name = pathname.slice(8);
-    return safeName(name) && name.endsWith(".js") ? file(join(STUDIO_DIR, "panels", name)) : fail(404, "not found");
+    const panel = safeName(name) && name.endsWith(".js") ? resolvePanel(name.slice(0, -3)) : null;
+    return panel ? file(panel.path) : fail(404, "not found");
+  }
+  if (get && pathname === "/user.css") {
+    const css = join(userConfigDir(), "user.css");
+    return existsSync(css) ? file(css) : new Response("", { headers: { "content-type": MIME[".css"]!, "cache-control": "no-cache", ...SECURITY_HEADERS } });
   }
   if (get && pathname.startsWith("/fonts/")) {
     const relative = FONTS[pathname.slice(7)];
@@ -197,7 +198,7 @@ async function route(request: Request, url: URL): Promise<Response> {
       return json({ ok: true, version: VERSION, pages: streams.size });
     case "GET /api/manifest":
       try {
-        return json(readManifest());
+        return json(readLayeredManifest());
       } catch (error) {
         return fail(error instanceof StudioFileError ? 422 : 500, error instanceof Error ? error.message : String(error));
       }
@@ -215,11 +216,12 @@ async function route(request: Request, url: URL): Promise<Response> {
       return json({ ok: true });
     }
     case "POST /api/composition": {
-      const patch = (await body(request)) as CompositionPatch;
+      const { target, ...patch } = (await body(request)) as CompositionPatch & { target?: CompositionTarget };
       try {
-        const composition = writeComposition(patch);
-        log("info", "studio.composition.written", { patch });
-        return json({ composition });
+        // The person's UI: their dotfiles when they have a user studio.json (or none yet), see layers.ts.
+        const written = writeLayeredComposition(patch, { from: "ui", target });
+        log("info", "studio.composition.written", { patch, target: written.target });
+        return json(written);
       } catch (error) {
         return fail(error instanceof StudioFileError ? 422 : 500, error instanceof Error ? error.message : String(error));
       }
@@ -276,7 +278,7 @@ log("info", "studio.ready", { url, discovery });
 process.stdout.write(`ukiyo Studio → ${url}\n`);
 
 async function shutdown() {
-  for (const watcher of watchers) watcher.close();
+  stopWatching();
   rmSync(discovery, { force: true });
   server.stop(true);
   await launcher.stopAll();
