@@ -2,38 +2,9 @@ import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import { dotnetCommand, listGames, runProcess, type GameInfo } from "../engine.ts";
 import { declaredProfile, sceneRegistry, sharedSourceLines } from "../game-source.ts";
-import { assertSpecInsideRoot, findSpecs, importerAssemblyPath, importerBuildState, runImporter } from "../importer.ts";
+import { checkImports, findSpecs } from "../importer.ts";
 import { text, type Tool } from "../protocol.ts";
 import { liveSessions } from "../bridge.ts";
-
-type SpecCheck = { spec: string; status: string; outputs: { output: string; contentHash: string | null }[]; code?: string; message?: string };
-type ImportCheck = { ran: true; basis: string; results: SpecCheck[] } | { ran: false; reason: string };
-
-/** `--check` on every spec of every game, with an importer build that is already current; never builds. */
-async function checkImports(root: string, specsByGame: Map<string, string[]>, signal: AbortSignal): Promise<Map<string, ImportCheck>> {
-  const checks = new Map<string, ImportCheck>();
-  if (specsByGame.size === 0) return checks;
-  const state = importerBuildState(root, await importerAssemblyPath(root, { signal, timeoutMs: 30_000 }).catch(() => null));
-  for (const [game, specs] of specsByGame) {
-    if (!state.built) {
-      checks.set(game, { ran: false, reason: `not checked: ${state.reason}; ukiyo_import {"action":"check","game":"${game}"} builds it and checks` });
-      continue;
-    }
-    const results: SpecCheck[] = [];
-    for (const spec of specs) {
-      try {
-        assertSpecInsideRoot(root, spec);
-      } catch (error) {
-        results.push({ spec: relative(root, spec), status: "error", outputs: [], code: "OutsideRepository", message: error instanceof Error ? error.message : String(error) });
-        continue;
-      }
-      const r = await runImporter(root, state.dll, spec, true, { signal, timeoutMs: 30_000 });
-      results.push({ spec: r.spec, status: r.status, outputs: r.outputs.map(({ output, contentHash }) => ({ output, contentHash })), ...(r.error ? { code: r.error.code, message: r.error.message } : {}) });
-    }
-    checks.set(game, { ran: true, basis: `importer --check with the existing build ${relative(root, state.dll)} (newer than its sources)`, results });
-  }
-  return checks;
-}
 
 function sourceFacts(root: string, game: GameInfo) {
   const lines = sharedSourceLines(root, game.dir);

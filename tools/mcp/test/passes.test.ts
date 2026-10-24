@@ -123,7 +123,12 @@ describe("ukiyo_live capture with pass", () => {
     expect(liveRequest(validate(live.inputSchema, { action: "capture", pass: 0 }) as Record<string, unknown>)).toEqual({ cmd: "capture", pass: 0 });
   });
 
-  test.each([[-1, ">= 0"], [1.5, "must be an integer"], ["primary", "must be a finite number"]])("the schema refuses pass %j", (pass, message) => {
+  test('pass "primary" is forwarded as the bridge understands it', () => {
+    expect(liveRequest(validate(live.inputSchema, { action: "capture", pass: "primary" }) as Record<string, unknown>)).toEqual({ cmd: "capture", pass: "primary" });
+    expect(parseArgs(["live", "capture", "--pass", "primary", "--out", "m.png"]).request).toEqual({ cmd: "capture", pass: "primary" });
+  });
+
+  test.each([[-1, "none of its allowed forms"], [1.5, "must be an integer"], ["second", "must be one of primary"], [true, "none of its allowed forms"]])("the schema refuses pass %j", (pass, message) => {
     expect(() => validate(live.inputSchema, { action: "capture", pass })).toThrow(message);
   });
 
@@ -158,7 +163,7 @@ describe("through a dev bridge on a socket (a fake game answering like DevBridge
     server = createServer((socket) => socket.once("data", (chunk) => {
       const request = JSON.parse(String(chunk)) as Record<string, unknown>;
       requests.push(request);
-      const pass = request.pass as number | undefined;
+      const pass = request.pass === "primary" ? 0 : (request.pass as number | undefined);
       const answer = pass === undefined ? { ok: true, result: { tick: 60, width: 960, height: 640, backend: "Metal", png: PNG_1x1 } }
         : pass >= 2 ? { ok: false, error: OUT_OF_RANGE }
           : { ok: true, result: { tick: 60, width: 217, height: 217, backend: "Metal", pass, passes: 2, primaryPass: 0, png: PNG_1x1 } };
@@ -194,6 +199,11 @@ describe("through a dev bridge on a socket (a fake game answering like DevBridge
         structured: { tick: 60, width: 217, height: 217, backend: "Metal", pass: 1, passes: 2, primaryPass: 0 },
       });
       expect(requests.at(-1)).toMatchObject({ cmd: "capture", pass: 1 });
+
+      const primary = JSON.parse((await toolCall({ action: "capture", pass: "primary" })).stdout);
+      expect(requests.at(-1)).toMatchObject({ cmd: "capture", pass: "primary" });
+      expect(primary).toMatchObject({ isError: false, structured: { pass: 0, passes: 2, primaryPass: 0 } });
+      expect(primary.text).toContain("pass 0 of 2 (primary)");
 
       const whole = JSON.parse((await toolCall({ action: "capture" })).stdout);
       expect(whole.structured).toEqual({ tick: 60, width: 960, height: 640, backend: "Metal" });

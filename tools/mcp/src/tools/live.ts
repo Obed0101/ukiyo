@@ -40,7 +40,7 @@ const live: Tool = {
   name: "ukiyo_live",
   title: "Drive a running game",
   description:
-    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K only camera K of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick). Pass pid when several games run; default is the newest.",
+    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K (or pass=primary, the game's view pass) only that camera of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick). Pass pid when several games run; default is the newest.",
   inputSchema: {
     type: "object",
     required: ["action"],
@@ -51,7 +51,10 @@ const live: Tool = {
       ticks: { type: "integer", minimum: 0, maximum: 36_000, default: 1 },
       events: { type: "array", items: inputEventSchema, maxItems: 1000 },
       on: { type: "boolean" },
-      pass: { type: "integer", minimum: 0, description: "capture action: one pass (camera) id of a multi-camera frame; omitted, the whole composed frame." },
+      pass: {
+        anyOf: [{ type: "integer", minimum: 0 }, { type: "string", enum: ["primary"] }],
+        description: 'capture action: one pass (camera) of a multi-camera frame, by id or "primary" (the pass the game marks as its view); omitted, the whole composed frame.',
+      },
       patch: { ...patchSchema, description: "patch action: one scene patch (docs/scenes-patches.md); tick must be the current tick or later." },
     },
   },

@@ -26,7 +26,8 @@ const root = findRepoRoot(process.env.UKIYO_ROOT ?? here);
 const INSTRUCTIONS = `ukiyo is an agent-native C# game engine. The game is code: edit files under games/<Name>/Shared (or samples/), then prove the change.
 Loop: ukiyo_status → edit code → ukiyo_run (snapshots at ticks, scripted input) → ukiyo_capture (real frames from the CPU renderer) → ukiyo_test.
 ukiyo_status shows per game its render profile (G1Lit = lit 3D, declared by IGame.Profile), whether it uses a SceneRegistry (snapshots then carry "scene") and whether its imported assets are stale.
-Assets: source art + *.import.json → Shared/gen/*.g.cs via ukiyo_import (check reports stale files, run regenerates); rebuild the game afterwards.
+Assets: source art + *.import.json → Shared/gen/*.g.cs via ukiyo_import (check reports stale files, run regenerates); rebuild the game afterwards. ukiyo_import check with no game or specs checks every spec in the repository.
+ukiyo_check verifies a game follows the layout contract (docs/game-layout.md): entries, host projects, no #if in Shared/, Program.cs shape, assets not stale, golden present.
 A running desktop build exposes a dev bridge: ukiyo_live pauses, steps, captures and injects input into it.
 Scene patches (games with a SceneRegistry, docs/scenes-patches.md): ukiyo_run {"patches":[…]} replays a patch log headless and reports applied/rejected; ukiyo_live patch submits one to a running game.
 Sprites: ukiyo_sprite_generate (image model → pixel-art PNG + atlas in Shared/assets), ukiyo_sprite_process, ukiyo_sprite_sheet.
