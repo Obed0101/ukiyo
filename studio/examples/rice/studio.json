@@ -1,0 +1,8 @@
+{
+  "$comment": "Your Studio, over the repo defaults. Only list what you change; everything else comes from the repo's studio/studio.json.",
+  "layout": "rice",
+  "theme": "auto",
+  "auto": { "dark": "midnight", "light": "linen" },
+  "panels": { "clock": { "format": "24h" } },
+  "show": ["clock"]
+}
