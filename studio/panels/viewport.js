@@ -74,7 +74,6 @@ export default {
     /** @type {{ games: import("../web/types").GameEntry[], runs: import("../web/types").GameRun[] }} */
     let launch = { games: [], runs: [] };
     let launchTimer = 0;
-    let launchError = "";
     let disposed = false;
 
     async function pollLaunch() {
@@ -91,35 +90,18 @@ export default {
       launchTimer = window.setTimeout(pollLaunch, launch.runs.some((r) => r.state === "building" || r.state === "starting") ? 700 : 3000);
     }
 
-    /** The empty state with no game attached: starting, or the one game to run. */
+    /** The empty state with no game attached: starting, or a pointer to the header's Run (the screen's one primary action). */
     function showNoGame() {
       const starting = launch.runs.find((r) => r.state === "building" || r.state === "starting");
       if (starting) {
         showMessage({ icon: "monitor", title: `Starting ${starting.name}`, text: starting.detail || "Building…" });
         return;
       }
-      const game = launch.games.find((g) => g.bridge && g.name === "LanternRun") ?? launch.games.find((g) => g.bridge);
-      if (!game) {
-        showMessage({ icon: "unplug", title: "No game running", text: "Start a development build and it connects here." });
-        return;
-      }
-      const run = h("button", {
-        type: "button", class: "button primary", "aria-label": `Run ${game.name}`,
-        onClick: async () => {
-          launchError = "";
-          try {
-            await studio.launcher.start(game.id);
-          } catch (error) {
-            launchError = error instanceof Error ? error.message : String(error);
-          }
-          pollLaunch();
-          render();
-        },
-      }, icon("play"), `Run ${game.name}`);
+      const name = studio.project?.name;
+      const runnable = name ? launch.games.some((g) => g.bridge && g.name === name) : false;
       showMessage({
-        icon: "unplug", title: "No game running",
-        text: launchError || (launch.games.length > 1 ? "Run a game, or choose another in Games." : "Run a game and it connects here."),
-        action: run,
+        icon: "unplug", title: "Not running",
+        text: runnable ? `Press Run to start ${name}.` : "Start a development build and it connects here.",
       });
     }
 

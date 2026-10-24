@@ -55,9 +55,6 @@ export type SceneSnapshot = {
   rejected: { id: string; tick: number; code?: string; message?: string }[];
 };
 
-/** The project the Studio is working on (set by the hub); null before one is chosen. */
-export type StudioProject = { name: string; dir: string; kind: string };
-
 /** A real frame read back from the game's renderer (GPU on desktop). */
 export type Frame = { tick: number; width: number; height: number; backend: string; url: string; pid: number };
 
@@ -80,8 +77,6 @@ export type Project = {
 export type StudioEvents = {
   project: Project | null;
   session: LiveSession | null;
-  /** Emitted by the hub when the project in view changes. */
-  project: StudioProject | null;
   sessions: LiveSession[];
   status: GameStatus | null;
   snapshot: GameSnapshot | null;
@@ -115,8 +110,6 @@ export type Studio = {
   /** The project open in the Studio, or null at the Hub. */
   readonly project: Project | null;
   readonly session: LiveSession | null;
-  /** The project in view (hub). Optional: read it as studio.project?.name ?? studio.session?.game. */
-  readonly project?: StudioProject | null;
   readonly sessions: LiveSession[];
   readonly status: GameStatus | null;
   readonly snapshot: GameSnapshot | null;
