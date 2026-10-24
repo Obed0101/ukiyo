@@ -1,6 +1,7 @@
 // @ts-check
 /** @typedef {import("../web/types").PanelModule} PanelModule */
 import { emptyState } from "../web/dom.js";
+import { recorder } from "../web/recorder.js";
 
 // KeyboardEvent.code values the engine understands (Ukiyo.Core KeyNames.FromWebCode). Anything else stays in the page.
 // Tab is deliberately left out: it always moves focus out of the frame, so keyboard users are never trapped in play.
@@ -25,7 +26,8 @@ export default {
     const captureButton = h("button", { type: "button", class: "icon-button", "aria-label": "Capture the current frame", title: "Capture" }, icon("camera"));
     const watchButton = h("button", { type: "button", class: "icon-button", "aria-pressed": "false", "aria-label": `Watch: capture ${fps} frames per second`, title: "Watch" }, icon("radio"));
     const playButton = h("button", { type: "button", class: "icon-button", "aria-pressed": "false", "aria-label": "Play: send keyboard and pointer to the game", title: "Play" }, icon("keyboard"));
-    studio.actions.append(captureButton, watchButton, playButton);
+    const recordButton = h("button", { type: "button", class: "icon-button", "aria-pressed": "false", "aria-label": "Record: capture the input you play as a replayable script", title: "Record input" }, icon("circle-dot"));
+    studio.actions.append(captureButton, watchButton, playButton, recordButton);
 
     const image = /** @type {HTMLImageElement} */ (h("img", { alt: "", draggable: "false" }));
     const message = h("div", { class: "empty-host" });
@@ -133,6 +135,8 @@ export default {
       captureButton.toggleAttribute("disabled", !studio.session);
       watchButton.toggleAttribute("disabled", !studio.session);
       playButton.toggleAttribute("disabled", !studio.session);
+      recordButton.toggleAttribute("disabled", !studio.session);
+      recordButton.setAttribute("aria-pressed", String(recorder.state.recording));
       if (!studio.session) {
         showNoGame();
         caption.textContent = "";
@@ -185,6 +189,22 @@ export default {
       studio.view({ playing });
       studio.log("info", playing ? "play on: keys and clicks in the frame go to the game" : "play off");
     });
+
+    recordButton.addEventListener("click", async () => {
+      try {
+        const events = await recorder.toggle(studio);
+        if (events !== null) {
+          studio.view({ lastRecording: { events } });
+          studio.log("success", `recorded ${events} input events; the script is in the Input panel and on the clipboard`);
+          navigator.clipboard.writeText(recorder.state.script).catch(() => {});
+        } else {
+          studio.log("info", "recording: play in the frame (turn on Play) and press Record again to stop");
+        }
+      } catch (error) {
+        studio.log("error", error instanceof Error ? error.message : String(error));
+      }
+    });
+    const unsubscribeRecorder = recorder.subscribe(render);
 
     /** @param {import("../web/types").InputEvent[]} events */
     function send(events) {
@@ -289,6 +309,7 @@ export default {
     render();
 
     return () => {
+      unsubscribeRecorder();
       disposed = true;
       clearTimeout(launchTimer);
       watching = false;

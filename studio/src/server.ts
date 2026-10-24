@@ -16,6 +16,8 @@ import { STUDIO_DIR, StudioFileError, type CompositionPatch } from "./manifest.t
 import { Launcher } from "./launcher.ts";
 import { projectRoutes } from "./project-routes.ts";
 import { runRoutes } from "./run-routes.ts";
+import { ConsoleBuffer } from "./console-log.ts";
+import { assetRoutes } from "./assets-routes.ts";
 
 const VERSION = "0.1.0";
 const REPO_ROOT = resolve(STUDIO_DIR, "..");
@@ -135,7 +137,13 @@ function changed(label: string) {
 const stopWatching = watchLayers({}, changed);
 
 /** Runs and reloads the games listed by GET /api/games; stops what it started when the Studio exits. */
-const launcher = new Launcher({ repoRoot: REPO_ROOT, sessions: liveSessions, bridge: bridgeRequest });
+const consoleLog = new ConsoleBuffer();
+const launcher = new Launcher({
+  repoRoot: REPO_ROOT,
+  sessions: liveSessions,
+  bridge: bridgeRequest,
+  onOutput: ({ name, stream, text }) => consoleLog.push({ source: name, stream, text }),
+});
 
 // ── routes ────────────────────────────────────────────────────────────────────────────────────────────────────────
 
@@ -156,6 +164,7 @@ async function bridge(request: Request): Promise<Response> {
   if (cmd === "step") forward.ticks = input.ticks ?? 1;
   if (cmd === "input") forward.events = input.events;
   if (cmd === "record") forward.on = input.on === true;
+  if (cmd === "patch") forward.patch = input.patch; // one scene patch object; the game validates it and answers queued/applied/refused
   const started = performance.now();
   try {
     const response = await bridgeRequest(session, forward, 10_000);
@@ -197,7 +206,17 @@ async function route(request: Request, url: URL): Promise<Response> {
   const projects = await projectRoutes({ repoRoot: REPO_ROOT, configDir: userConfigDir, log }, request, pathname);
   if (projects) return projects;
 
+  const assets = await assetRoutes(request, url, REPO_ROOT);
+  if (assets) return assets;
+
   switch (`${request.method} ${pathname}`) {
+    case "GET /api/console": {
+      const since = Number(url.searchParams.get("since") ?? 0);
+      return json(consoleLog.after(Number.isFinite(since) ? since : 0, 500));
+    }
+    case "POST /api/console/clear":
+      consoleLog.clear();
+      return json({ ok: true });
     case "GET /api/health":
       return json({ ok: true, version: VERSION, pages: streams.size });
     case "GET /api/manifest":

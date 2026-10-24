@@ -1,6 +1,7 @@
 // @ts-check
 /** @typedef {import("../web/types").PanelModule} PanelModule */
 import { formatNumber } from "../web/dom.js";
+import { valueDelta } from "../web/snapshot-model.js";
 
 /**
  * The named numbers the game puts in its snapshot (GameSnapshot.Values: score, lives, state…), with the change since
@@ -41,7 +42,7 @@ export default {
       for (const name of names) {
         const value = values[name] ?? 0;
         const before = previous[name];
-        const delta = before === undefined || snapshot.tick === previousTick ? 0 : value - before;
+        const delta = valueDelta({ value, before, tick: snapshot.tick, previousTick });
         body.append(h("tr", null,
           h("td", { text: name }),
           h("td", { class: "num", text: formatNumber(value) }),

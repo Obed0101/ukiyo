@@ -157,6 +157,8 @@ export type LauncherOptions = {
   attachTimeoutMs?: number;
   attachPollMs?: number;
   killGraceMs?: number;
+  /** Every non-empty output line of dotnet and the game (ANSI stripped), for the Console panel. */
+  onOutput?: (line: { game: string; name: string; stream: "stdout" | "stderr"; text: string }) => void;
 };
 
 export class LauncherError extends Error {
@@ -304,9 +306,10 @@ export class Launcher {
     for (const old of finished.slice(0, Math.max(0, finished.length - 8))) this.records.delete(old.id);
   }
 
-  private note(record: Record_, line: string) {
+  private note(record: Record_, line: string, stream: "stdout" | "stderr" = "stdout") {
     const text = line.replace(/\u001b\[[0-9;]*m/g, "").trimEnd();
     if (!text.trim()) return;
+    this.options.onOutput?.({ game: record.game, name: record.name, stream, text });
     record.output.push(text);
     if (record.output.length > OUTPUT_LINES) record.output.shift();
     if (ERROR_LINE.test(text) && record.errors.length < ERROR_LINES && !record.errors.includes(text)) record.errors.push(text);
@@ -317,7 +320,7 @@ export class Launcher {
     }
   }
 
-  private pump(record: Record_, stream: ReadableStream<Uint8Array> | null): Promise<void> {
+  private pump(record: Record_, stream: ReadableStream<Uint8Array> | null, name: "stdout" | "stderr"): Promise<void> {
     if (!stream) return Promise.resolve();
     const decoder = new TextDecoder();
     let pending = "";
@@ -327,12 +330,12 @@ export class Launcher {
           pending += decoder.decode(chunk, { stream: true });
           const lines = pending.split(/\r?\n/);
           pending = lines.pop() ?? "";
-          for (const line of lines) this.note(record, line);
+          for (const line of lines) this.note(record, line, name);
         }
       } catch {
         // The stream closes when the process dies.
       }
-      if (pending) this.note(record, pending);
+      if (pending) this.note(record, pending, name);
     })();
   }
 
@@ -347,7 +350,7 @@ export class Launcher {
     record.exitCode = null;
     record.error = null;
     record.sinceMs = Date.now();
-    const drained = Promise.all([this.pump(record, proc.stdout), this.pump(record, proc.stderr)]);
+    const drained = Promise.all([this.pump(record, proc.stdout, "stdout"), this.pump(record, proc.stderr, "stderr")]);
 
     const timeout = this.options.attachTimeoutMs ?? 180_000;
     record.timer = setInterval(() => {
@@ -425,7 +428,7 @@ export class Launcher {
 
   private async runToEnd(record: Record_, command: string[]): Promise<number> {
     const proc = this.spawn(command, { cwd: this.options.repoRoot, env: { ...process.env } });
-    const drained = Promise.all([this.pump(record, proc.stdout), this.pump(record, proc.stderr)]);
+    const drained = Promise.all([this.pump(record, proc.stdout, "stdout"), this.pump(record, proc.stderr, "stderr")]);
     const code = await proc.exited;
     await drained;
     return code;
