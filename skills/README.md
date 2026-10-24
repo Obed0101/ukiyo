@@ -11,6 +11,7 @@ frontmatter) that Claude Code, Codex-style agents and other skill-aware tools lo
 | `ukiyo-sprite-generation` | art from image models (OpenAI, Gemini) or procedural, cleaned into pixel art |
 | `ukiyo-physics` | 2D rigid bodies, platformer control, sensors, raycasts, layers |
 | `ukiyo-particles` | deterministic emitters and VFX with hard budgets, overflow policy and snapshot counters |
+| `ukiyo-ai` | NPC behaviour: state machines, behavior trees, grid A*, steering, perception, state in snapshots |
 | `ukiyo-input` | keys, pointer, axes, input scripts, recording and replay |
 | `ukiyo-ui` | HUDs and menus with `GameUi`, focus, themes |
 | `ukiyo-animation` | gameplay cameras (follow, orbit, rail, shake, blends), tweens, easing, keyframe tracks, tick sequences |

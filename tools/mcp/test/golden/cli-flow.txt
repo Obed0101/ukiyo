@@ -252,6 +252,29 @@ $ ukiyo status
       }
     },
     {
+      "name": "Patrol",
+      "dir": "samples/Patrol",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Export.Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
       "name": "RotatingCube",
       "dir": "samples/RotatingCube",
       "hosts": [
@@ -353,6 +376,7 @@ $ ukiyo status
     "profile and scenes come from each game's source, not from a run: the headless [ukiyo] renderer line shows the renderer's profile, not the game's."
   ],
   "skills": [
+    "ukiyo-ai",
     "ukiyo-animation",
     "ukiyo-audio",
     "ukiyo-core",
@@ -793,5 +817,5 @@ exit 0
 games/ absent; Ukiyo.slnx identical to before new-game
 
 $ ukiyo run CiProbe --checkpoints 0
-stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: CameraRig, ImportedMesh, LanternRun, LitCube, Minimap, RotatingCube, SceneHop, Sparks, TexturedQuad
+stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: CameraRig, ImportedMesh, LanternRun, LitCube, Minimap, Patrol, RotatingCube, SceneHop, Sparks, TexturedQuad
 exit 1

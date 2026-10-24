@@ -4,6 +4,7 @@
     <Project Path="src/Ukiyo.Core/Ukiyo.Core.csproj" />
     <Project Path="src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
     <Project Path="src/Ukiyo.UI/Ukiyo.UI.csproj" />
+    <Project Path="src/Ukiyo.AI/Ukiyo.AI.csproj" />
     <Project Path="src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
     <Project Path="src/Ukiyo.Animation/Ukiyo.Animation.csproj" />
     <Project Path="src/Ukiyo.Particles/Ukiyo.Particles.csproj" />
@@ -42,6 +43,10 @@
     <Project Path="samples/ImportedMesh/Headless/ImportedMesh.Headless.csproj" />
     <Project Path="samples/ImportedMesh/Desktop/ImportedMesh.Desktop.csproj" />
     <Project Path="samples/ImportedMesh/Browser/ImportedMesh.Browser.csproj" />
+    <Project Path="samples/Patrol/Hosts/Headless/Patrol.Headless.csproj" />
+    <Project Path="samples/Patrol/Hosts/Desktop/Patrol.Desktop.csproj" />
+    <Project Path="samples/Patrol/Hosts/Export.Desktop/Patrol.Export.Desktop.csproj" />
+    <Project Path="samples/Patrol/Hosts/Browser/Patrol.Browser.csproj" />
     <Project Path="samples/Minimap/Headless/Minimap.Headless.csproj" />
     <Project Path="samples/Minimap/Desktop/Minimap.Desktop.csproj" />
     <Project Path="samples/Minimap/Browser/Minimap.Browser.csproj" />
