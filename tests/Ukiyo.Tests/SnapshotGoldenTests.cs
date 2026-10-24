@@ -26,6 +26,7 @@ public sealed class SnapshotGoldenTests
 
     private static readonly Dictionary<string, GoldenCase> Cases = new(StringComparer.Ordinal)
     {
+        ["CameraRig"] = new(() => new Samples.CameraRig.CameraRigGame(), [0, 1, 60, 120, 180, 300, 600]),
         ["ImportedMesh"] = new(() => new Samples.ImportedMesh.ImportedMeshGame(), DefaultCheckpoints),
         ["LanternRun"] = new(() => new Samples.LanternRun.LanternRunGame(), [0, 30, 60, 120, 180, 240, 300], Input: "samples/LanternRun/parity/input.json"),
         ["LitCube"] = new(() => new Samples.LitCube.LitCubeGame(), DefaultCheckpoints),
