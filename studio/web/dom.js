@@ -40,8 +40,32 @@ export function clear(element) {
   element.replaceChildren();
 }
 
-/** Formats numbers for readouts: integers as-is, others to 3 decimals, invariant. */
+/** Formats numbers for readouts: up to 3 decimals without trailing zeros, invariant. */
 export function formatNumber(/** @type {number} */ value) {
   if (!Number.isFinite(value)) return String(value);
-  return Number.isInteger(value) ? String(value) : value.toFixed(3);
+  return String(Number(value.toFixed(3)));
+}
+
+/**
+ * A calm empty state: one title, one sentence, at most one action. `command` renders as a copyable line.
+ * @param {{ icon?: Node, title: string, text?: string, command?: string, action?: HTMLElement }} options
+ * @returns {HTMLElement}
+ */
+export function emptyState({ icon, title, text, command, action }) {
+  const copy = command
+    ? h("button", {
+      type: "button", class: "command", title: "Copy command", "aria-label": `Copy command: ${command}`,
+      onClick: async (/** @type {Event} */ event) => {
+        const button = /** @type {HTMLElement} */ (event.currentTarget);
+        try {
+          await navigator.clipboard.writeText(command);
+          button.dataset.copied = "true";
+          setTimeout(() => delete button.dataset.copied, 1200);
+        } catch {
+          // Clipboard blocked: the command stays selectable text.
+        }
+      },
+    }, h("code", { text: command }))
+    : null;
+  return h("div", { class: "empty-state" }, icon, h("p", { class: "empty-title", text: title }), text ? h("p", { class: "empty-text", text }) : null, copy, action);
 }

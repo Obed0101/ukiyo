@@ -15,10 +15,10 @@ export default {
     const { h, icon } = studio;
     const limit = Math.min(2000, Math.max(50, Number(studio.options.limit) || 300));
     const list = h("ol", { class: "log", reversed: true, "aria-live": "off" });
-    const clearButton = h("button", { type: "button", class: "icon-button", "aria-label": "Clear the activity log", title: "Clear" }, icon("x"));
+    const clearButton = h("button", { type: "button", class: "icon-button", "aria-label": "Clear the activity log", title: "Clear" }, icon("trash-2"));
     studio.actions.append(clearButton);
     root.append(list);
-    const empty = h("p", { class: "empty", text: "Nothing yet. Commands, file changes and agent notices appear here." });
+    const empty = h("p", { class: "empty", text: "Nothing yet. Commands, file changes and agent notices show up here." });
     root.append(empty);
 
     /** @param {import("../web/types").LogEntry} entry */
