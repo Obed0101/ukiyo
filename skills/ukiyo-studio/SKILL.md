@@ -75,13 +75,27 @@ column/row, no `repeat()`), or add it to `studio.json` `"show"` to put it in the
 - `studio.json`: `layout`, `theme` ("auto" follows the system using `auto.dark` / `auto.light`), `hide`, `show`,
   `panels` (per-panel options). The person's layout switch, theme menu and Panels panel write this same file.
 
+## The person's own config (user layer)
+
+`~/.config/ukiyo/studio/` (or `$XDG_CONFIG_HOME/ukiyo/studio`, or `$UKIYO_STUDIO_CONFIG`) has the same shape as
+`studio/` plus `user.css`. A user file overrides the repo file of the same name; user `studio.json` fields override
+the repo's; a user theme may `"extends"` another. Live-reloaded; a broken user file is skipped and reported as
+`[user] …`, never fatal. Rules for you:
+
+- A request about the person's own taste ("my setup", "in my config") goes into the user layer; changes meant for
+  everyone (a new shipped panel, a bug) go into `studio/`. Example to copy from: `studio/examples/rice/`.
+- `ukiyo_studio compose` writes the user `studio.json` when it exists, else `studio/studio.json`; pass
+  `"target":"user"` or `"repo"` to choose. The reply says which file changed. The person's UI writes the user file.
+- Do not hand-edit a repo `studio.json` field the user `studio.json` also sets: the user's wins. `list` shows the layer
+  of every panel, layout and theme.
+
 ## Tools
 
 - `ukiyo_studio {"action":"view"}`: what the person sees now — layout, theme, visible panels, `focusedPanel`, `session`,
   `tick`, `paused`, `panelState` (e.g. `entities.selected` and its pose, `viewport.watching` / `playing`),
   `panelErrors`, `fileError`. Read it before acting on "this", "here" or "the one I selected".
 - `ukiyo_studio {"action":"notify","text":"…","level":"success"}`: tell them what you changed or what to try.
-- `ukiyo_studio {"action":"compose", …}` and `{"action":"check"}`: validated composition change; validate all files.
+- `ukiyo_studio {"action":"compose", …}` and `{"action":"check"}`: validated composition change; validate all files of both layers (`[repo]` / `[user]`).
 
 ## Proving a Studio change
 

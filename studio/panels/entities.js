@@ -25,6 +25,7 @@ export default {
       // Snapshots arrive several times a second; keep keyboard focus on the same entity across rebuilds.
       const focused = /** @type {HTMLElement | null} */ (list.querySelector(":focus"))?.dataset.entity;
       list.replaceChildren();
+      filter.disabled = !studio.session;
       const snapshot = studio.snapshot;
       if (!studio.session || !snapshot) {
         list.append(h("p", { class: "empty", text: studio.session ? "Waiting for the first snapshot." : "Entities appear when a game is connected." }));
@@ -37,17 +38,19 @@ export default {
         return;
       }
 
+      // Angle is secondary: shown only once something in the game is actually rotated.
+      const angleOf = (/** @type {number[]} */ rotation) => (2 * Math.atan2(rotation[2], rotation[3]) * 180) / Math.PI;
+      const showAngle = names.some((name) => Math.abs(angleOf(snapshot.entities[name]?.rotation ?? [0, 0, 0, 1])) > 0.0005);
       const body = h("tbody");
       for (const name of names) {
         const pose = snapshot.entities[name];
         if (!pose) continue;
         const [x, y, z] = pose.position;
-        const angle = 2 * Math.atan2(pose.rotation[2], pose.rotation[3]);
         const isSelected = name === selected;
         const row = h("tr", { "aria-selected": String(isSelected), tabindex: "0", class: isSelected ? "selected" : "", dataset: { entity: name } },
           h("td", { text: name }),
           h("td", { class: "num", text: `${formatNumber(x)}, ${formatNumber(y)}${z === 0 ? "" : `, ${formatNumber(z)}`}` }),
-          h("td", { class: "num", text: `${formatNumber((angle * 180) / Math.PI)}°` }));
+          showAngle ? h("td", { class: "num", text: `${formatNumber(angleOf(pose.rotation))}°` }) : null);
         const choose = () => select(isSelected ? null : name);
         row.addEventListener("click", choose);
         row.addEventListener("keydown", (event) => {
@@ -59,7 +62,7 @@ export default {
         body.append(row);
       }
       list.append(h("table", { class: "table entity-table", "aria-label": "Entities" },
-        h("thead", null, h("tr", null, h("th", { text: "Entity" }), h("th", { class: "num", text: "Position" }), h("th", { class: "num", text: "Angle (z)" }))),
+        h("thead", null, h("tr", null, h("th", { text: "Entity" }), h("th", { class: "num", text: "Position" }), showAngle ? h("th", { class: "num", text: "Angle" }) : null)),
         body));
       if (focused) [...body.querySelectorAll("tr")].find((row) => row.dataset.entity === focused)?.focus();
     }

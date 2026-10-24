@@ -158,3 +158,26 @@ describe("request guard", () => {
     for (const bad of ["../server.ts", "a/b.js", ".hidden", "..", "x..js"]) expect(safeName(bad)).toBe(false);
   });
 });
+
+describe("theme contrast", () => {
+  const channel = (value: number) => (value /= 255) <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map((i) => channel(parseInt(hex.slice(i, i + 2), 16)));
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  };
+  const ratio = (a: string, b: string) => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi! + 0.05) / (lo! + 0.05);
+  };
+  /** Every pairing where a token is used as text (or as the text color on a filled control). */
+  const pairs: [string, string][] = [
+    ...["fg", "muted", "subtle", "ok", "warn", "danger", "accent"].flatMap((t) => ["bg", "panel", "panel-raised"].map((b) => [t, b] as [string, string])),
+    ["accent-fg", "accent"], ["selection-fg", "selection"], ["screen-fg", "screen"], ["screen-muted", "screen"],
+  ];
+
+  test.each(["ink", "paper", "graphite", "contrast", "linen"])("%s: all text pairs are at least 4.5:1", (name) => {
+    const { tokens } = readManifest().themes[name]!;
+    const failing = pairs.filter(([text, background]) => ratio(tokens[text]!, tokens[background]!) < 4.5).map(([t, b]) => `${t} on ${b}: ${ratio(tokens[t]!, tokens[b]!).toFixed(2)}`);
+    expect(failing).toEqual([]);
+  });
+});

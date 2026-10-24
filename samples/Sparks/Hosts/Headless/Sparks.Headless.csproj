@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Headless host: no window, no GPU. Snapshots and CPU captures for agents and tests (docs/game-layout.md). -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>sparks-headless</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.Sparks</RootNamespace>
+    <!-- The game folder: Directory.Build.targets embeds its Shared/assets from here. -->
+    <UkiyoGameDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '..', '..'))</UkiyoGameDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Everything under Shared/ compiles into every host and is hashed into the source identity. -->
+    <UkiyoSharedSource Include="$(UkiyoGameDir)Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="$(UkiyoRoot)src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+    <ProjectReference Include="$(UkiyoRoot)src/Ukiyo.Particles/Ukiyo.Particles.csproj" />
+  </ItemGroup>
+</Project>
