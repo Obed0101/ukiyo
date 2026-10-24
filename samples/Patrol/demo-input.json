@@ -1,0 +1,10 @@
+[
+  { "tick": 1, "key": "Right", "down": true },
+  { "tick": 31, "key": "Right", "down": false },
+  { "tick": 32, "key": "Up", "down": true },
+  { "tick": 80, "key": "Up", "down": false },
+  { "tick": 300, "key": "Down", "down": true },
+  { "tick": 360, "key": "Down", "down": false },
+  { "tick": 361, "key": "Left", "down": true },
+  { "tick": 400, "key": "Left", "down": false }
+]

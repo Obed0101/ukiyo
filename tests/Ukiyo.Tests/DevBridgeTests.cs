@@ -271,6 +271,66 @@ public sealed class DevBridgeTests
     }
 
     [Fact]
+    public async Task Bridge_history_hands_a_fresh_process_what_it_needs_to_reach_the_same_tick()
+    {
+        var extent = new RenderExtent(640, 360, 1f);
+        var source = new SourceIdentity(new Dictionary<string, string>());
+        var live = new GameRuntime(new LanternRunGame(), source);
+        using var liveRenderer = new SoftwareRenderer();
+        await live.StartAsync(liveRenderer, new RenderConfiguration("live", extent));
+        using var session = DevBridgeServer.TryStart(live, "test") ?? throw new InvalidOperationException("dev bridge disabled by UKIYO_DEV_BRIDGE");
+        var server = (DevBridgeServer)session;
+        var discovery = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ukiyo", "live", $"{Environment.ProcessId}.json");
+        using var file = JsonDocument.Parse(await File.ReadAllTextAsync(discovery));
+        var token = file.RootElement.GetProperty("token").GetString()!;
+        using var client = new TcpClient();
+        await client.ConnectAsync(IPAddress.Loopback, server.Port);
+        using var reader = new StreamReader(client.GetStream());
+        await using var writer = new StreamWriter(client.GetStream()) { AutoFlush = true, NewLine = "\n" };
+        long id = 0;
+
+        async Task<JsonElement> Ask(string command, Dictionary<string, object>? args = null)
+        {
+            var request = args ?? new Dictionary<string, object>();
+            request["id"] = ++id;
+            request["cmd"] = command;
+            request["token"] = token;
+            await writer.WriteLineAsync(JsonSerializer.Serialize(request));
+            var line = reader.ReadLineAsync();
+            var deadline = DateTime.UtcNow + AnswerTimeout;
+            while (!line.IsCompleted && DateTime.UtcNow < deadline)
+            {
+                session.Pump();
+                await Task.Delay(5);
+            }
+
+            Assert.True(line.IsCompleted, "no answer from the bridge");
+            using var answer = JsonDocument.Parse(await line ?? "{}");
+            Assert.True(answer.RootElement.GetProperty("ok").GetBoolean());
+            return answer.RootElement.GetProperty("result").Clone();
+        }
+
+        await Ask("step", new() { ["ticks"] = 61 });
+        await Ask("input", new() { ["events"] = new[] { new { key = "Enter", down = true } } });
+        await Ask("step", new() { ["ticks"] = 1 });
+        await Ask("input", new() { ["events"] = new object[] { new { key = "Enter", down = false }, new { key = "Right", down = true } } });
+        await Ask("step", new() { ["ticks"] = 80 });
+
+        var history = await Ask("history");
+        Assert.Equal(live.Tick, history.GetProperty("tick").GetInt64());
+        Assert.True(history.GetProperty("paused").GetBoolean());
+        Assert.True(history.GetProperty("complete").GetBoolean());
+        var (log, tick) = ReplayLog.Parse(history.GetProperty("log").GetRawText());
+        Assert.Equal(3, log.Input.Count);
+
+        var fresh = new GameRuntime(new LanternRunGame(), source);
+        using var freshRenderer = new SoftwareRenderer();
+        await fresh.StartAsync(freshRenderer, new RenderConfiguration("fresh", extent));
+        fresh.RestoreFrom(log, tick);
+        Assert.Equal(live.SnapshotJson(), fresh.SnapshotJson());
+    }
+
+    [Fact]
     public async Task Bridge_capture_takes_a_pass_id_or_primary_for_multi_camera_games()
     {
         var extent = new RenderExtent(320, 200, 1f);

@@ -96,6 +96,9 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     /// <summary>Hosts, the dev bridge and tests push input here; it is latched once per tick.</summary>
     public InputCollector Input { get; } = new();
 
+    /// <summary>Everything from outside that reached this runtime since tick 0 (input, patches, viewport): see <see cref="ReplayLog"/>.</summary>
+    public ReplayLog History { get; } = new();
+
     /// <summary>Scheduled input fed before each tick (headless agent runs and replays).</summary>
     public InputScript? Script { get; set; }
 
@@ -164,6 +167,8 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
             if (!_replaying)
             {
                 Script?.Feed(Tick, Input);
+                Input.History ??= History;
+                History.NoteViewport(Tick, Viewport);
             }
 
             var input = Input.Latch(Tick, Viewport);
@@ -309,8 +314,10 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         var patches = timeline.Patches.Where(entry => entry.SubmitTick >= checkpointTick && entry.SubmitTick < tick).ToList();
         var before = Save();
         var journal = Input.Journal;
+        var history = Input.History;
         _replaying = true;
         Input.Journal = null;
+        Input.History = null;
         try
         {
             Restore(checkpoint);
@@ -347,10 +354,12 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         {
             _replaying = false;
             Input.Journal = journal;
+            Input.History = history;
         }
 
         timeline.TruncateFrom(tick);
         Input.TruncateRecorded(tick);
+        History.TruncateFrom(tick);
         Script?.SeekTo(tick);
         _clock.Reset();
         return new RewindResult(Tick, checkpointTick, tick - checkpointTick, timeline.Window(Tick)!);
@@ -377,6 +386,19 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     public void SubmitPatch(ScenePatch patch)
     {
         var scenes = _context.Scenes ?? throw new InvalidOperationException($"[RUNTIME]: {Game.Name} has no SceneRegistry, so it cannot take patches");
+        // Refused submissions are kept too: one refused at the current boundary changes the snapshot's rejected list.
+        // A patch that cannot be written as JSON (NaN, infinity) is refused as malformed before it touches any state.
+        if (!_replaying)
+        {
+            try
+            {
+                History.AddPatch(Tick, patch.ToJson());
+            }
+            catch (ArgumentException)
+            {
+            }
+        }
+
         if (_timeline is not { } timeline || _replaying)
         {
             scenes.Submit(patch);
@@ -404,6 +426,63 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
                 timeline.Patches.Add(new JournaledPatch(Tick, patch));
             }
         }
+    }
+
+    /// <summary>The replay log as JSON, for a fresh process to <see cref="RestoreFrom"/> to the current tick.</summary>
+    public string ExportHistoryJson() => History.ToJson(Tick, Input.Pending);
+
+    /// <summary>
+    /// Replays <paramref name="log"/> from tick 0 on this fresh runtime until it is at boundary <paramref name="tick"/>:
+    /// same code and same log give the same state as the process the log came from. Events that were queued but not
+    /// yet latched there are queued again. Refuses a runtime that already ran and a log that no longer holds the whole
+    /// history. If the code changed, the replay still runs and the state may differ: compare snapshots to see.
+    /// </summary>
+    public void RestoreFrom(ReplayLog log, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        if (log.Truncated)
+        {
+            throw new InvalidOperationException($"[REPLAY]: the history of this session outgrew {ReplayLog.MaxEntries} entries and is incomplete; it cannot be replayed");
+        }
+
+        if (Tick != 0 || History.Count != 0)
+        {
+            throw new InvalidOperationException($"[REPLAY]: only a fresh runtime can be restored (tick {Tick})");
+        }
+
+        var window = Viewport;
+        int inputAt = 0, patchAt = 0, viewportAt = 0;
+        for (var t = 0L; t <= tick; t++)
+        {
+            while (viewportAt < log.Viewports.Count && log.Viewports[viewportAt].Tick <= t)
+            {
+                Viewport = log.Viewports[viewportAt++].Extent;
+            }
+
+            while (patchAt < log.Patches.Count && log.Patches[patchAt].AtTick <= t)
+            {
+                try
+                {
+                    SubmitPatch(ScenePatch.Parse(log.Patches[patchAt++].PatchJson));
+                }
+                catch (SceneException)
+                {
+                    // Refused the same way the original session was; the refusal is part of the replayed history.
+                }
+            }
+
+            while (inputAt < log.Input.Count && log.Input[inputAt].Tick <= t)
+            {
+                Input.Push(log.Input[inputAt++].Event);
+            }
+
+            if (t < tick)
+            {
+                Step(1);
+            }
+        }
+
+        Viewport = window;
     }
 
     public void StepTo(long tick)
@@ -608,5 +687,33 @@ public static class SnapshotWriter
         }
 
         json.WriteEndArray();
+    }
+}
+
+/// <summary>Command-line flags that only the headless host honors. Any other host refuses them instead of ignoring them.</summary>
+public static class HostFlags
+{
+    private static readonly string[] HeadlessOnly = ["--patches"];
+
+    /// <summary>The error for the first headless-only flag in <paramref name="args"/>, or null when the host can take them all.</summary>
+    public static string? Unsupported(string target, string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        var flag = args.FirstOrDefault(arg => HeadlessOnly.Contains(arg, StringComparer.Ordinal));
+        return flag is null
+            ? null
+            : $"[{target.ToUpperInvariant()}]: {flag} is headless-only; the {target} host would ignore it. Replay patches with the headless host (ukiyo_run {{\"patches\":[...]}}) or submit them to a running game with ukiyo_live patch";
+    }
+}
+
+/// <summary>A host that cannot start: prints why on stderr and exits with code 2, so a bad command line is never silently ignored.</summary>
+public sealed class StartupFailure(string target, string message) : IPlatformHost
+{
+    public string Target => target;
+
+    public Task<int> RunAsync(GameRuntime runtime)
+    {
+        Console.Error.WriteLine(message);
+        return Task.FromResult(2);
     }
 }

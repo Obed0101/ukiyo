@@ -18,7 +18,7 @@ src/Ukiyo.Render           contracts every renderer implements: IRenderer, IRend
 src/Ukiyo.Core             IGame, GameRuntime (fixed 60 Hz, Step/AdvanceTime/RenderFrame/Capture), GameContext,
                            FrameBuilder, snapshots, input, sprites, audio contract, DevHooks, IPlatformHost,
                            SceneRegistry + ScenePatch (docs/scenes-patches.md)
-src/Ukiyo.Physics|UI|Audio optional systems; depend on Core, never on a host or renderer
+src/Ukiyo.Physics|UI|AI|Audio optional systems; depend on Core, never on a host or renderer
 src/Ukiyo.Render.*         Null · Software (CPU) · Wgpu (P/Invoke to wgpu-native) · Three (JSImport to web/three-adapter)
 src/Ukiyo.Platform.*       Headless · Desktop (SDL3) · Browser (WASM): own the loop, events, audio device, dev session
 src/Ukiyo.DevBridge        localhost control of dev builds; linked only when UkiyoDevBridge=true
@@ -30,7 +30,7 @@ tests/Ukiyo.Tests          xUnit for everything in src/; Bun tests live next to 
 docs/                      protocol, conventions, gate reports (G0.md, G1.md, G3.md)
 ```
 
-Dependency direction: Render ← Core ← (Physics, UI, Audio) ← Platform.* ← games. Render.* depend only on Render.
+Dependency direction: Render ← Core ← (Physics, UI, AI, Audio) ← Platform.* ← games. Render.* depend only on Render.
 Nothing in `src/` references `tools/`, `studio/` or a sample.
 
 ## Build rules (they are errors, not advice)

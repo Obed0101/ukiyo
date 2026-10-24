@@ -430,7 +430,7 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
     {
         if (prefabName is null || !_prefabs.TryGetValue(prefabName, out var prefab))
         {
-            throw new SceneException(SceneErrorCode.UnknownPrefab, $"{where}: prefab \"{prefabName}\" is not registered (registered: {string.Join(", ", _prefabs.Keys.Order(StringComparer.Ordinal))}); register prefabs before scenes");
+            throw new SceneException(SceneErrorCode.UnknownPrefab, $"{where}: prefab \"{prefabName}\" is not registered (registered: {string.Join(", ", _prefabs.Keys.Order(StringComparer.Ordinal))}); {(where.StartsWith("patch ", StringComparison.Ordinal) ? "a patch can only spawn a prefab the game registered in its SceneRegistry" : "register prefabs before scenes")}");
         }
 
         SceneRules.Position(position, bounds, where);

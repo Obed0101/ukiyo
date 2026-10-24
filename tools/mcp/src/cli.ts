@@ -33,7 +33,7 @@ export const HELP = `ukiyo live <list|status|pause|resume|step|snapshot|capture|
   --on true|false   record: explicit start/stop
   --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
   --tick N          rewind: return to tick N (ISaveable games; nearest checkpoint plus deterministic replay)
-  --pass N          capture: one camera of a multi-camera frame alone (pass id 0, 1, …; default the composed frame)
+  --pass N|primary  capture: one camera of a multi-camera frame alone (pass id 0, 1, … or primary; default the composed frame)
   --out FILE        capture: PNG; record: input script; others: result JSON
 Output files are created exclusively: existing files are never overwritten.
 ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
@@ -78,7 +78,7 @@ export function parseArgs(args: string[]) {
   const pid = given["--pid"] === undefined ? undefined : integer(given["--pid"], 1, 2147483647);
   const request: Record<string, unknown> = { cmd: action };
   if (action === "step") request.ticks = integer(given["--ticks"] ?? "1", 0, 36000);
-  if (action === "capture" && given["--pass"] !== undefined) request.pass = integer(given["--pass"], 0, 2147483647);
+  if (action === "capture" && given["--pass"] !== undefined) request.pass = given["--pass"] === "primary" ? "primary" : integer(given["--pass"], 0, 2147483647);
   if (action === "record") {
     if (!["true", "false"].includes(given["--on"] ?? "")) throw new Error("record needs --on true|false");
     request.on = given["--on"] === "true";

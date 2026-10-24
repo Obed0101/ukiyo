@@ -307,6 +307,12 @@ function mountPanel(id, section) {
     capture,
     refreshSnapshot,
     selectSession,
+    launcher: {
+      list: () => api.get("/api/games"),
+      start: (game) => api.post("/api/run", { game }),
+      stop: (run) => api.post("/api/run/stop", { run }),
+      reload: (run) => api.post("/api/run/reload", { run }),
+    },
     on(event, handler) {
       const off = on(event, handler);
       subscriptions.push(off);

@@ -9,8 +9,9 @@ game: `skills/ukiyo-hosts/SKILL.md` § NativeAOT export.
 - `otool -L <binary>` lists only `/System/Library/Frameworks/*` and `/usr/lib/*`. The csproj links the system
   frameworks SDL3 and wgpu-native need (`LinkerArg`); those are allowed OS dependencies, nothing else is.
 - `strings <binary> | grep -c DevBridge` prints 0: export hosts never set `UkiyoDevBridge`.
-- The binary runs alone: copied to an empty folder and started with `env -i HOME=$HOME PATH=/usr/bin:/bin`, it opens
-  a window on Metal and writes GPU frames with `--capture <dir>`.
+- The binary runs alone: copied to an empty folder and started with `env -i PATH=/usr/bin:/bin HOME=<empty dir>` (no
+  `dotnet`, no `DOTNET_ROOT`, no repository path), it opens a window on Metal and writes GPU frames with
+  `--capture <dir>`. `scripts/clean-run.sh` proves this (below).
 - It runs the same game: its `snapshot` lines equal a headless JIT run at the same checkpoints once the `renderer`
   and `backend` fields are removed, and its `[ukiyo] target=… game=… <file>=<hash>` line equals headless after
   `target=`. Scene JSON and other files in `Shared/assets` are embedded resources and are not in the hash; the
@@ -43,6 +44,16 @@ G0.md and G1.md and run in `scripts/g0.sh`.
   window run takes `/tmp/ukiyo-gate.lock` and releases it on exit or failure. Evidence and a results table:
   `artifacts/evidence-aot-exports/`. Exit 1 if any check fails.
 
+- **Clean machine, opens a window:** `scripts/clean-run.sh [Sample] [--binary PATH]` (default RotatingCube; publishes
+  its `Export.Desktop` unless `--binary` names an already published executable). It copies only the executable to a
+  fresh temp folder and requires, under `env -i PATH=/usr/bin:/bin HOME=<temp>/home`: `command -v dotnet` finds
+  nothing and `DOTNET_ROOT` is unset; `otool -L` lists only `/System/Library/Frameworks`, `/usr/lib` or bundled
+  dylibs that exist next to the binary (the export bundles none); the run exits 0 and `--capture` writes real PNG
+  frames; and the dylibs dyld loaded (`DYLD_PRINT_LIBRARIES`, reported when dyld honors it) all come from the OS or the
+  temp folder. Evidence: `artifacts/evidence-clean-run/<binary>/` and `results.md`. Exit 1 on any failure. What it
+  does not prove: a Mac that lacks the SDK on disk (the dotnet binary is hidden from the process, not absent), or
+  another macOS version.
+
 ## Results (UKIYO-42, 2026-10-16)
 
 Apple M4 Pro, macOS 27.0, .NET SDK 10.0.401, wgpu-native 29.0.1.1, `scripts/aot-exports.sh`, checkpoints 0,60.
@@ -65,5 +76,12 @@ Frames looked at (tick 60, `artifacts/evidence-aot-exports/<binary>/capture/desk
 The 1920x1280 frames are the window's Retina backing size; headless runs used no renderer (`NullRenderer`), so the
 comparison is of snapshots, not pixels.
 
-Not covered: the binaries have not run on a Mac without a .NET SDK on disk (same open item as G0.md), and no export
-was checked with `--input` scripts or beyond tick 60.
+## Clean run (UKIYO-14, 2026-10-24)
+
+Apple M4 Pro, macOS 27.0, `scripts/clean-run.sh RotatingCube`, checkpoints 0,60: `rotating-cube` (10,718,880 bytes), alone in a
+fresh temp folder, `env -i PATH=/usr/bin:/bin HOME=<temp>/home`. No `dotnet` on that PATH, `DOTNET_ROOT` unset;
+`otool -L` 28 entries, all `/System/Library/Frameworks` or `/usr/lib` (no bundled dylibs); exit 0; two 1920x1280 Metal
+frames written; every dylib dyld reported came from the OS. PASS.
+
+Not covered: the binaries have not run on a physical Mac that has no .NET SDK installed at all (the clean run hides it
+from the process but it is on this disk), and no export was checked with `--input` scripts or beyond tick 60.

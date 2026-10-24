@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Development host: JIT, loads the pinned wgpu-native and SDL3 dylibs copied next to the executable. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>patrol-desktop</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.Patrol</RootNamespace>
+    <RuntimeIdentifier>osx-arm64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <!-- Links the dev bridge (agents attach through ~/.ukiyo/live). The Export.Desktop profile never sets this. -->
+    <UkiyoDevBridge>true</UkiyoDevBridge>
+    <UkiyoGameDir>$([MSBuild]::NormalizeDirectory('$(MSBuildProjectDirectory)', '..', '..'))</UkiyoGameDir>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="$(UkiyoGameDir)Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <!-- Desktop-only code: compiled here and in Export.Desktop, never in another host, not part of the shared hash. -->
+    <Compile Include="$(UkiyoGameDir)Platform/Desktop/**/*.cs" Link="Platform/Desktop/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="$(UkiyoRoot)src/Ukiyo.Platform.Desktop/Ukiyo.Platform.Desktop.csproj" />
+    <ProjectReference Include="$(UkiyoRoot)src/Ukiyo.AI/Ukiyo.AI.csproj" />
+    <None Include="$(UkiyoNativeDir)lib/libwgpu_native.dylib;$(UkiyoNativeDir)lib/libSDL3.dylib" CopyToOutputDirectory="PreserveNewest" Visible="false" />
+  </ItemGroup>
+  <Target Name="UkiyoRequireNative" BeforeTargets="Build" Condition="!Exists('$(UkiyoNativeDir)lib/libwgpu_native.dylib')">
+    <Error Text="Native dependencies missing. Run scripts/fetch-native.sh first." />
+  </Target>
+</Project>

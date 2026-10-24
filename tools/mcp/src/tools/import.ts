@@ -14,7 +14,7 @@ const importTool: Tool = {
   description:
     "Runs the dev-time asset importer (tools/Ukiyo.Import, docs/assets.md) on import specs (*.import.json): source art in games/<Name>/art → generated C# in Shared/gen/*.g.cs that every host compiles in. " +
     "action \"run\" writes generated files whose content changed (unchanged files are left alone); \"check\" writes nothing and reports every generated file that is missing or out of date. " +
-    "Pass game (every spec under it) and/or specs (spec files or folders, inside the repository). Builds the importer once (incremental), then runs it per spec, so one bad spec does not hide the others. " +
+    "Pass game (every spec under it) and/or specs (spec files or folders, inside the repository); action check with neither checks every spec of every game (a read-only sweep); run with neither is refused (it would rewrite files everywhere). Builds the importer once (incremental), then runs it per spec, so one bad spec does not hide the others. " +
     "Reports per spec its status (up-to-date, wrote, stale, error; ok when the importer printed no line this tool reads),the generated files with their content hash, and for stale files the regenerate command. " +
     "Importer failures come back as errors with their typed code ([IMPORT:InvalidSpec], MissingFile, InvalidPng, DuplicateName, Stale, …). " +
     "It proves the generated code matches the sources; it does not build or run the game: use ukiyo_run / ukiyo_capture for that.",
@@ -37,7 +37,7 @@ const importTool: Tool = {
   },
   async run(args, { root, log, signal }) {
     const check = args.action === "check";
-    const specs = resolveSpecTargets(root, { game: args.game as string | undefined, specs: args.specs as string[] | undefined });
+    const specs = resolveSpecTargets(root, { game: args.game as string | undefined, specs: args.specs as string[] | undefined, whenEmpty: check ? "all" : undefined });
     for (const spec of specs) assertSpecInsideRoot(root, spec);
 
     const deadline = performance.now() + Number(args.timeoutSeconds) * 1000;

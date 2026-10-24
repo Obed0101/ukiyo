@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// Golden transcript of the ukiyo CLI (UKIYO-31): help, status, scaffold a game, run it headless, capture a CPU frame,
+// Golden transcript of the ukiyo CLI (UKIYO-31): help, status, scaffold a game, check it conforms, run it headless, capture a CPU frame,
 // check the import specs, remove the game. Every step is `bun tools/mcp/src/cli.ts …` in a temporary copy of the
 // repository (tracked and untracked-but-not-ignored files, without games/), so the checkout is never touched and the
 // starting state is the same on every machine: no bin/obj, no native/, no node_modules. The normalized transcript
@@ -170,6 +170,8 @@ try {
   await cli("--help");
   await cli("status");
   await cli("new-game", GAME, "--hosts", "Headless");
+  await cli("check", GAME);
+  await cli("check", "RotatingCube");
   await cli("run", GAME, "--checkpoints", "0,60");
   const capture = await cli("capture", GAME, "--checkpoints", "0", "--out", out);
   for (const file of (capture.json?.captures as string[] | undefined) ?? []) {

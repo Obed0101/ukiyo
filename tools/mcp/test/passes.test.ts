@@ -11,7 +11,7 @@ import { parseArgs } from "../src/cli.ts";
 import { parseHeadless } from "../src/engine.ts";
 import { validate } from "../src/protocol.ts";
 import capture from "../src/tools/capture.ts";
-import live, { bridgeFailure, liveRequest } from "../src/tools/live.ts";
+import live, { bridgeFailure, liveRequest, reload } from "../src/tools/live.ts";
 import { headlessSummary } from "../src/tools/run.ts";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ukiyo-passes-")));
@@ -125,7 +125,12 @@ describe("ukiyo_live capture with pass", () => {
     expect(liveRequest(validate(live.inputSchema, { action: "capture", pass: 0 }) as Record<string, unknown>)).toEqual({ cmd: "capture", pass: 0 });
   });
 
-  test.each([[-1, ">= 0"], [1.5, "must be an integer"], ["primary", "must be a finite number"]])("the schema refuses pass %j", (pass, message) => {
+  test('pass "primary" is forwarded as the bridge understands it', () => {
+    expect(liveRequest(validate(live.inputSchema, { action: "capture", pass: "primary" }) as Record<string, unknown>)).toEqual({ cmd: "capture", pass: "primary" });
+    expect(parseArgs(["live", "capture", "--pass", "primary", "--out", "m.png"]).request).toEqual({ cmd: "capture", pass: "primary" });
+  });
+
+  test.each([[-1, "none of its allowed forms"], [1.5, "must be an integer"], ["second", "must be one of primary"], [true, "none of its allowed forms"]])("the schema refuses pass %j", (pass, message) => {
     expect(() => validate(live.inputSchema, { action: "capture", pass })).toThrow(message);
   });
 
@@ -160,7 +165,7 @@ describe("through a dev bridge on a socket (a fake game answering like DevBridge
     server = createServer((socket) => socket.once("data", (chunk) => {
       const request = JSON.parse(String(chunk)) as Record<string, unknown>;
       requests.push(request);
-      const pass = request.pass as number | undefined;
+      const pass = request.pass === "primary" ? 0 : (request.pass as number | undefined);
       const answer = pass === undefined ? { ok: true, result: { tick: 60, width: 960, height: 640, backend: "Metal", png: PNG_1x1 } }
         : pass >= 2 ? { ok: false, error: OUT_OF_RANGE }
           : { ok: true, result: { tick: 60, width: 217, height: 217, backend: "Metal", pass, passes: 2, primaryPass: 0, png: PNG_1x1 } };
@@ -197,6 +202,11 @@ describe("through a dev bridge on a socket (a fake game answering like DevBridge
       });
       expect(requests.at(-1)).toMatchObject({ cmd: "capture", pass: 1 });
 
+      const primary = JSON.parse((await toolCall({ action: "capture", pass: "primary" })).stdout);
+      expect(requests.at(-1)).toMatchObject({ cmd: "capture", pass: "primary" });
+      expect(primary).toMatchObject({ isError: false, structured: { pass: 0, passes: 2, primaryPass: 0 } });
+      expect(primary.text).toContain("pass 0 of 2 (primary)");
+
       const whole = JSON.parse((await toolCall({ action: "capture" })).stdout);
       expect(whole.structured).toEqual({ tick: 60, width: 960, height: 640, backend: "Metal" });
       expect("pass" in requests.at(-1)!).toBe(false);
@@ -219,4 +229,28 @@ describe("through a dev bridge on a socket (a fake game answering like DevBridge
       server.close();
     }
   }, 20_000);
+});
+
+describe("ukiyo_live reload", () => {
+  const session = { pid: 1, port: 2, token: "t", url: "u", startedAt: "", file: "f" };
+  const run = (reload: unknown) => ({ run: { name: "LanternRun", state: "running", pid: 77, detail: "", reload } });
+
+  test("is in the schema and asks the Studio to reload and wait", async () => {
+    expect(() => validate(live.inputSchema, { action: "reload" })).not.toThrow();
+    const calls: unknown[][] = [];
+    const result = await reload(5, [session], async (...args) => (calls.push(args), run({ ok: true, fromTick: 300, match: true, sourceChanged: false, wasPaused: false })));
+    expect(calls[0]!.slice(1, 3)).toEqual(["/api/run/reload", { wait: true, pid: 5 }]);
+    expect(result.isError).toBeUndefined();
+    expect((result.content[0] as { text: string }).text).toContain("reloaded at tick 300 (pid 77, running); restored state identical");
+  });
+
+  test("a state that differs is reported, a failed reload is an error, no Studio is a clear input error", async () => {
+    const differs = await reload(undefined, [session], async () => run({ ok: true, fromTick: 9, match: false, differences: ["values.score: 1 → 2"] }));
+    expect((differs.content[0] as { text: string }).text).toContain("DIFFERENT: values.score: 1 → 2");
+    const failed = await reload(undefined, [session], async () => run({ ok: false, error: "build failed (exit 1); the running game was not touched" }));
+    expect(failed.isError).toBe(true);
+    const refused = await reload(undefined, [session], async () => { throw new Error("[STUDIO]: /api/run/reload → 404 no running game"); });
+    expect(refused.isError).toBe(true);
+    await expect(reload(undefined, [])).rejects.toThrow("needs the Studio");
+  });
 });

@@ -4,7 +4,9 @@
     <Project Path="src/Ukiyo.Core/Ukiyo.Core.csproj" />
     <Project Path="src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
     <Project Path="src/Ukiyo.UI/Ukiyo.UI.csproj" />
+    <Project Path="src/Ukiyo.AI/Ukiyo.AI.csproj" />
     <Project Path="src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
+    <Project Path="src/Ukiyo.Animation/Ukiyo.Animation.csproj" />
     <Project Path="src/Ukiyo.Particles/Ukiyo.Particles.csproj" />
     <Project Path="src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
     <Project Path="src/Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
@@ -16,6 +18,10 @@
     <Project Path="src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />
   </Folder>
   <Folder Name="/samples/">
+    <Project Path="samples/CameraRig/Hosts/Headless/CameraRig.Headless.csproj" />
+    <Project Path="samples/CameraRig/Hosts/Desktop/CameraRig.Desktop.csproj" />
+    <Project Path="samples/CameraRig/Hosts/Export.Desktop/CameraRig.Export.Desktop.csproj" />
+    <Project Path="samples/CameraRig/Hosts/Browser/CameraRig.Browser.csproj" />
     <Project Path="samples/RotatingCube/Hosts/Headless/RotatingCube.Headless.csproj" />
     <Project Path="samples/RotatingCube/Hosts/Desktop/RotatingCube.Desktop.csproj" />
     <Project Path="samples/RotatingCube/Hosts/Export.Desktop/RotatingCube.Export.Desktop.csproj" />
@@ -37,6 +43,10 @@
     <Project Path="samples/ImportedMesh/Headless/ImportedMesh.Headless.csproj" />
     <Project Path="samples/ImportedMesh/Desktop/ImportedMesh.Desktop.csproj" />
     <Project Path="samples/ImportedMesh/Browser/ImportedMesh.Browser.csproj" />
+    <Project Path="samples/Patrol/Hosts/Headless/Patrol.Headless.csproj" />
+    <Project Path="samples/Patrol/Hosts/Desktop/Patrol.Desktop.csproj" />
+    <Project Path="samples/Patrol/Hosts/Export.Desktop/Patrol.Export.Desktop.csproj" />
+    <Project Path="samples/Patrol/Hosts/Browser/Patrol.Browser.csproj" />
     <Project Path="samples/Minimap/Headless/Minimap.Headless.csproj" />
     <Project Path="samples/Minimap/Desktop/Minimap.Desktop.csproj" />
     <Project Path="samples/Minimap/Browser/Minimap.Browser.csproj" />

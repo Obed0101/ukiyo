@@ -26,11 +26,13 @@ public sealed class SnapshotGoldenTests
 
     private static readonly Dictionary<string, GoldenCase> Cases = new(StringComparer.Ordinal)
     {
+        ["CameraRig"] = new(() => new Samples.CameraRig.CameraRigGame(), [0, 1, 60, 120, 180, 300, 600]),
         ["ImportedMesh"] = new(() => new Samples.ImportedMesh.ImportedMeshGame(), DefaultCheckpoints),
         ["LanternRun"] = new(() => new Samples.LanternRun.LanternRunGame(), [0, 30, 60, 120, 180, 240, 300], Input: "samples/LanternRun/parity/input.json"),
         ["LitCube"] = new(() => new Samples.LitCube.LitCubeGame(), DefaultCheckpoints),
         ["Minimap"] = new(() => new Samples.Minimap.MinimapGame(), DefaultCheckpoints),
         ["MyGameTemplate"] = new(() => new Games.MyGame.CubeGame(), DefaultCheckpoints),
+        ["Patrol"] = new(() => new Samples.Patrol.PatrolGame(), [0, 60, 250, 330, 360, 400, 450, 640], Input: "samples/Patrol/demo-input.json"),
         ["RotatingCube"] = new(() => new Samples.RotatingCube.CubeGame(), DefaultCheckpoints),
         ["SceneHop"] = new(() => new Samples.SceneHop.SceneHopGame(), [0, 12, 40, 60, 75, 80, 120, 300], Patches: "tests/Ukiyo.Tests/golden/snapshots/SceneHop.patches.json"),
         ["Sparks"] = new(() => new Samples.Sparks.SparksGame(), [0, 1, 60, 120, 300, 600]),

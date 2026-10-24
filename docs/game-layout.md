@@ -142,6 +142,9 @@ the G0 checks use).
   Desktop/Export.Desktop and `Platform/Browser` only from Browser; no `Shared/**/*.cs` has `#if`, `JSImport`,
   `JSExport`, `LibraryImport`, `DllImport` or `OperatingSystem.Is…`.
 
+`ukiyo check [game]` (MCP `ukiyo_check`, tools/mcp/README.md) runs the same rules against the files of any game, plus
+stale generated assets and, for samples, the golden snapshot; it names each finding with a typed `[CHECK:Code]`.
+
 ## RotatingCube migration (UKIYO-16)
 
 `Shared/CubeGame.cs` became `Shared/Game.cs` with the same bytes; `Program.cs` is unchanged. The SHA-256 of both files
