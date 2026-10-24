@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import("../web/types").PanelModule} PanelModule */
+import { recorder } from "../web/recorder.js";
 
 /**
  * Records what the person plays (keys and pointer, per tick) and turns it into an input script: the same JSON
@@ -21,10 +22,8 @@ export default {
     root.classList.add("stack");
     root.append(h("div", { class: "row" }, record, copy, save), summary, output);
 
-    let recording = false;
-    let script = "";
-
     function render() {
+      const { recording, script } = recorder.state;
       record.replaceChildren(icon("circle-dot"), recording ? "Stop recording" : "Record");
       record.setAttribute("aria-pressed", String(recording));
       record.toggleAttribute("disabled", !studio.session);
@@ -39,14 +38,12 @@ export default {
 
     record.addEventListener("click", async () => {
       try {
-        const result = /** @type {{ recording: boolean, events: number, script: unknown }} */ (await studio.call("record", { on: !recording }));
-        if (recording) {
-          script = JSON.stringify(result.script, null, 2);
-          summary.textContent = `${result.events} events recorded.`;
-          studio.view({ lastRecording: { events: result.events } });
-          studio.log("success", `recorded ${result.events} input events`);
+        const events = await recorder.toggle(studio);
+        if (events !== null) {
+          summary.textContent = `${events} events recorded.`;
+          studio.view({ lastRecording: { events } });
+          studio.log("success", `recorded ${events} input events`);
         }
-        recording = result.recording;
       } catch (error) {
         summary.textContent = error instanceof Error ? error.message : String(error);
       }
@@ -55,7 +52,7 @@ export default {
 
     copy.addEventListener("click", async () => {
       try {
-        await navigator.clipboard.writeText(script);
+        await navigator.clipboard.writeText(recorder.state.script);
         summary.textContent = "Copied.";
       } catch {
         summary.textContent = "Clipboard blocked. Use Save.";
@@ -63,16 +60,15 @@ export default {
     });
 
     save.addEventListener("click", () => {
-      const url = URL.createObjectURL(new Blob([script], { type: "application/json" }));
+      const url = URL.createObjectURL(new Blob([recorder.state.script], { type: "application/json" }));
       const link = h("a", { href: url, download: "input.json" });
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     });
 
-    studio.on("session", () => {
-      recording = false;
-      render();
-    });
+    studio.on("session", () => recorder.reset());
+    const unsubscribe = recorder.subscribe(render);
     render();
+    return unsubscribe;
   },
 };

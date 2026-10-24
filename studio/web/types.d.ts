@@ -40,7 +40,23 @@ export type GameSnapshot = {
   source: Record<string, string>;
   entities: Record<string, EntitySnapshot>;
   values?: Record<string, number>;
+  /** Only games with a SceneRegistry (docs/scenes-patches.md). */
+  scene?: SceneSnapshot;
 };
+
+export type SceneSnapshot = {
+  active: string | null;
+  loadedAt: number;
+  appliedCount: number;
+  appliedHash: string;
+  patches: { id: string; tick: number }[];
+  rejectedCount: number;
+  rejectedHash: string;
+  rejected: { id: string; tick: number; code?: string; message?: string }[];
+};
+
+/** The project the Studio is working on (set by the hub); null before one is chosen. */
+export type StudioProject = { name: string; dir: string; kind: string };
 
 /** A real frame read back from the game's renderer (GPU on desktop). */
 export type Frame = { tick: number; width: number; height: number; backend: string; url: string; pid: number };
@@ -51,6 +67,8 @@ export type Notice = { text: string; level: "info" | "success" | "warn" | "error
 
 export type StudioEvents = {
   session: LiveSession | null;
+  /** Emitted by the hub when the project in view changes. */
+  project: StudioProject | null;
   sessions: LiveSession[];
   status: GameStatus | null;
   snapshot: GameSnapshot | null;
@@ -59,7 +77,7 @@ export type StudioEvents = {
   notice: Notice;
 };
 
-export type BridgeCommand = "status" | "pause" | "resume" | "step" | "snapshot" | "capture" | "input" | "record";
+export type BridgeCommand = "status" | "pause" | "resume" | "step" | "snapshot" | "capture" | "input" | "record" | "patch";
 
 export type InputEvent = { key?: string; button?: "Left" | "Right" | "Middle"; down?: boolean; pointer?: [number, number] };
 
@@ -81,12 +99,14 @@ export type Studio = {
   readonly h: typeof import("./dom.js").h;
   readonly icon: typeof import("./icons.js").icon;
   readonly session: LiveSession | null;
+  /** The project in view (hub). Optional: read it as studio.project?.name ?? studio.session?.game. */
+  readonly project?: StudioProject | null;
   readonly sessions: LiveSession[];
   readonly status: GameStatus | null;
   readonly snapshot: GameSnapshot | null;
   readonly frame: Frame | null;
   /** Sends one dev bridge command to the selected game. Rejects with the bridge's error message. */
-  call(cmd: BridgeCommand, args?: { ticks?: number; events?: InputEvent[]; on?: boolean }): Promise<unknown>;
+  call(cmd: BridgeCommand, args?: { ticks?: number; events?: InputEvent[]; on?: boolean; patch?: Record<string, unknown> }): Promise<unknown>;
   /** Pause/resume/step through these so every panel sees the new status and snapshot. */
   control(cmd: "pause" | "resume" | "step", ticks?: number): Promise<void>;
   capture(): Promise<Frame | null>;

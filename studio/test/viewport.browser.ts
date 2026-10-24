@@ -10,7 +10,7 @@ const server = Bun.serve({
   fetch(request) {
     const path = new URL(request.url).pathname;
     if (path === "/") return new Response('<div id="actions"></div><main></main>', { headers: { "content-type": "text/html" } });
-    if (["/panels/viewport.js", "/web/dom.js"].includes(path)) return new Response(Bun.file(root + path));
+    if (["/panels/viewport.js", "/web/dom.js", "/web/recorder.js"].includes(path)) return new Response(Bun.file(root + path));
     return new Response("not found", { status: 404 });
   },
 });

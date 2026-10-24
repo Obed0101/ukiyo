@@ -97,7 +97,7 @@ The Games panel (`panels/sessions.js`) runs, reloads and stops games through `st
 ## Tools
 
 - `ukiyo_studio {"action":"view"}`: what the person sees now — layout, theme, visible panels, `focusedPanel`, `session`,
-  `tick`, `paused`, `panelState` (e.g. `entities.selected` and its pose, `viewport.watching` / `playing`),
+  `tick`, `paused`, `panelState` (e.g. `hierarchy.selected` and its pose from the Hierarchy panel (`entities.selected` in the older Entities panel), `assets.asset` (root and path), `viewport.watching` / `playing`),
   `panelErrors`, `fileError`. Read it before acting on "this", "here" or "the one I selected".
 - `ukiyo_studio {"action":"notify","text":"…","level":"success"}`: tell them what you changed or what to try.
 - `ukiyo_studio {"action":"compose", …}` and `{"action":"check"}`: validated composition change; validate all files of both layers (`[repo]` / `[user]`).
