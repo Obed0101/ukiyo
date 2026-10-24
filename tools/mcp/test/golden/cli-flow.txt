@@ -15,7 +15,7 @@ ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch> [
   --events FILE     input: JSON array of key/pointer events
   --on true|false   record: explicit start/stop
   --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
-  --pass N          capture: one camera of a multi-camera frame alone (pass id 0, 1, …; default the composed frame)
+  --pass N|primary  capture: one camera of a multi-camera frame alone (pass id 0, 1, … or primary; default the composed frame)
   --out FILE        capture: PNG; record: input script; others: result JSON
 Output files are created exclusively: existing files are never overwritten.
 ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
@@ -40,6 +40,9 @@ ukiyo capture <game> [options]   Capture frames (ukiyo_capture)
   --audio [true|false]          Mix every sound the run plays into a WAV and report duration, sound count, peak and RMS (silence is peak 0); default false
   --timeout-seconds N           10..900; default 240
   --out DIR                     copy captures, passes into DIR (created; existing files are never overwritten)
+ukiyo check [game] [options]   Check game conformance (ukiyo_check)
+  <game>                        Game folder name under games/ or samples/; omitted, every game
+  --build [true|false]          Build the importer to check assets. false: never build; assets are checked only when a current importer build exists, otherwise reported unchecked; default true
 ukiyo import [specs…] [options]   Import assets (ukiyo_import)
   <specs>                       Spec files or folders, repository-relative or absolute inside the repository
   --check                       report stale outputs, write nothing (without it: run, regenerating them)
@@ -345,6 +348,77 @@ $ ukiyo new-game CiProbe --hosts Headless
     "games/CiProbe/Shared/Systems/.gitkeep",
     "games/CiProbe/Shared/assets/.gitkeep",
     "games/CiProbe/Shared/gen/.gitkeep"
+  ]
+}
+exit 0
+
+$ ukiyo check CiProbe
+{
+  "ok": true,
+  "checked": 1,
+  "legacy": [],
+  "failed": [],
+  "games": [
+    {
+      "game": "CiProbe",
+      "dir": "games/CiProbe",
+      "layout": "template",
+      "ok": true,
+      "checks": {
+        "layout": "pass",
+        "hosts": "pass",
+        "shared": "pass",
+        "program": "pass",
+        "assets": "skipped",
+        "golden": "skipped"
+      },
+      "findings": [
+        {
+          "code": "MissingHost",
+          "level": "info",
+          "path": "games/CiProbe/Hosts/Desktop",
+          "message": "no Desktop host (scaffolded with a host subset, or not added yet)"
+        },
+        {
+          "code": "MissingHost",
+          "level": "info",
+          "path": "games/CiProbe/Hosts/Browser",
+          "message": "no Browser host (scaffolded with a host subset, or not added yet)"
+        },
+        {
+          "code": "MissingHost",
+          "level": "info",
+          "path": "games/CiProbe/Hosts/Export.Desktop",
+          "message": "no Export.Desktop host (scaffolded with a host subset, or not added yet)"
+        }
+      ]
+    }
+  ]
+}
+exit 0
+
+$ ukiyo check RotatingCube
+{
+  "ok": true,
+  "checked": 1,
+  "legacy": [],
+  "failed": [],
+  "games": [
+    {
+      "game": "RotatingCube",
+      "dir": "samples/RotatingCube",
+      "layout": "template",
+      "ok": true,
+      "checks": {
+        "layout": "pass",
+        "hosts": "pass",
+        "shared": "pass",
+        "program": "pass",
+        "assets": "skipped",
+        "golden": "pass"
+      },
+      "findings": []
+    }
   ]
 }
 exit 0

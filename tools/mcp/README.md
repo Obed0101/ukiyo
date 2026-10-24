@@ -72,7 +72,8 @@ the actual transcript to `artifacts/cli-flow/actual.txt` and exits 1. After an i
 | `ukiyo_run` | Headless build + run with scripted input; JSON snapshots at checkpoint ticks |
 | `ukiyo_capture` | `ukiyo_run` plus CPU-renderer PNG frames at each checkpoint; multi-camera games also each pass alone (below) |
 | `ukiyo_test` | C# tests (xunit) and/or the three.js adapter tests |
-| `ukiyo_import` | Dev-time asset importer on `*.import.json` specs: `run` regenerates, `check` reports stale files (below) |
+| `ukiyo_import` | Dev-time asset importer on `*.import.json` specs: `run` regenerates, `check` reports stale files; `check` with no target sweeps every spec in the repository (below) |
+| `ukiyo_check` | Conformance of a game to the layout contract: entries, host csprojs, no `#if`/interop in `Shared/`, `Program.cs` shape, assets not stale, golden present (below) |
 | `ukiyo_live` | Dev bridge of a running desktop build: pause, step, snapshot, GPU capture (whole frame or one `pass`), input, recording, patches |
 | `ukiyo_new_game` | Scaffolds `games/<Name>` from `templates/game` (docs/game-layout.md) with the hosts you ask for under `Hosts/` |
 | `ukiyo_sprite_generate` · `_process` · `_sheet` | Image model or existing PNG → pixel-art PNG + atlas JSON; pack atlases |
@@ -92,7 +93,7 @@ by several cameras. The tools show the composed frame as before and each camera 
   result has no `passes` key, byte for byte what it was before. CLI: `capture Minimap --checkpoints 0,60 --out DIR`
   copies the frames and the pass PNGs.
 - `ukiyo_live {"action":"capture","pass":K}` (CLI `live capture --pass K --out FILE`) asks the dev bridge for pass K
-  alone (GPU readback); the result adds `pass`, `passes` and `primaryPass`. Without `pass` it is the composed frame,
+  alone (GPU readback; `"pass":"primary"` / `--pass primary` picks the pass the game marks as its view); the result adds `pass`, `passes` and `primaryPass`. Without `pass` it is the composed frame,
   unchanged. A pass the frame does not have is refused by the engine: an `isError` result whose text carries
   `[RENDER:OutOfRange]` and whose structured result is `{"error": …, "code": "RENDER:OutOfRange"}`; the CLI exits 1
   with that message. Every bridge refusal comes back this way (`code` is null when the message has no typed code).
@@ -100,7 +101,9 @@ by several cameras. The tools show the composed frame as before and each camera 
 ## `ukiyo_import`
 
 Wraps `tools/Ukiyo.Import` ([docs/assets.md](../../docs/assets.md)). Input: `action` (`run` | `check`), `game`
-and/or `specs` (spec files or folders, inside the repository), `timeoutSeconds` (default 300).
+and/or `specs` (spec files or folders, inside the repository), `timeoutSeconds` (default 300). `check` with neither
+checks every spec of every game under `games/` and `samples/` (read-only); `run` with neither is refused, since it
+would rewrite generated files everywhere.
 
 - Spec paths, and the `output` / `input` / `inputs` fields inside each spec, must resolve inside the repository;
   anything else is an input error before the importer runs. Specs are otherwise passed through unchanged, so new
@@ -116,6 +119,25 @@ and/or `specs` (spec files or folders, inside the repository), `timeoutSeconds` 
   `MissingFile`, `InvalidPng`, `DuplicateName`, `Stale`, …); exit 2 is `Usage`, a timeout `Timeout`, any other exit
   `Crash`, each with the importer's own message.
 - It proves the generated code matches the sources. It does not build or run the game.
+
+## `ukiyo_check`
+
+Input: `game` (omitted: every game), `build` (default true; false never builds the importer). CLI: `check [game] [--build false]`.
+Reads files, builds and runs nothing except the importer's own `--check` for games that have `*.import.json` specs.
+The rules are the ones `GameLayoutTests` enforces on templates and samples ([docs/game-layout.md](../../docs/game-layout.md)):
+
+| Check | Fails with |
+|---|---|
+| `layout` | `MissingEntry`: a required `Shared/` or `Platform/` entry, or `Www/index.html`+`main.js` when a Browser host exists |
+| `hosts` | `HostLayout` (a host folder holds more or less than `<Game>.<Host>.csproj`), `HostProject` (no `UkiyoGameDir`, no `Shared/**/*.cs` link, wrong `Platform/` link) |
+| `shared` | `PlatformLeak`: `#if`, `JSImport`, `JSExport`, `LibraryImport`, `DllImport`, `OperatingSystem.Is` in `Shared/**/*.cs` (file:line) |
+| `program` | `ProgramShape`: not `GameApplication.RunAsync(new <Game>(), PlatformBootstrap.Create(args))`, or a preprocessor directive |
+| `assets` | `StaleAssets`, `ImportError` (importer `--check`); `AssetsUnchecked` (warning) when the importer could not be built or checked |
+| `golden` | `MissingGolden`: only for `samples/` (`tests/Ukiyo.Tests/golden/snapshots/<Game>.txt`); skipped for `games/` |
+
+Findings have a `level`: any `error` makes the result `isError` (CLI exit 1); `warn` and `info` do not. A host absent from
+`Hosts/` (a game scaffolded with `--hosts Headless`) is `MissingHost`, info. Games in the older `<game>/<Host>/` layout
+(LanternRun, TexturedQuad, SceneHop, LitCube, ImportedMesh, Minimap) are `layout: "legacy"`, `LegacyLayout` info: not checked, not failed.
 
 ## `ukiyo_status` per game
 
