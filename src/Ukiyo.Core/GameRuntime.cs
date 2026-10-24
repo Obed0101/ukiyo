@@ -393,3 +393,31 @@ public static class SnapshotWriter
         json.WriteEndArray();
     }
 }
+
+/// <summary>Command-line flags that only the headless host honors. Any other host refuses them instead of ignoring them.</summary>
+public static class HostFlags
+{
+    private static readonly string[] HeadlessOnly = ["--patches"];
+
+    /// <summary>The error for the first headless-only flag in <paramref name="args"/>, or null when the host can take them all.</summary>
+    public static string? Unsupported(string target, string[] args)
+    {
+        ArgumentNullException.ThrowIfNull(args);
+        var flag = args.FirstOrDefault(arg => HeadlessOnly.Contains(arg, StringComparer.Ordinal));
+        return flag is null
+            ? null
+            : $"[{target.ToUpperInvariant()}]: {flag} is headless-only; the {target} host would ignore it. Replay patches with the headless host (ukiyo_run {{\"patches\":[...]}}) or submit them to a running game with ukiyo_live patch";
+    }
+}
+
+/// <summary>A host that cannot start: prints why on stderr and exits with code 2, so a bad command line is never silently ignored.</summary>
+public sealed class StartupFailure(string target, string message) : IPlatformHost
+{
+    public string Target => target;
+
+    public Task<int> RunAsync(GameRuntime runtime)
+    {
+        Console.Error.WriteLine(message);
+        return Task.FromResult(2);
+    }
+}

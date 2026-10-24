@@ -8,7 +8,10 @@ namespace Ukiyo.Hosting;
 /// <summary>Desktop bootstrap: SDL3 window with a CAMetalLayer, WgpuRenderer on Metal.</summary>
 public static class PlatformBootstrap
 {
-    public static IPlatformHost Create(string[] args) => new DesktopHost(DesktopOptions.Parse(args));
+    public static IPlatformHost Create(string[] args) =>
+        HostFlags.Unsupported("desktop", args) is { } error
+            ? new StartupFailure("desktop", error)
+            : new DesktopHost(DesktopOptions.Parse(args));
 }
 
 /// <param name="CaptureDirectory">When set, runs the deterministic checkpoint capture and exits.</param>

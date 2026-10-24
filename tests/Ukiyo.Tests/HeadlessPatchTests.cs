@@ -118,6 +118,37 @@ public sealed class HeadlessPatchTests : IDisposable
     }
 
     [Fact]
+    public async Task A_host_that_cannot_replay_patches_refuses_the_flag_with_exit_2_instead_of_ignoring_it()
+    {
+        Assert.Null(HostFlags.Unsupported("desktop", ["--capture", "frames"]));
+        var message = HostFlags.Unsupported("desktop", ["--capture", "frames", "--patches", "log.json"]);
+        Assert.StartsWith("[DESKTOP]: --patches is headless-only", message);
+
+        var error = new StringWriter();
+        var original = Console.Error;
+        Console.SetError(error);
+        try
+        {
+            Assert.Equal(2, await new StartupFailure("desktop", message!).RunAsync(new GameRuntime(new SceneHopGame(), Source)));
+        }
+        finally
+        {
+            Console.SetError(original);
+        }
+
+        Assert.Contains("headless-only", error.ToString());
+    }
+
+    [Fact]
+    public async Task An_unknown_prefab_in_a_patch_does_not_tell_the_author_to_register_before_scenes()
+    {
+        var log = Write("dragon.json", """[{"id":"p1","tick":5,"ops":[{"op":"spawn","id":"x","prefab":"dragon","position":[0,0]}]}]""");
+        var (_, _, _, stderr) = await RunHeadless(new SceneHopGame(), "--checkpoints", "0,60", "--patches", log);
+        Assert.Contains("a patch can only spawn a prefab the game registered", stderr);
+        Assert.DoesNotContain("before scenes", stderr);
+    }
+
+    [Fact]
     public async Task A_missing_log_or_a_game_without_scenes_is_refused_with_a_nonzero_exit()
     {
         var missing = await RunHeadless(new SceneHopGame(), "--checkpoints", "0", "--patches", Path.Combine(_directory, "nope.json"));
