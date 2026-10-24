@@ -23,7 +23,8 @@ input.Pointer;                       // drawing-buffer pixels, top-left origin
 input.Viewport;                      // RenderExtent the pointer refers to
 ```
 
-A press and release inside the same frame still reports `WasPressed` and `WasReleased` on that tick.
+A press and release inside the same frame still reports `WasPressed` and `WasReleased` on that tick (`IsDown` is false).
+Key repeat is not a new press; a key up without a down is ignored. Contract and edge cases: docs/decisions/input-contract.md.
 Keys: `A`–`Z`, `D0`–`D9`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, `Left`, `Right`, `Up`, `Down`, `LeftShift`,
 `RightShift`, `LeftControl`, `RightControl`, `LeftAlt`, `RightAlt`, `F1`–`F12`.
 
