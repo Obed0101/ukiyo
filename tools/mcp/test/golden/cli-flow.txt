@@ -270,6 +270,29 @@ $ ukiyo status
       }
     },
     {
+      "name": "Sparks",
+      "dir": "samples/Sparks",
+      "hosts": [
+        "Browser",
+        "Desktop",
+        "Export.Desktop",
+        "Headless"
+      ],
+      "profile": {
+        "profile": "G0Unlit",
+        "basis": "source",
+        "declaredAt": null,
+        "note": "no Profile override in Shared/: the IGame default"
+      },
+      "scenes": {
+        "registry": false,
+        "at": null
+      },
+      "imports": {
+        "specs": []
+      }
+    },
+    {
       "name": "TexturedQuad",
       "dir": "samples/TexturedQuad",
       "hosts": [
@@ -310,6 +333,7 @@ $ ukiyo status
     "ukiyo-input",
     "ukiyo-live",
     "ukiyo-new-game",
+    "ukiyo-particles",
     "ukiyo-physics",
     "ukiyo-platform-dev",
     "ukiyo-renderer-dev",
@@ -670,5 +694,5 @@ exit 0
 games/ absent; Ukiyo.slnx identical to before new-game
 
 $ ukiyo run CiProbe --checkpoints 0
-stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: ImportedMesh, LanternRun, LitCube, Minimap, RotatingCube, SceneHop, TexturedQuad
+stderr: [UKIYO]: [MCP:InvalidParams]: no game "CiProbe". Known: ImportedMesh, LanternRun, LitCube, Minimap, RotatingCube, SceneHop, Sparks, TexturedQuad
 exit 1
