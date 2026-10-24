@@ -11,7 +11,7 @@
 An agent-native game engine in C#. Your coding agent reads and changes the game's code while it runs,<br>
 through skills and MCP. The Studio is the human window: watch, edit, take over.<br>
 Assemble it like Arch Linux: simple, balanced or complete.<br>
-<sub>Pre-alpha. 0.0.1 ships the core: one program on three targets. Sprites, physics, input, game UI, audio, skills, the MCP server and a first Studio are in the tree: they build and pass their tests, cross-target parity is still open (<a href="docs/G1.md">G1</a>, <a href="docs/G3.md">G3</a>).</sub>
+<sub>Pre-alpha. 0.0.1 ships the core: one program on three targets. Sprites, physics, input, game UI, audio, lighting, several cameras, scenes and patches, skills, the MCP server and a first Studio are in the tree: they build and pass their tests. G1 parity passes; the Studio (<a href="docs/G3.md">G3</a>) is not closed (<a href="docs/G1.md">G1</a>).</sub>
 
 <br>
 
@@ -79,16 +79,42 @@ still open. [G1](docs/G1.md) and [G3](docs/G3.md) list what ran, what passed and
 - **Audio.** `Ukiyo.Audio`: sounds as events from `Update`, a shared mixer, WAV assets and a seeded sound-effect
   synthesizer, played through SDL3 on desktop and Web Audio in the browser, recorded to WAV headless.
 - **Dev bridge.** A running desktop build answers on localhost: pause, step, snapshot, capture, inject and record input.
+- **Lighting and cameras.** Profile `G1Lit`: per-pixel Lambert with directional and point lights, and up to four
+  camera passes per frame (minimap, split screen). See [lighting](docs/rendering-lighting.md) and
+  [passes](docs/rendering-passes.md); samples `LitCube` and `Minimap`.
+- **Scenes, prefabs and patches (G2).** Scenes as data, prefabs as functions, validated patches applied between
+  ticks, a bounded patch history in snapshots. See [scenes-patches](docs/scenes-patches.md); sample `SceneHop`.
+- **Imported art.** PNG sprites and glTF meshes compile into `Shared/gen/*.g.cs` through `tools/Ukiyo.Import`
+  ([assets](docs/assets.md)); samples `TexturedQuad` and `ImportedMesh`.
 - **MCP server and skills.** `tools/mcp` (Bun, no dependencies) gives agents headless runs, captures, tests, the
-  live bridge, new-game scaffolding, sprite generation through OpenAI or Gemini image models (or offline), sound
-  generation and the Studio. Sixteen skills in `skills/`: simple, balanced and complete presets for making games, and
-  an engine preset for working on ukiyo itself (architecture, renderers, hosts, tooling), linked into `.claude/skills`
-  and `.agents/skills` for agents in this repository.
-- **Studio base.** `studio/` (Bun, plain ES modules): the running game's real frame, transport, values, entities,
-  input recording and activity, in simple, balanced or complete layouts. Panels, layouts and themes are files that
-  agents edit and open pages apply live; agents can read what the person is looking at and send them notices
-  ([G3](docs/G3.md)).
-- **LanternRun.** A small platformer in `samples/LanternRun` that uses all of the above.
+  live bridge, new-game scaffolding, `ukiyo_check` (layout conformance of a game, see
+  [game layout](docs/game-layout.md)), asset import, sprite generation through OpenAI or Gemini image models (or
+  offline), sound generation and the Studio; the same tools run as a CLI (`bun tools/mcp/src/cli.ts --help`).
+  Eighteen skills in `skills/`: simple, balanced and complete presets for making games, and an engine preset for
+  working on ukiyo itself (architecture, renderers, hosts, tooling), linked into `.claude/skills` and
+  `.agents/skills` for agents in this repository.
+- **LanternRun.** A small platformer in `samples/LanternRun` that uses the 2D layer, input, physics, UI and audio.
+
+Samples: `RotatingCube` (the template), `LanternRun`, `TexturedQuad`, `LitCube`, `ImportedMesh`, `Minimap`,
+`SceneHop`. Docs: [assets](docs/assets.md) · [conventions](docs/conventions.md) · [export](docs/export.md) ·
+[game layout](docs/game-layout.md) · [protocol](docs/protocol.md) · [lighting](docs/rendering-lighting.md) ·
+[passes](docs/rendering-passes.md) · [scenes and patches](docs/scenes-patches.md) · reports
+[G0](docs/G0.md), [G1](docs/G1.md), [G3](docs/G3.md).
+
+## Studio
+
+`studio/` (Bun, plain ES modules) is the person's window onto a running game: its real frame, transport, values,
+entities, input recording and activity, in simple, balanced or complete layouts. Panels, layouts and themes are
+files that agents edit and open pages apply live; agents read what the person is looking at and send them notices
+(`ukiyo_studio`). It never owns game state.
+
+```sh
+dotnet run --project samples/RotatingCube/Hosts/Desktop   # any development build announces itself in ~/.ukiyo/live
+bun studio/src/server.ts                                  # → http://127.0.0.1:4100
+```
+
+Status: the base runs against a live Metal game ([G3](docs/G3.md)); controlled reload is not implemented yet.
+Details: [studio/README.md](studio/README.md).
 
 ## Quickstart
 
@@ -121,6 +147,12 @@ Verify everything, end to end (opens a window for a few seconds):
 
 ```sh
 scripts/g0.sh
+```
+
+Prove an export runs alone, with no .NET and no dylibs on the path (opens a window briefly):
+
+```sh
+scripts/clean-run.sh RotatingCube        # see docs/export.md "Clean run"
 ```
 
 ## The shape of a game
@@ -184,7 +216,8 @@ src/Ukiyo.Audio               mixer, WAV, sound synthesizer       (G1)
 src/Ukiyo.DevBridge           live control of dev builds          (G1)
 templates/game                the layout every new game copies    (docs/game-layout.md)
 samples/RotatingCube          that template filled in: Shared/Program.cs and Shared/Game.cs (CubeGame)
-samples/LanternRun            2D platformer sample                (G1)
+samples/*                     RotatingCube, LanternRun, TexturedQuad, LitCube, ImportedMesh, Minimap, SceneHop
+tools/Ukiyo.Import            art importer: sprites, atlases, glTF meshes
 web/three-adapter             three.js presentation adapter, no game rules
 tools/mcp                     MCP server for agents               (G1)
 studio                        the Studio: live view, files as UI  (G3)
@@ -199,7 +232,7 @@ goes to the game.
 
 - [x] **G0 · One program, two real renderers.** Metal and WebGL2 from the same C#, NativeAOT single binary, static web export.
 - [x] **G1 · Runtime slice.** Input, 2D sprites, physics, game UI, audio, dev bridge, MCP and skills. Headless, Metal and WebGL2 match in simulation and pixels; NativeAOT export without the dev bridge ([report](docs/G1.md)). Not committed or released yet.
-- [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI and its tool adapters.
+- [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI and its tool adapters. In the tree: scenes, prefabs, patches with a bounded history and replay (headless and live), glTF and sprite import, lit meshes, several cameras, the CLI and `ukiyo_check`. No G2 report yet, so the gate stays open.
 - [ ] **G3 · Studio and reload.** A human window onto a running game in simple, balanced or complete layouts, a dev bridge from any editor, controlled reload. The Studio base has [live Metal evidence](docs/G3.md), including Watch, pointer input and recording → headless replay; controlled reload remains open.
 - [ ] **G4 · Evidence and games.** Replays, visual conformance and the first real games.
 - [ ] **G5 · The open library.** Packages for assets and game systems, published and shared by the community, free and open source.
