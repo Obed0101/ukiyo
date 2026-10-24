@@ -26,6 +26,7 @@
     <Compile Include="../../samples/Patrol/Shared/Entities/*.cs" Link="Shared/Patrol/Entities/%(Filename)%(Extension)" />
     <Compile Include="../../samples/Patrol/Shared/Lib/*.cs" Link="Shared/Patrol/Lib/%(Filename)%(Extension)" />
     <Compile Include="../../samples/Patrol/Shared/Systems/*.cs" Link="Shared/Patrol/Systems/%(Filename)%(Extension)" />
+    <Compile Include="../../samples/Sparks/Shared/Game.cs" Link="Shared/Sparks/Game.cs" />
     <!-- The game every scaffold starts from (templates/game, namespace Ukiyo.Games.MyGame): pinned by SnapshotGoldenTests. -->
     <Compile Include="../../templates/game/Shared/Game.cs" Link="Shared/MyGameTemplate/Game.cs" />
 
@@ -34,6 +35,7 @@
     <ProjectReference Include="../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
     <ProjectReference Include="../../src/Ukiyo.AI/Ukiyo.AI.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
+    <ProjectReference Include="../../src/Ukiyo.Particles/Ukiyo.Particles.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
     <ProjectReference Include="../../src/Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
     <ProjectReference Include="../../src/Ukiyo.DevBridge/Ukiyo.DevBridge.csproj" />

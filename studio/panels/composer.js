@@ -30,7 +30,7 @@ export default {
         h("label", { for: `compose-${id}` }, studio.panelTitle(id), h("span", { class: "muted", text: inLayout.has(id) ? "" : " · dock" }))));
     }
     root.classList.add("stack");
-    root.append(list, error, h("p", { class: "muted" }, "Saved to ", h("code", { class: "mono", text: "studio/studio.json" }), ". Agents read and edit the same file."));
+    root.append(list, error, h("p", { class: "muted" }, "Saved to ", h("code", { class: "mono", text: "studio/studio.json" }), ", which agents share."));
 
     /** @param {string} id @param {boolean} visible */
     async function toggle(id, visible) {

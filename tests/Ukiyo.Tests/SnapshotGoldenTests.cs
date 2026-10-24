@@ -34,6 +34,7 @@ public sealed class SnapshotGoldenTests
         ["Patrol"] = new(() => new Samples.Patrol.PatrolGame(), [0, 60, 250, 330, 360, 400, 450, 640], Input: "samples/Patrol/demo-input.json"),
         ["RotatingCube"] = new(() => new Samples.RotatingCube.CubeGame(), DefaultCheckpoints),
         ["SceneHop"] = new(() => new Samples.SceneHop.SceneHopGame(), [0, 12, 40, 60, 75, 80, 120, 300], Patches: "tests/Ukiyo.Tests/golden/snapshots/SceneHop.patches.json"),
+        ["Sparks"] = new(() => new Samples.Sparks.SparksGame(), [0, 1, 60, 120, 300, 600]),
         ["TexturedQuad"] = new(() => new Samples.TexturedQuad.TexturedQuadGame(), DefaultCheckpoints),
     };
 

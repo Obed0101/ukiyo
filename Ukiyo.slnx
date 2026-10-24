@@ -6,6 +6,7 @@
     <Project Path="src/Ukiyo.UI/Ukiyo.UI.csproj" />
     <Project Path="src/Ukiyo.AI/Ukiyo.AI.csproj" />
     <Project Path="src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
+    <Project Path="src/Ukiyo.Particles/Ukiyo.Particles.csproj" />
     <Project Path="src/Ukiyo.Render.Null/Ukiyo.Render.Null.csproj" />
     <Project Path="src/Ukiyo.Render.Software/Ukiyo.Render.Software.csproj" />
     <Project Path="src/Ukiyo.Render.Wgpu/Ukiyo.Render.Wgpu.csproj" />
@@ -44,6 +45,10 @@
     <Project Path="samples/Minimap/Headless/Minimap.Headless.csproj" />
     <Project Path="samples/Minimap/Desktop/Minimap.Desktop.csproj" />
     <Project Path="samples/Minimap/Browser/Minimap.Browser.csproj" />
+    <Project Path="samples/Sparks/Hosts/Headless/Sparks.Headless.csproj" />
+    <Project Path="samples/Sparks/Hosts/Desktop/Sparks.Desktop.csproj" />
+    <Project Path="samples/Sparks/Hosts/Export.Desktop/Sparks.Export.Desktop.csproj" />
+    <Project Path="samples/Sparks/Hosts/Browser/Sparks.Browser.csproj" />
   </Folder>
   <Folder Name="/templates/">
     <Project Path="templates/game/Hosts/Headless/MyGame.Headless.csproj" />
