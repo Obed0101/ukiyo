@@ -9,12 +9,13 @@ missing argument, input the tool's schema refuses); exit 1: the tool failed (its
 on stdout). run and live exit 1 on every error.
 UKIYO_ROOT=<repo> selects the repository (default: the one this file is in), resolved like the MCP server. Give a real
 path (realpath): on macOS /tmp and the default temp dir are symlinks, a known build problem.
-ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch> [options]
+ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch|rewind> [options]
   --pid N           Required when more than one game is running
   --ticks N         step: 0..36000 (default 1)
   --events FILE     input: JSON array of key/pointer events
   --on true|false   record: explicit start/stop
   --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
+  --tick N          rewind: return to tick N (ISaveable games; nearest checkpoint plus deterministic replay)
   --pass N          capture: one camera of a multi-camera frame alone (pass id 0, 1, …; default the composed frame)
   --out FILE        capture: PNG; record: input script; others: result JSON
 Output files are created exclusively: existing files are never overwritten.
@@ -22,6 +23,8 @@ ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
   --checkpoints A,B,…   snapshot ticks (default 0,60,180,600)
   --patches FILE        patch log: JSON array of patches, submitted before tick 0
   --input FILE          input script: JSON array of events with ticks
+  --load FILE           resume from a save (ISaveable games): restore it, continue from its tick
+  --save FILE           write a save of the final state
   --size WxH            drawing-buffer size (default 1280x720)
 Examples:
   bun tools/mcp/src/cli.ts live list
@@ -29,6 +32,7 @@ Examples:
   bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
   bun tools/mcp/src/cli.ts live capture --pid 123 --pass 1 --out minimap.png
   bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json
+  bun tools/mcp/src/cli.ts live rewind --pid 123 --tick 300
   bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches patches.json
 ukiyo capture <game> [options]   Capture frames (ukiyo_capture)
   <game>                        Game folder name under games/ or samples/, e.g. LanternRun
@@ -36,6 +40,8 @@ ukiyo capture <game> [options]   Capture frames (ukiyo_capture)
   --input FILE                  Scripted input fed tick by tick. Deterministic: the same script always gives the same snapshots; JSON array, passed inline
   --patches FILE                Scene patch log, submitted in order before tick 0 (games with a SceneRegistry). Same log ⇒ same snapshots; JSON array, passed inline
   --patch-log TEXT              Instead of `patches`: path (inside the repository) of a patch log file, a JSON array of patches
+  --load-from TEXT              Path (inside the repository) of a save written by saveTo: the run restores it before the first tick and continues from its tick; checkpoints before that tick are skipped, and patch-log entries the save already holds are skipped. The same input script and patch log as the saved run continue exactly where it stopped (docs/save-replay.md). Games that implement ISaveable only
+  --save-to TEXT                Path (inside the repository) to write a save of the final state to, after the last checkpoint. Games that implement ISaveable only
   --size TEXT                   Drawing-buffer size, e.g. 640x360; default 640x360
   --audio [true|false]          Mix every sound the run plays into a WAV and report duration, sound count, peak and RMS (silence is peak 0); default false
   --timeout-seconds N           10..900; default 240
@@ -107,6 +113,7 @@ ukiyo studio <action> [options]   Studio (the person's view) (ukiyo_studio)
   --show A,B,…                  Panels to show in addition to the layout (they go to the dock row). Replaces the current list
   --hide A,B,…                  Panels of the layout to hide. Replaces the current list
   --panel-options FILE          Per-panel options, e.g. {"values":{"pin":["score","lives"]}}. null removes a panel's options; JSON object, passed inline
+  --target user|repo            compose only: which studio.json to write. Default: the user's when it exists, else the repo's
   --text TEXT
   --level info|success|warn|error  default info
 ukiyo test [options]   Run tests (ukiyo_test)

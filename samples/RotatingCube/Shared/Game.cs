@@ -7,7 +7,7 @@ namespace Ukiyo.Samples.RotatingCube;
 /// G0 game: one cube, rotation computed only here. Every face has its own color and the +Z face carries an
 /// off-center white marker, so mirrored axes, wrong winding or swapped color channels are visible in any renderer.
 /// </summary>
-public sealed class CubeGame : IGame
+public sealed class CubeGame : IGame, ISaveable
 {
     /// <summary>
     /// Rotation law: constant angular speed around a fixed tilted axis. Change these and every target changes. Built with
@@ -37,6 +37,10 @@ public sealed class CubeGame : IGame
         // State is a pure function of the tick index: no accumulated float drift, identical on every target.
         _rotation = ExpectedRotation(tick.Tick + 1);
     }
+
+    public void Save(SaveWriter writer) => writer.Quaternion(_rotation);
+
+    public void Load(SaveReader reader) => _rotation = reader.Quaternion();
 
     public void Extract(FrameBuilder frame)
     {
