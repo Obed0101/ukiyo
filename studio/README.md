@@ -52,3 +52,6 @@ ticking number. The game frame is a dark screen in every theme, scaled with near
 choreography; presses scale to 0.96; notices rise 8 px in 200 ms; reduced motion keeps only opacity. Below 900 px
 panels stack in the layout's reading order. Fonts come from `site/node_modules/geist` when installed, otherwise
 system fonts.
+
+**Mac app**: `scripts/mac-app.sh` installs the Studio as `/Applications/Ukiyo.app` (native window, starts and stops the
+server itself); see [apps/mac](../apps/mac/README.md).
