@@ -14,8 +14,8 @@ export default {
   mount(root, studio) {
     const { h, icon } = studio;
     const record = h("button", { type: "button", class: "button", "aria-pressed": "false" });
-    const copy = h("button", { type: "button", class: "button", disabled: true }, "Copy script");
-    const save = h("button", { type: "button", class: "button", disabled: true }, "Save input.json");
+    const copy = h("button", { type: "button", class: "button", hidden: true, "aria-label": "Copy script" }, icon("copy"), "Copy");
+    const save = h("button", { type: "button", class: "button", hidden: true, "aria-label": "Save input.json" }, icon("download"), "Save");
     const summary = h("p", { class: "muted" });
     const output = h("pre", { class: "script mono", "aria-label": "Recorded input script" });
     root.classList.add("stack");
@@ -28,13 +28,13 @@ export default {
       record.replaceChildren(icon("circle-dot"), recording ? "Stop recording" : "Record");
       record.setAttribute("aria-pressed", String(recording));
       record.toggleAttribute("disabled", !studio.session);
-      copy.toggleAttribute("disabled", !script);
-      save.toggleAttribute("disabled", !script);
+      copy.hidden = !script;
+      save.hidden = !script;
       output.textContent = script;
       output.hidden = !script;
-      if (!studio.session) summary.textContent = "Connect a game to record input.";
-      else if (recording) summary.textContent = "Recording. Play in the game window, or in the Frame panel with Play on.";
-      else if (!script) summary.textContent = "Record a play session; the script replays it exactly in headless runs and tests.";
+      if (!studio.session) summary.textContent = "Start a game to record input.";
+      else if (recording) summary.textContent = "Recording. Play in the game window, or turn on Play in the Frame panel.";
+      else if (!script) summary.textContent = "Record a session to replay it exactly in tests.";
     }
 
     record.addEventListener("click", async () => {
@@ -56,9 +56,9 @@ export default {
     copy.addEventListener("click", async () => {
       try {
         await navigator.clipboard.writeText(script);
-        summary.textContent = "Script copied.";
+        summary.textContent = "Copied.";
       } catch {
-        summary.textContent = "The browser blocked the clipboard; use Save instead.";
+        summary.textContent = "Clipboard blocked. Use Save.";
       }
     });
 

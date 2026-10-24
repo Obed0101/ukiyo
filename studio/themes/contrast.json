@@ -1,0 +1,30 @@
+{
+  "description": "High-contrast dark: pure black, white text, strong borders, yellow accent.",
+  "colorScheme": "dark",
+  "tokens": {
+    "bg": "#000000",
+    "panel": "#0a0a0a",
+    "panel-raised": "#141414",
+    "line": "#6b6b6b",
+    "line-strong": "#a0a0a0",
+    "fg": "#ffffff",
+    "muted": "#e0e0e0",
+    "subtle": "#c4c4c4",
+    "accent": "#ffd60a",
+    "accent-fg": "#000000",
+    "ok": "#3dff8a",
+    "warn": "#ffb000",
+    "danger": "#ff6b6b",
+    "screen": "#000000",
+    "screen-fg": "#ffffff",
+    "screen-muted": "#cfcfcf",
+    "screen-line": "#6b6b6b",
+    "selection": "#ffffff",
+    "selection-fg": "#000000",
+    "radius-control": "4px",
+    "radius-panel": "6px",
+    "font-sans": "\"Geist\", ui-sans-serif, system-ui, sans-serif",
+    "font-mono": "\"Geist Mono\", ui-monospace, monospace",
+    "font-pixel": "\"Geist Pixel Square\", \"Geist Mono\", ui-monospace, monospace"
+  }
+}

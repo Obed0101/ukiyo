@@ -1,5 +1,6 @@
 // @ts-check
 /** @typedef {import("../web/types").PanelModule} PanelModule */
+import { emptyState } from "../web/dom.js";
 
 // KeyboardEvent.code values the engine understands (Ukiyo.Core KeyNames.FromWebCode). Anything else stays in the page.
 // Tab is deliberately left out: it always moves focus out of the frame, so keyboard users are never trapped in play.
@@ -27,7 +28,7 @@ export default {
     studio.actions.append(captureButton, watchButton, playButton);
 
     const image = /** @type {HTMLImageElement} */ (h("img", { alt: "", draggable: "false" }));
-    const message = h("p", { class: "empty" });
+    const message = h("div", { class: "empty-host" });
     const screen = h("div", { class: "screen", tabindex: "0", "aria-label": "Game frame" }, message);
     const caption = h("p", { class: "screen-caption" });
     root.classList.add("stack");
@@ -66,9 +67,10 @@ export default {
       if (watching) timer = setTimeout(() => watchLoop(generation), 1000 / fps);
     }
 
-    /** @param {string} text */
-    function showMessage(text) {
-      message.textContent = text;
+    /** @param {{ icon?: string, title: string, text?: string, command?: string, retry?: boolean }} options */
+    function showMessage({ icon: name, title, text, command, retry }) {
+      const action = retry ? h("button", { type: "button", class: "button", onClick: () => captureOnce() }, icon("camera"), "Capture frame") : undefined;
+      message.replaceChildren(emptyState({ icon: name ? icon(name) : undefined, title, text, command, action }));
       screen.replaceChildren(message);
     }
 
@@ -78,20 +80,20 @@ export default {
       watchButton.toggleAttribute("disabled", !studio.session);
       playButton.toggleAttribute("disabled", !studio.session);
       if (!studio.session) {
-        showMessage("No game connected. Start a development build, for example: dotnet run --project samples/LanternRun/Desktop");
+        showMessage({ icon: "unplug", title: "No game running", text: "Start a development build and it connects here.", command: "dotnet run --project samples/LanternRun/Desktop" });
         caption.textContent = "";
         return;
       }
       if (studio.status && !studio.status.capture) {
-        showMessage(`${studio.status.renderer} cannot read frames back. Use ukiyo_capture for CPU frames.`);
+        showMessage({ icon: "monitor", title: "This renderer cannot show frames", text: `${studio.status.renderer} cannot read frames back. Agents can use ukiyo_capture for CPU frames.` });
         return;
       }
       if (captureError) {
-        showMessage(captureError);
+        showMessage({ icon: "monitor", title: "Capture failed", text: captureError.replace(/^Capture failed: /, ""), retry: true });
         return;
       }
       if (!frame) {
-        showMessage("No frame yet. Capture reads the real frame from the running game.");
+        showMessage({ icon: "monitor", title: "No frame yet", text: "Capture reads the real frame from the running game.", retry: true });
         caption.textContent = "";
         return;
       }
@@ -101,7 +103,8 @@ export default {
       image.alt = `${studio.session.game} at tick ${frame.tick}`;
       if (image.parentElement !== screen) screen.replaceChildren(image);
       const behind = studio.status ? studio.status.tick - frame.tick : 0;
-      caption.textContent = `tick ${frame.tick} · ${frame.width}×${frame.height} · ${frame.backend} readback${behind > 0 ? ` · ${behind} ticks behind` : ""}`;
+      caption.textContent = `tick ${frame.tick} · ${frame.width}×${frame.height}${behind > 0 ? ` · ${behind} ticks behind` : ""}`;
+      caption.title = `${frame.backend} readback`;
     }
 
     captureButton.addEventListener("click", () => captureOnce());

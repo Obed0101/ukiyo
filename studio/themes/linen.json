@@ -1,0 +1,30 @@
+{
+  "description": "Warm light: linen paper, brown ink, terracotta accent.",
+  "colorScheme": "light",
+  "tokens": {
+    "bg": "#f6f1e9",
+    "panel": "#fffdf8",
+    "panel-raised": "#efe8dc",
+    "line": "#e1d8c8",
+    "line-strong": "#c9bda8",
+    "fg": "#2a2118",
+    "muted": "#5e5446",
+    "subtle": "#6f6455",
+    "accent": "#a34717",
+    "accent-fg": "#fffdf8",
+    "ok": "#2f6f44",
+    "warn": "#8a5a00",
+    "danger": "#a8321f",
+    "screen": "#14110d",
+    "screen-fg": "#f1ebe0",
+    "screen-muted": "#a89f90",
+    "screen-line": "#2c2620",
+    "selection": "#2a2118",
+    "selection-fg": "#f6f1e9",
+    "radius-control": "8px",
+    "radius-panel": "12px",
+    "font-sans": "\"Geist\", ui-sans-serif, system-ui, sans-serif",
+    "font-mono": "\"Geist Mono\", ui-monospace, monospace",
+    "font-pixel": "\"Geist Pixel Square\", \"Geist Mono\", ui-monospace, monospace"
+  }
+}
