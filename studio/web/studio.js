@@ -19,7 +19,7 @@ const HIDDEN_INTERVAL_MS = 1000;
 const SESSIONS_INTERVAL_MS = 2000;
 const CACHE_KEY = "ukiyo.studio.cache.v1";
 const PIN_KEY = "ukiyo.studio.session";
-const LAYOUT_ORDER = ["simple", "balanced", "complete"];
+const LAYOUT_ORDER = ["simple", "focus", "balanced", "wide", "complete"];
 
 const token = document.querySelector('meta[name="ukiyo-studio-token"]')?.getAttribute("content") ?? "";
 const api = createApi(token);
