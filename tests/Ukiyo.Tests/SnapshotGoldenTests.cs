@@ -31,6 +31,7 @@ public sealed class SnapshotGoldenTests
         ["LitCube"] = new(() => new Samples.LitCube.LitCubeGame(), DefaultCheckpoints),
         ["Minimap"] = new(() => new Samples.Minimap.MinimapGame(), DefaultCheckpoints),
         ["MyGameTemplate"] = new(() => new Games.MyGame.CubeGame(), DefaultCheckpoints),
+        ["Patrol"] = new(() => new Samples.Patrol.PatrolGame(), [0, 60, 250, 330, 360, 400, 450, 640], Input: "samples/Patrol/demo-input.json"),
         ["RotatingCube"] = new(() => new Samples.RotatingCube.CubeGame(), DefaultCheckpoints),
         ["SceneHop"] = new(() => new Samples.SceneHop.SceneHopGame(), [0, 12, 40, 60, 75, 80, 120, 300], Patches: "tests/Ukiyo.Tests/golden/snapshots/SceneHop.patches.json"),
         ["TexturedQuad"] = new(() => new Samples.TexturedQuad.TexturedQuadGame(), DefaultCheckpoints),
