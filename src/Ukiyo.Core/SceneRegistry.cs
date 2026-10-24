@@ -256,6 +256,149 @@ public sealed class SceneRegistry<TEntity> : ISceneDirector
         _simulating = true;
     }
 
+    void ISceneDirector.SaveState(SaveWriter writer)
+    {
+        writer.Tag("scenes");
+        writer.String(ActiveScene);
+        writer.Int64(LoadedAt);
+        writer.String(_requested);
+        writer.Int64(AppliedCount);
+        writer.Int64(RejectedCount);
+        writer.UInt64(AppliedHash);
+        writer.UInt64(RejectedHash);
+        WriteList(writer, _applied, patch => writer.String(patch.ToJson()));
+        WriteList(writer, _rejected, rejection =>
+        {
+            writer.String(rejection.Id);
+            writer.Int64(rejection.Tick);
+            writer.Int32((int)rejection.Code);
+            writer.String(rejection.Message);
+        });
+        WriteList(writer, _pending, patch => writer.String(patch.ToJson()));
+        WriteList(writer, _patchIds.Order(StringComparer.Ordinal).ToList(), writer.String);
+        WriteList(writer, _entities, entity =>
+        {
+            writer.String(entity.Id);
+            writer.String(entity.Prefab);
+            writer.Vector3(entity.Args.Position);
+            WriteList(writer, entity.Args.Values.OrderBy(pair => pair.Key, StringComparer.Ordinal).ToList(), pair =>
+            {
+                writer.String(pair.Key);
+                writer.Double(pair.Value);
+            });
+        });
+    }
+
+    void ISceneDirector.RestoreState(SaveReader reader, long tick)
+    {
+        reader.Expect("scenes");
+        var active = reader.NullableString();
+        var loadedAt = reader.Int64();
+        var requested = reader.NullableString();
+        var appliedCount = reader.Int64();
+        var rejectedCount = reader.Int64();
+        var appliedHash = reader.UInt64();
+        var rejectedHash = reader.UInt64();
+        if ((active is not null && !_scenes.ContainsKey(active)) || (requested is not null && !_scenes.ContainsKey(requested)))
+        {
+            throw new SaveException(SaveErrorCode.Invalid, $"saved scene \"{active ?? requested}\" is not registered by this game (registered: {string.Join(", ", SceneNames)})");
+        }
+
+        var applied = ReadList(reader, () => ParseSaved(reader.String()));
+        var rejected = ReadList(reader, () => new PatchRejection(reader.String(), reader.Int64(), ReadCode(reader), reader.String()));
+        var pending = ReadList(reader, () => ParseSaved(reader.String()));
+        var ids = ReadList(reader, reader.String);
+        var entities = ReadList(reader, () =>
+        {
+            var id = reader.String();
+            var prefab = reader.String();
+            var position = reader.Vector3();
+            var values = new Dictionary<string, double>(StringComparer.Ordinal);
+            foreach (var pair in ReadList(reader, () => KeyValuePair.Create(reader.String(), reader.Double())))
+            {
+                values[pair.Key] = pair.Value;
+            }
+
+            try
+            {
+                return Resolve(id, prefab, position, values, null, null, $"saved entity {id}");
+            }
+            catch (SceneException error)
+            {
+                throw new SaveException(SaveErrorCode.Invalid, $"saved entity cannot be rebuilt by this game: {error.Message}", error);
+            }
+        });
+
+        for (var i = _entities.Count - 1; i >= 0; i--)
+        {
+            var entity = _entities[i];
+            _prefabs[entity.Prefab].Dispose?.Invoke(entity.Instance);
+        }
+
+        _entities.Clear();
+        _byId.Clear();
+        foreach (var args in entities)
+        {
+            Spawn(args);
+        }
+
+        ActiveScene = active;
+        LoadedAt = loadedAt;
+        _requested = requested;
+        AppliedCount = appliedCount;
+        RejectedCount = rejectedCount;
+        AppliedHash = appliedHash;
+        RejectedHash = rejectedHash;
+        _applied.Clear();
+        _applied.AddRange(applied);
+        _rejected.Clear();
+        _rejected.AddRange(rejected);
+        _pending.Clear();
+        _pending.AddRange(pending);
+        _patchIds.Clear();
+        _patchIds.UnionWith(ids);
+        Tick = tick;
+        _simulating = false;
+    }
+
+    private static ScenePatch ParseSaved(string json)
+    {
+        try
+        {
+            return ScenePatch.Parse(json);
+        }
+        catch (SceneException error)
+        {
+            throw new SaveException(SaveErrorCode.Invalid, $"saved patch cannot be read: {error.Message}", error);
+        }
+    }
+
+    private static SceneErrorCode ReadCode(SaveReader reader)
+    {
+        var code = (SceneErrorCode)reader.Int32();
+        return Enum.IsDefined(code) ? code : throw new SaveException(SaveErrorCode.Invalid, $"scene error code {(int)code}");
+    }
+
+    private static void WriteList<T>(SaveWriter writer, IReadOnlyList<T> items, Action<T> write)
+    {
+        writer.Int32(items.Count);
+        foreach (var item in items)
+        {
+            write(item);
+        }
+    }
+
+    private static List<T> ReadList<T>(SaveReader reader, Func<T> read)
+    {
+        var items = new List<T>();
+        for (var i = reader.Count(); i > 0; i--)
+        {
+            items.Add(read());
+        }
+
+        return items;
+    }
+
     private void Load(string name)
     {
         for (var i = _entities.Count - 1; i >= 0; i--)

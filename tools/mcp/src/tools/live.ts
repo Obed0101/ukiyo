@@ -16,6 +16,10 @@ export function liveRequest(args: Record<string, unknown>): Record<string, unkno
     if (args.action !== "capture") throw new ToolInputError(`pass is a capture option; ${String(args.action)} does not take it`);
     request.pass = args.pass;
   }
+  if (args.action === "rewind") {
+    if (typeof args.tick !== "number") throw new ToolInputError("rewind needs tick: the tick to return to (at most the current tick; read it with status)");
+    request.tick = args.tick;
+  }
   if (args.action === "patch") {
     if (args.patch === undefined) throw new ToolInputError('patch needs patch: {"id":"p1","tick":<current tick + margin>,"ops":[…]}; read the tick with status first');
     request.patch = args.patch;
@@ -40,17 +44,18 @@ const live: Tool = {
   name: "ukiyo_live",
   title: "Drive a running game",
   description:
-    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K only camera K of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick). Pass pid when several games run; default is the newest.",
+    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K only camera K of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick), rewind (tick=N: time-travel back to tick N of a game that implements ISaveable — restores the nearest checkpoint, at most 60 ticks older, and replays forward deterministically; pauses; the abandoned future is dropped; answers tick, checkpoint, replayed and the reachable window; refusals are typed [SAVE:Code], e.g. OutOfWindow when N is older than the bounded checkpoint ring). Pass pid when several games run; default is the newest.",
   inputSchema: {
     type: "object",
     required: ["action"],
     additionalProperties: false,
     properties: {
-      action: { type: "string", enum: ["list", "status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch"] },
+      action: { type: "string", enum: ["list", "status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch", "rewind"] },
       pid: { type: "integer", minimum: 1 },
       ticks: { type: "integer", minimum: 0, maximum: 36_000, default: 1 },
       events: { type: "array", items: inputEventSchema, maxItems: 1000 },
       on: { type: "boolean" },
+      tick: { type: "integer", minimum: 0, description: "rewind action: the tick to return to." },
       pass: { type: "integer", minimum: 0, description: "capture action: one pass (camera) id of a multi-camera frame; omitted, the whole composed frame." },
       patch: { ...patchSchema, description: "patch action: one scene patch (docs/scenes-patches.md); tick must be the current tick or later." },
     },

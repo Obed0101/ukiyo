@@ -11,6 +11,13 @@ test("CLI builds only explicit supported bridge commands", () => {
   expect(parseArgs(["live", "step"]).request.ticks).toBe(1);
 });
 
+test("CLI rewind needs a tick, and run passes save and load through", () => {
+  expect(parseArgs(["live", "rewind", "--tick", "300", "--pid", "4"]).request).toEqual({ cmd: "rewind", tick: 300 });
+  expect(() => parseArgs(["live", "rewind"])).toThrow("rewind needs --tick N");
+  expect(() => parseArgs(["live", "step", "--tick", "3"])).toThrow("invalid or duplicate option --tick");
+  expect(parseRunArgs(["run", "LanternRun", "--load", "a.uksv", "--save", "b.uksv"]).input).toEqual({ game: "LanternRun", loadFrom: "a.uksv", saveTo: "b.uksv" });
+});
+
 test("CLI patch needs one patch file and run passes only known options through", () => {
   expect(parseArgs(["live", "patch", "--pid", "12", "--patch", "p.json"])).toMatchObject({ pid: 12, request: { cmd: "patch" }, patch: "p.json" });
   expect(() => parseArgs(["live", "patch"])).toThrow("patch needs --patch FILE");

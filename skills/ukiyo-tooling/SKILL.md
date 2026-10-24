@@ -72,6 +72,8 @@ export default tool;                                                       // or
   from a game's source without building it (render profile, SceneRegistry): `tools/mcp/src/game-source.ts`. Tool list
   and output shapes: `tools/mcp/README.md`.
 
+`ukiyo_run` `saveTo`/`loadFrom` map to the headless `--save`/`--load` flags; the `load`/`save` lines are parsed by `parseHeadless` in `tools/mcp/src/engine.ts` and reported in the result only when present. `ukiyo_live` `rewind` takes `tick`.
+
 After adding a tool: add its name to the expected list in `tools/mcp/test/server.test.ts`, add focused tests for its
 pure parts, mention it in the server `INSTRUCTIONS` if agents need to know when to reach for it, and teach it in the
 skill of its area.

@@ -17,11 +17,13 @@ public static class PlatformBootstrap
 /// <param name="Extent">Drawing-buffer size used for frames, UI layout and captures.</param>
 /// <param name="AudioPath">When set, mixes every sound the run plays and writes it as a WAV (one tick of audio per tick).</param>
 /// <param name="PatchLog">When set, a patch log (docs/scenes-patches.md) submitted at boundary 0, before the first tick.</param>
+/// <param name="LoadPath">When set, restores this save (docs/save-replay.md) before the first tick and continues from its tick.</param>
+/// <param name="SavePath">When set, writes a save of the final state after the last checkpoint.</param>
 /// <param name="EdgeMaskDirectory">
 /// Debug, for pixel-parity gates; needs <paramref name="CaptureDirectory"/>. Writes the CPU frame's geometric edge mask
 /// (<see cref="SurfaceMap"/>) per checkpoint. The captures themselves are the same bytes with or without it.
 /// </param>
-public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, string? CaptureDirectory, RenderExtent Extent, string? AudioPath = null, string? PatchLog = null, string? EdgeMaskDirectory = null)
+public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, string? CaptureDirectory, RenderExtent Extent, string? AudioPath = null, string? PatchLog = null, string? EdgeMaskDirectory = null, string? LoadPath = null, string? SavePath = null)
 {
     public static readonly long[] DefaultCheckpoints = [0, 60, 180, 600];
 
@@ -33,6 +35,8 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
         string? audio = null;
         string? patches = null;
         string? edgeMasks = null;
+        string? load = null;
+        string? save = null;
         var extent = new RenderExtent(1280, 720, 1f);
         for (var i = 0; i < args.Length; i++)
         {
@@ -60,6 +64,16 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
                     break;
                 case "--edge-masks":
                     throw new ArgumentException("[HEADLESS]: --edge-masks expects a directory");
+                case "--load" when i + 1 < args.Length:
+                    load = args[++i];
+                    break;
+                case "--load":
+                    throw new ArgumentException("[HEADLESS]: --load expects a save file path");
+                case "--save" when i + 1 < args.Length:
+                    save = args[++i];
+                    break;
+                case "--save":
+                    throw new ArgumentException("[HEADLESS]: --save expects a path to write");
                 case "--size" when i + 1 < args.Length:
                     var size = args[++i].Split('x');
                     if (size.Length != 2 || !int.TryParse(size[0], out var w) || !int.TryParse(size[1], out var h))
@@ -82,7 +96,7 @@ public sealed record HeadlessOptions(long[] Checkpoints, string? InputScript, st
             throw new ArgumentException("[HEADLESS]: --edge-masks needs --capture: the masks describe the CPU frames it writes");
         }
 
-        return new HeadlessOptions(checkpoints, input, capture, extent, audio, patches, edgeMasks);
+        return new HeadlessOptions(checkpoints, input, capture, extent, audio, patches, edgeMasks, load, save);
     }
 }
 
@@ -97,6 +111,9 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
 {
     /// <summary>Exit code when the patch log cannot be submitted (the run stops before its first tick).</summary>
     public const int PatchLogRefused = 2;
+
+    /// <summary>Exit code when --load or --save fails (typed <see cref="SaveException"/> message on stderr).</summary>
+    public const int SaveRefused = 3;
 
     private readonly TextWriter _out = output ?? Console.Out;
     private readonly TextWriter _errors = errors ?? Console.Error;
@@ -146,16 +163,26 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
         using var renderer = new NullRenderer();
         await runtime.StartAsync(renderer, new RenderConfiguration("ukiyo-headless", options.Extent));
         runtime.Paused = true;
+        if (!TryLoad(runtime))
+        {
+            return SaveRefused;
+        }
+
         if (patches is not null && !SubmitPatches(runtime, patches))
         {
             return PatchLogRefused;
         }
 
-        foreach (var checkpoint in options.Checkpoints)
+        foreach (var checkpoint in options.Checkpoints.Where(tick => tick >= runtime.Tick))
         {
             runtime.StepTo(checkpoint);
             runtime.RenderFrame(options.Extent);
             _out.WriteLine($"snapshot {runtime.SnapshotJson()}");
+        }
+
+        if (!TrySave(runtime))
+        {
+            return SaveRefused;
         }
 
         _out.WriteLine($"[ukiyo] null frames={renderer.FramesRendered} instances={renderer.InstancesSubmitted} sprites={renderer.SpritesSubmitted} meshes={renderer.LiveMeshes} materials={renderer.LiveMaterials} textures={renderer.LiveTextures}");
@@ -174,12 +201,17 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
 
         await runtime.StartAsync(renderer, new RenderConfiguration("ukiyo-headless", options.Extent));
         runtime.Paused = true;
+        if (!TryLoad(runtime))
+        {
+            return SaveRefused;
+        }
+
         if (patches is not null && !SubmitPatches(runtime, patches))
         {
             return PatchLogRefused;
         }
 
-        foreach (var checkpoint in options.Checkpoints)
+        foreach (var checkpoint in options.Checkpoints.Where(tick => tick >= runtime.Tick))
         {
             runtime.StepTo(checkpoint);
             runtime.RenderFrame(options.Extent);
@@ -194,8 +226,59 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             await WritePassCaptures(runtime, renderer, Path.ChangeExtension(png, null), checkpoint);
         }
 
+        if (!TrySave(runtime))
+        {
+            return SaveRefused;
+        }
+
         _out.WriteLine($"[ukiyo] software frames={renderer.FramesRendered} size={options.Extent.Width}x{options.Extent.Height}");
         return 0;
+    }
+
+    /// <summary>With --load: restores the save and prints <c>load {path} tick=N</c>. A typed refusal goes to stderr.</summary>
+    private bool TryLoad(GameRuntime runtime)
+    {
+        if (options.LoadPath is not { } path)
+        {
+            return true;
+        }
+
+        try
+        {
+            runtime.Restore(File.ReadAllBytes(path));
+        }
+        catch (Exception refused) when (refused is SaveException or IOException or UnauthorizedAccessException)
+        {
+            _errors.WriteLine($"[HEADLESS]: --load {path}: {refused.Message}");
+            return false;
+        }
+
+        _out.WriteLine($"load {Path.GetFullPath(path)} tick={runtime.Tick}");
+        return true;
+    }
+
+    /// <summary>With --save: writes the final state and prints <c>save {path} tick=N bytes=B</c>.</summary>
+    private bool TrySave(GameRuntime runtime)
+    {
+        if (options.SavePath is not { } path)
+        {
+            return true;
+        }
+
+        try
+        {
+            var bytes = runtime.Save();
+            var full = Path.GetFullPath(path);
+            Directory.CreateDirectory(Path.GetDirectoryName(full)!);
+            File.WriteAllBytes(full, bytes);
+            _out.WriteLine($"save {full} tick={runtime.Tick} bytes={bytes.Length}");
+            return true;
+        }
+        catch (Exception refused) when (refused is SaveException or IOException or UnauthorizedAccessException)
+        {
+            _errors.WriteLine($"[HEADLESS]: --save {path}: {refused.Message}");
+            return false;
+        }
     }
 
     /// <summary>
@@ -213,6 +296,7 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             return false;
         }
 
+        var skipped = 0;
         foreach (var patch in patches)
         {
             // The count, not the rejected list: the list is a bounded window and stops growing once full.
@@ -220,6 +304,11 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             try
             {
                 runtime.SubmitPatch(patch);
+            }
+            catch (SceneException known) when (options.LoadPath is not null && known.Code == SceneErrorCode.DuplicatePatch)
+            {
+                // Resuming from a save: the log's earlier patches are already part of the restored history.
+                skipped++;
             }
             catch (SceneException) when (runtime.SceneState!.RejectedCount > rejectedBefore)
             {
@@ -232,7 +321,7 @@ public sealed class HeadlessHost(HeadlessOptions options, TextWriter? output = n
             }
         }
 
-        _out.WriteLine($"patches {Path.GetFullPath(path)} submitted={patches.Count}");
+        _out.WriteLine($"patches {Path.GetFullPath(path)} submitted={patches.Count - skipped}{(options.LoadPath is null ? string.Empty : $" skipped={skipped}")}");
         return true;
     }
 

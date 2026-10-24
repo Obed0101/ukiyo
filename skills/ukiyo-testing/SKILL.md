@@ -71,6 +71,13 @@ counts and compare the hashes with `PatchHistory.AppliedHash(expected records)` 
 determinism by running the same patch log twice (and once submitted live at each tick) and comparing the snapshot
 sequences (`ScenePatchTests`).
 
+## Save and replay in tests
+
+For a game that implements `ISaveable`: run to K and `Save()`, run on to N; start a second runtime, `Restore` the
+bytes (attach the same `Script`), run to N; assert equal `SnapshotJson()` and equal `Save()` bytes. For rewind call
+`EnableTimeTravel`, push input through `runtime.Input.Push`, record the snapshot at each tick, `Rewind(t)` and compare
+(`SaveReplayTests`). Typed refusals are `SaveException.Code`.
+
 ## Cross-platform goldens
 
 `SnapshotGoldenTests` pins every sample (and the `templates/game` cube) in `tests/Ukiyo.Tests/golden/snapshots/<Sample>.txt`:

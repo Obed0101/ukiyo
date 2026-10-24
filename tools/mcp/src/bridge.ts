@@ -11,7 +11,7 @@ export type LiveSession = { pid: number; port: number; token: string; game: stri
 export type BridgeResponse = { ok: boolean; result?: unknown; error?: string };
 
 /** Commands the bridge understands (DevBridgeServer.Execute). */
-export const BRIDGE_COMMANDS = ["status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch"] as const;
+export const BRIDGE_COMMANDS = ["status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch", "rewind"] as const;
 
 export const LIVE_DIR = join(homedir(), ".ukiyo", "live");
 

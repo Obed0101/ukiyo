@@ -35,6 +35,7 @@ public sealed class DevBridgeServer : IDevSession
     {
         _runtime = runtime;
         _target = target;
+        EnableTimeTravel(runtime);
         _token = Convert.ToHexString(RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
         _listener = new TcpListener(IPAddress.Loopback, port);
         _listener.Start();
@@ -231,8 +232,10 @@ public sealed class DevBridgeServer : IDevSession
 
             case "patch":
                 return SubmitPatch(id, request);
+            case "rewind":
+                return Rewind(id, request);
             default:
-                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record, patch");
+                return Error(id, $"unknown cmd \"{command}\"; use status, pause, resume, step, snapshot, capture, input, record, patch, rewind");
         }
     }
 
@@ -275,6 +278,57 @@ public sealed class DevBridgeServer : IDevSession
             json.WriteNumber("tick", patch.Tick);
             json.WriteString("status", applied ? "applied" : "queued");
             json.WriteNumber("currentTick", _runtime.Tick);
+            json.WriteBoolean("paused", _runtime.Paused);
+            json.WriteEndObject();
+        });
+    }
+
+    /// <summary>
+    /// Saveable games keep a bounded checkpoint ring while the bridge runs (<see cref="TimeTravelOptions"/> defaults;
+    /// docs/save-replay.md). <c>UKIYO_TIME_TRAVEL=off</c> turns it off.
+    /// </summary>
+    private static void EnableTimeTravel(GameRuntime runtime)
+    {
+        if (runtime.CanSave && !string.Equals(Environment.GetEnvironmentVariable("UKIYO_TIME_TRAVEL"), "off", StringComparison.OrdinalIgnoreCase))
+        {
+            runtime.EnableTimeTravel();
+        }
+    }
+
+    /// <summary>
+    /// <c>rewind</c> with <c>tick</c>: pauses, returns the game to that tick (nearest checkpoint plus deterministic replay)
+    /// and answers with the checkpoint used, the ticks replayed and the reachable window. Typed <c>[SAVE:Code]</c> errors.
+    /// </summary>
+    private string Rewind(long id, JsonElement request)
+    {
+        if (!request.TryGetProperty("tick", out var tickElement) || !tickElement.TryGetInt64(out var tick))
+        {
+            return Error(id, "rewind needs \"tick\": N (an integer tick no later than the current one)");
+        }
+
+        RewindResult result;
+        try
+        {
+            _runtime.Paused = true;
+            result = _runtime.Rewind(tick);
+        }
+        catch (SaveException refused)
+        {
+            return Error(id, refused.Message);
+        }
+
+        return Ok(id, json =>
+        {
+            json.WriteStartObject();
+            json.WriteNumber("tick", result.Tick);
+            json.WriteNumber("checkpoint", result.Checkpoint);
+            json.WriteNumber("replayed", result.Replayed);
+            json.WriteStartObject("window");
+            json.WriteNumber("oldest", result.Window.OldestTick);
+            json.WriteNumber("newest", result.Window.NewestTick);
+            json.WriteNumber("checkpoints", result.Window.Checkpoints);
+            json.WriteNumber("bytes", result.Window.Bytes);
+            json.WriteEndObject();
             json.WriteBoolean("paused", _runtime.Paused);
             json.WriteEndObject();
         });

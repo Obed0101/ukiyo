@@ -102,7 +102,11 @@ export async function runProcess(command: string, args: string[], options: { cwd
 
 export type AudioSummary = { path: string; seconds: number; sounds: number; peak: number; rms: number };
 
-export type PatchLogSummary = { path: string; submitted: number };
+/** `skipped` appears only when resuming from a save (--load): patches the save already held. */
+export type PatchLogSummary = { path: string; submitted: number; skipped?: number };
+
+/** A `load`/`save` line of the headless host (docs/save-replay.md). */
+export type SaveLineSummary = { path: string; tick: number; bytes?: number };
 
 /** One camera of a multi-camera frame, captured alone at its rect size (docs/rendering-passes.md). */
 export type PassCapture = { pass: number; primary: boolean; path: string };
@@ -117,6 +121,9 @@ export type HeadlessOutput = {
   passes: CheckpointPasses[];
   audio: AudioSummary | null;
   patches: PatchLogSummary | null;
+  /** Present only when the run used --load / --save. */
+  load?: SaveLineSummary;
+  save?: SaveLineSummary;
   info: string[];
 };
 
@@ -150,8 +157,13 @@ export function parseHeadless(stdout: string): HeadlessOutput {
     }
     else if (line.startsWith("patches ")) {
       // patches <path> submitted=N (the path may contain spaces; the count is always last)
-      const match = /^patches (.+) submitted=(\d+)$/.exec(line.trim());
-      if (match) output.patches = { path: match[1]!, submitted: Number(match[2]) };
+      const match = /^patches (.+) submitted=(\d+)(?: skipped=(\d+))?$/.exec(line.trim());
+      if (match) output.patches = { path: match[1]!, submitted: Number(match[2]), ...(match[3] === undefined ? {} : { skipped: Number(match[3]) }) };
+    }
+    else if (line.startsWith("load ") || line.startsWith("save ")) {
+      // load <path> tick=N · save <path> tick=N bytes=B (the path may contain spaces; the fields are last)
+      const match = /^(load|save) (.+) tick=(\d+)(?: bytes=(\d+))?$/.exec(line.trim());
+      if (match) output[match[1] as "load" | "save"] = { path: match[2]!, tick: Number(match[3]), ...(match[4] === undefined ? {} : { bytes: Number(match[4]) }) };
     }
     else if (line.startsWith("[ukiyo]")) output.info.push(line);
   }

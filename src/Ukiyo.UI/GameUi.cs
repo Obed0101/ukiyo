@@ -112,6 +112,27 @@ public sealed class GameUi
     /// <summary>Interactive elements declared in the last pass, in order.</summary>
     public IReadOnlyList<UiElementInfo> Elements => _elements;
 
+    /// <summary>Writes the interaction state that survives between passes (focus, pressed element, last pointer) for <see cref="ISaveable"/>.</summary>
+    public void Save(SaveWriter writer)
+    {
+        writer.Tag("ui");
+        writer.String(_focused);
+        writer.String(_pressed);
+        writer.Vector2(_lastPointer);
+    }
+
+    /// <summary>Restores what <see cref="Save"/> wrote. Per-pass state (items, elements, input) is rebuilt by the next Begin.</summary>
+    public void Load(SaveReader reader)
+    {
+        reader.Expect("ui");
+        _focused = reader.NullableString();
+        _pressed = reader.NullableString();
+        _lastPointer = reader.Vector2();
+        _focusMove = 0;
+        _activate = false;
+        _inPass = false;
+    }
+
     public void Begin(in TickInfo tick)
     {
         if (_inPass)

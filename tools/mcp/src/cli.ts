@@ -26,12 +26,13 @@ pass its content inline; path values are passed as the tool takes them (reposito
   bun tools/mcp/src/cli.ts capture SkyLantern --checkpoints 0,60 --out frames
   bun tools/mcp/src/cli.ts import --check samples/TexturedQuad`;
 
-export const HELP = `ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch> [options]
+export const HELP = `ukiyo live <list|status|pause|resume|step|snapshot|capture|input|record|patch|rewind> [options]
   --pid N           Required when more than one game is running
   --ticks N         step: 0..36000 (default 1)
   --events FILE     input: JSON array of key/pointer events
   --on true|false   record: explicit start/stop
   --patch FILE      patch: one scene patch object (docs/scenes-patches.md), tick >= the game's current tick
+  --tick N          rewind: return to tick N (ISaveable games; nearest checkpoint plus deterministic replay)
   --pass N          capture: one camera of a multi-camera frame alone (pass id 0, 1, …; default the composed frame)
   --out FILE        capture: PNG; record: input script; others: result JSON
 Output files are created exclusively: existing files are never overwritten.
@@ -39,6 +40,8 @@ ukiyo run <Game> [options]   headless run (same as the ukiyo_run MCP tool)
   --checkpoints A,B,…   snapshot ticks (default 0,60,180,600)
   --patches FILE        patch log: JSON array of patches, submitted before tick 0
   --input FILE          input script: JSON array of events with ticks
+  --load FILE           resume from a save (ISaveable games): restore it, continue from its tick
+  --save FILE           write a save of the final state
   --size WxH            drawing-buffer size (default 1280x720)
 Examples:
   bun tools/mcp/src/cli.ts live list
@@ -46,6 +49,7 @@ Examples:
   bun tools/mcp/src/cli.ts live capture --pid 123 --out frame.png
   bun tools/mcp/src/cli.ts live capture --pid 123 --pass 1 --out minimap.png
   bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json
+  bun tools/mcp/src/cli.ts live rewind --pid 123 --tick 300
   bun tools/mcp/src/cli.ts run SceneHop --checkpoints 0,60,120 --patches patches.json`;
 
 function integer(value: string, min: number, max: number) {
@@ -69,7 +73,7 @@ export function parseArgs(args: string[]) {
   if (args[0] !== "live") throw new Error("expected 'live' or 'run'; use --help");
   const action = args[1];
   if (action !== "list" && !(BRIDGE_COMMANDS as readonly string[]).includes(action ?? "")) throw new Error("unknown live action");
-  const perAction: Record<string, string[]> = { step: ["--ticks"], input: ["--events"], record: ["--on"], patch: ["--patch"], capture: ["--pass"] };
+  const perAction: Record<string, string[]> = { step: ["--ticks"], input: ["--events"], record: ["--on"], patch: ["--patch"], rewind: ["--tick"], capture: ["--pass"] };
   const given = options(args.slice(2), new Set(["--pid", "--out", ...(perAction[action!] ?? [])]));
   const pid = given["--pid"] === undefined ? undefined : integer(given["--pid"], 1, 2147483647);
   const request: Record<string, unknown> = { cmd: action };
@@ -78,6 +82,10 @@ export function parseArgs(args: string[]) {
   if (action === "record") {
     if (!["true", "false"].includes(given["--on"] ?? "")) throw new Error("record needs --on true|false");
     request.on = given["--on"] === "true";
+  }
+  if (action === "rewind") {
+    if (given["--tick"] === undefined) throw new Error("rewind needs --tick N");
+    request.tick = integer(given["--tick"], 0, Number.MAX_SAFE_INTEGER);
   }
   if (action === "input" && !given["--events"]) throw new Error("input needs --events FILE");
   if (action === "patch" && !given["--patch"]) throw new Error("patch needs --patch FILE (one patch object)");
@@ -89,10 +97,12 @@ export function parseArgs(args: string[]) {
 export function parseRunArgs(args: string[]) {
   const game = args[1];
   if (args[0] !== "run" || !game || game.startsWith("--")) throw new Error("run needs a game: run <Game> [--checkpoints A,B] [--patches FILE] [--input FILE] [--size WxH]");
-  const given = options(args.slice(2), new Set(["--checkpoints", "--patches", "--input", "--size"]));
+  const given = options(args.slice(2), new Set(["--checkpoints", "--patches", "--input", "--size", "--load", "--save"]));
   const input: Record<string, unknown> = { game };
   if (given["--checkpoints"]) input.checkpoints = given["--checkpoints"].split(",").map((tick) => integer(tick, 0, 216_000));
   if (given["--size"]) input.size = given["--size"];
+  if (given["--load"]) input.loadFrom = given["--load"];
+  if (given["--save"]) input.saveTo = given["--save"];
   return { input, patches: given["--patches"], events: given["--input"] };
 }
 

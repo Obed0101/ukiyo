@@ -29,4 +29,12 @@ describe("headless output parsing", () => {
     expect(output.info).toEqual([]);
     expect(parseHeadless('snapshot {"tick":0}').patches).toBeNull();
   });
+
+  test("reads the load and save lines of a resumed run, and a patch line with skipped patches", () => {
+    const output = parseHeadless(["load /tmp/my runs/a.uksv tick=100", "patches /tmp/p.json submitted=1 skipped=3", 'snapshot {"tick":100}', "save /tmp/my runs/b.uksv tick=200 bytes=5120"].join("\n"));
+    expect(output.load).toEqual({ path: "/tmp/my runs/a.uksv", tick: 100 });
+    expect(output.save).toEqual({ path: "/tmp/my runs/b.uksv", tick: 200, bytes: 5120 });
+    expect(output.patches).toEqual({ path: "/tmp/p.json", submitted: 1, skipped: 3 });
+    expect(parseHeadless('snapshot {"tick":0}').load).toBeUndefined();
+  });
 });
