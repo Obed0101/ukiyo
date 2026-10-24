@@ -4,22 +4,23 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { studioRequest, studioSessions } from "../../../../studio/src/discovery.ts";
-import { checkStudio, readManifest, writeComposition, type CompositionPatch } from "../../../../studio/src/manifest.ts";
+import { checkLayered, readLayeredManifest, userConfigDir, writeLayeredComposition } from "../../../../studio/src/layers.ts";
+import type { CompositionPatch } from "../../../../studio/src/manifest.ts";
 import { failure, text, ToolInputError, type Tool } from "../protocol.ts";
 
 const START = "bun studio/src/server.ts";
 
-function panelSummary(dir: string, id: string) {
-  const source = readFileSync(join(dir, "panels", `${id}.js`), "utf8");
+function panelSummary(dir: string, id: string, layer: string, userDir: string | null) {
+  const source = readFileSync(join(layer === "user" && userDir ? userDir : dir, "panels", `${id}.js`), "utf8");
   const field = (name: string) => source.match(new RegExp(`^\\s*${name}:\\s*"([^"]*)"`, "m"))?.[1] ?? "";
-  return { id, title: field("title"), description: field("description") };
+  return { id, source: layer, title: field("title"), description: field("description") };
 }
 
 const studio: Tool = {
   name: "ukiyo_studio",
   title: "Studio (the person's view)",
   description:
-    "Works with the ukiyo Studio, the local web UI where a person watches and steers a running game. Actions: list (panels, layouts, themes and the current composition from studio/), check (validate every Studio file), compose (change layout, theme, shown/hidden panels or panel options in studio/studio.json; open Studios apply it live), view (what the person is looking at right now: layout, focused panel, selected entity, tick, paused, errors), notify (show the person a message in the Studio). To change how a panel looks or works, edit studio/panels/<id>.js, studio/web/studio.css or studio/themes/*.json directly: the Studio reloads them live. See the ukiyo-studio skill.",
+    "Works with the ukiyo Studio, the local web UI where a person watches and steers a running game. Actions: list (panels, layouts, themes and the current composition, each tagged with its layer: repo studio/ or the person's own config dir ~/.config/ukiyo/studio), check (validate every Studio file in both layers), compose (change layout, theme, shown/hidden panels or panel options; written to the user's studio.json when it exists, else studio/studio.json, unless target says otherwise; open Studios apply it live), view (what the person is looking at right now: layout, focused panel, selected entity, tick, paused, errors), notify (show the person a message in the Studio). To change how a panel looks or works, edit studio/panels/<id>.js, studio/web/studio.css or studio/themes/*.json directly: the Studio reloads them live. See the ukiyo-studio skill.",
   inputSchema: {
     type: "object",
     required: ["action"],
@@ -31,6 +32,7 @@ const studio: Tool = {
       show: { type: "array", items: { type: "string", pattern: "^[a-z][a-z0-9-]{0,47}$" }, maxItems: 64, description: "Panels to show in addition to the layout (they go to the dock row). Replaces the current list." },
       hide: { type: "array", items: { type: "string", pattern: "^[a-z][a-z0-9-]{0,47}$" }, maxItems: 64, description: "Panels of the layout to hide. Replaces the current list." },
       panelOptions: { type: "object", description: 'Per-panel options, e.g. {"values":{"pin":["score","lives"]}}. null removes a panel\'s options.' },
+      target: { type: "string", enum: ["user", "repo"], description: "compose only: which studio.json to write. Default: the user's when it exists, else the repo's." },
       text: { type: "string", minLength: 1, maxLength: 500 },
       level: { type: "string", enum: ["info", "success", "warn", "error"], default: "info" },
     },
@@ -41,18 +43,23 @@ const studio: Tool = {
 
     switch (args.action) {
       case "list": {
-        const manifest = readManifest(dir);
+        const manifest = readLayeredManifest(dir, userConfigDir());
+        const { sources } = manifest;
         const result = {
-          panels: manifest.panels.map(({ id }) => panelSummary(dir, id)),
-          layouts: Object.fromEntries(Object.entries(manifest.layouts).map(([name, l]) => [name, { description: l.description, panels: l.panels }])),
-          themes: Object.fromEntries(Object.entries(manifest.themes).map(([name, t]) => [name, { description: t.description, colorScheme: t.colorScheme }])),
+          userConfig: manifest.userDir,
+          userCss: manifest.userCss !== null,
+          problems: manifest.problems.map((p) => `[${p.layer}] ${p.message}`),
+          panels: manifest.panels.map(({ id }) => panelSummary(dir, id, sources.panels[id]!, manifest.userDir)),
+          layouts: Object.fromEntries(Object.entries(manifest.layouts).map(([name, l]) => [name, { source: sources.layouts[name], description: l.description, panels: l.panels }])),
+          themes: Object.fromEntries(Object.entries(manifest.themes).map(([name, t]) => [name, { source: sources.themes[name], description: t.description, colorScheme: t.colorScheme }])),
           composition: manifest.composition,
+          compositionLayers: sources.composition,
           running: studioSessions().map(({ pid, url, startedAt }) => ({ pid, url, startedAt })),
         };
         return { content: [text(JSON.stringify(result, null, 2))], structuredContent: result };
       }
       case "check": {
-        const problems = checkStudio(dir);
+        const problems = checkLayered(dir, userConfigDir());
         return problems.length
           ? { content: [text(`Studio files have problems:\n${problems.join("\n")}`)], structuredContent: { problems }, isError: true }
           : { content: [text("All Studio files are valid.")], structuredContent: { problems } };
@@ -64,12 +71,13 @@ const studio: Tool = {
         }
         if (args.panelOptions !== undefined) patch.panels = args.panelOptions as CompositionPatch["panels"];
         if (Object.keys(patch).length === 0) throw new ToolInputError("compose needs layout, theme, show, hide or panelOptions");
-        const composition = writeComposition(patch, dir);
-        log("info", "studio.composed", { patch });
+        const target = args.target === "user" || args.target === "repo" ? args.target : undefined;
+        const { composition, target: wrote, file } = writeLayeredComposition(patch, { dir, from: "agent", target });
+        log("info", "studio.composed", { patch, target: wrote });
         const open = studioSessions().length;
         return {
-          content: [text(`studio/studio.json updated${open ? `; ${open} open Studio${open > 1 ? "s" : ""} apply it live` : `; no Studio is open (start one: ${START})`}.\n${JSON.stringify(composition, null, 2)}`)],
-          structuredContent: { composition, openStudios: open },
+          content: [text(`${wrote} studio.json updated (${file})${open ? `; ${open} open Studio${open > 1 ? "s" : ""} apply it live` : `; no Studio is open (start one: ${START})`}.\n${JSON.stringify(composition, null, 2)}`)],
+          structuredContent: { composition, target: wrote, file, openStudios: open },
         };
       }
       case "view":

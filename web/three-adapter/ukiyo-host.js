@@ -57,6 +57,8 @@ export async function boot({ dotnet, canvas, status }) {
       });
       addEventListener("keyup", (e) => { if (host.KeyEvent(e.code, false)) e.preventDefault(); });
       addEventListener("blur", () => host.ReleaseAllInput());
+      document.addEventListener("visibilitychange", () => { if (document.hidden) host.ReleaseAllInput(); });
+      canvas.addEventListener("pointercancel", () => host.ReleaseAllInput());
       canvas.addEventListener("pointermove", (e) => { const [x, y] = toPixels(e); host.PointerEvent(POINTER_MOVE, x, y, 0); });
       canvas.addEventListener("pointerdown", (e) => { canvas.setPointerCapture(e.pointerId); const [x, y] = toPixels(e); host.PointerEvent(POINTER_DOWN, x, y, e.button); });
       canvas.addEventListener("pointerup", (e) => { const [x, y] = toPixels(e); host.PointerEvent(POINTER_UP, x, y, e.button); });

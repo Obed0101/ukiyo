@@ -1,0 +1,3 @@
+/* Loaded after the Studio's own stylesheet, live. Theme colors belong in themes/; this is for everything else. */
+.topbar { letter-spacing: 0.02em; }
+.panel-head { text-transform: lowercase; }

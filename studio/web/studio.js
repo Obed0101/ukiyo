@@ -437,7 +437,9 @@ function reload() {
 async function applyManifest() {
   const manifest = await api.get("/api/manifest");
   state.manifest = manifest;
-  state.fileError = null;
+  // A broken file in the person's own config is skipped by the server; say so instead of failing silently.
+  state.fileError = manifest.problems?.length ? manifest.problems.map((/** @type {{ layer: string, message: string }} */ p) => `[${p.layer}] ${p.message}`).join("; ") : null;
+  document.getElementById("user-css")?.setAttribute("href", `/user.css?v=${manifest.userCss ?? 0}`);
   const { composition, layouts } = manifest;
   const shape = JSON.stringify({ layout: layouts[composition.layout], composition: { ...composition, theme: undefined, auto: undefined } });
   applyTheme();
