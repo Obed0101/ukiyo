@@ -1,9 +1,8 @@
 {
-  "description": "Watch and steer: the live frame and the transport. Nothing else.",
-  "columns": "minmax(0, 1fr)",
-  "rows": "auto minmax(0, 1fr)",
+  "description": "The frame with the game's numbers beside it.",
+  "columns": "minmax(0, 1fr) minmax(280px, 340px)",
+  "rows": "minmax(0, 1fr)",
   "areas": [
-    "transport",
-    "viewport"
+    "viewport values"
   ]
 }

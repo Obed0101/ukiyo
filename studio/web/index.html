@@ -11,28 +11,18 @@
   <script src="/web/boot.js"></script>
 </head>
 <body>
-  <a class="skip" href="#grid">Skip to panels</a>
-  <header class="topbar">
-    <div class="brand">
-      <span class="mark" aria-hidden="true"></span>
-      <span class="brand-name">Studio</span>
-    </div>
-    <div class="game">
-      <span id="game" class="game-name">No game connected</span>
-      <span id="state" class="state" data-state="idle" role="status">Connecting</span>
-    </div>
-    <div class="tick" aria-label="Current tick">
-      <span class="tick-label">tick</span>
-      <span id="tick" class="tick-value">—</span>
-    </div>
-    <div class="view-controls">
-      <div id="layouts" class="segmented" role="group" aria-label="Layout"></div>
-      <label class="visually-hidden" for="theme">Theme</label>
-      <select id="theme" class="select"></select>
-    </div>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar" id="topbar">
+    <div class="topbar-start" id="header-start"></div>
+    <div class="topbar-center" id="header-center"></div>
+    <div class="topbar-end" id="header-end"></div>
   </header>
-  <main id="grid" class="grid" tabindex="-1">
-    <p class="loading">Loading the Studio files…</p>
+  <main id="main" class="main" tabindex="-1">
+    <section id="hub" class="view" aria-label="Projects" hidden></section>
+    <section id="settings" class="view" aria-label="Settings" hidden></section>
+    <div id="grid" class="grid" hidden>
+      <p class="loading">Loading the Studio files…</p>
+    </div>
   </main>
   <footer id="statusbar" class="statusbar" aria-label="Game and Studio status"></footer>
   <div id="notices" class="notices" aria-live="polite"></div>

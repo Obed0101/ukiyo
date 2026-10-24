@@ -16,12 +16,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   const errors: string[] = [];
   page.on("pageerror", e => errors.push(e.message));
-  await page.goto(url);
-  await page.locator('#layouts button').filter({ hasText: /^complete$/i }).click();
-  const session = page.locator(`[data-panel="sessions"] button[data-pid="${pid}"]`);
-  await session.waitFor();
-  if (await session.getAttribute("aria-pressed") !== "true") await session.click();
-  await page.waitForFunction(pid => document.querySelector(`[data-panel="sessions"] button[data-pid="${pid}"]`)?.getAttribute("aria-pressed") === "true", pid);
+  await page.goto(`${url}#/p/LanternRun`);
+  await page.waitForSelector('#topbar .state[data-kind="attached"]');
   async function command(cmd: string, args: Record<string, unknown> = {}) {
     return page.evaluate(async ({ cmd, args, pid }) => {
       const token = document.querySelector('meta[name="ukiyo-studio-token"]')!.getAttribute("content")!;

@@ -1,10 +1,8 @@
 {
-  "description": "Frame plus the games you can run and the game's numbers and entities, for following what an agent changes.",
+  "description": "The frame with the game's numbers and entities stacked beside it.",
   "columns": "minmax(0, 1fr) minmax(280px, 340px)",
-  "rows": "auto minmax(0, 1.7fr) minmax(0, 1fr) minmax(0, 1fr)",
+  "rows": "minmax(0, 1fr) minmax(0, 1fr)",
   "areas": [
-    "transport transport",
-    "viewport sessions",
     "viewport values",
     "viewport entities"
   ]

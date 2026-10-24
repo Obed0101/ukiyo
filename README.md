@@ -104,8 +104,8 @@ Samples: `RotatingCube` (the template), `LanternRun`, `TexturedQuad`, `LitCube`,
 
 ## Studio
 
-`studio/` (Bun, plain ES modules) is the person's window onto a running game: its real frame, transport, values,
-entities, input recording and activity, in simple, balanced or complete layouts. Panels, layouts and themes are
+`studio/` (Bun, plain ES modules) is the person's window onto a running game: a Hub of projects, then its real frame,
+run and step controls, values, entities, input recording and activity, in editor, simple, balanced or complete layouts. Panels, layouts and themes are
 files that agents edit and open pages apply live; agents read what the person is looking at and send them notices
 (`ukiyo_studio`). It never owns game state.
 

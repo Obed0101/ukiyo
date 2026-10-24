@@ -1,0 +1,12 @@
+{
+  "description": "Hierarchy on the left, the game in the middle, the inspector on the right, console and assets as tabs below.",
+  "columns": "minmax(200px, 260px) minmax(0, 1fr) minmax(260px, 320px)",
+  "rows": "minmax(0, 1fr) minmax(160px, 0.4fr)",
+  "areas": [
+    "hierarchy viewport inspector",
+    "bottom bottom bottom"
+  ],
+  "tabs": {
+    "bottom": ["console", "assets"]
+  }
+}

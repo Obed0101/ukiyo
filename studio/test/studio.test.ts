@@ -26,8 +26,8 @@ describe("studio files", () => {
       expect(layout).toBeDefined();
       for (const id of layout!.panels) expect(panelIds).toContain(id);
     }
-    // Complete shows every panel that ships.
-    expect([...manifest.layouts.complete!.panels].sort()).toEqual([...panelIds].sort());
+    // Complete shows the live-data panels; the editor layout owns hierarchy, inspector, console and assets.
+    for (const id of ["input", "viewport", "values", "entities", "log"]) expect(manifest.layouts.complete!.panels).toContain(id);
   });
 
   test("every theme defines every token and nothing else", () => {

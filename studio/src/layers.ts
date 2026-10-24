@@ -13,6 +13,7 @@ import {
   checkLayout,
   checkTheme,
   layoutPanels,
+  missingPanels,
   readManifest,
   writeComposition,
   type Composition,
@@ -35,6 +36,8 @@ export type LayeredManifest = Manifest & {
   problems: Problem[];
   /** The user config directory in effect, or null when there is none on disk. */
   userDir: string | null;
+  /** Where the user config directory is (or would be created), whether or not it exists yet. */
+  configDir: string | null;
   /** Version of user.css (its mtime) or null when there is no such file. */
   userCss: number | null;
 };
@@ -127,7 +130,7 @@ export function readLayeredManifest(dir = STUDIO_DIR, userDir: string | null = u
     themes: Object.fromEntries(Object.keys(base.themes).map((n) => [n, "repo" as Layer])),
     composition: ["repo"],
   };
-  const result: LayeredManifest = { ...base, sources, problems: [], userDir: null, userCss: null };
+  const result: LayeredManifest = { ...base, sources, problems: [], userDir: null, configDir: userDir, userCss: null };
   if (!userDir || !existsSync(userDir)) return result;
   result.userDir = userDir;
   const problem = (message: string) => result.problems.push({ layer: "user", message });
@@ -171,10 +174,7 @@ export function readLayeredManifest(dir = STUDIO_DIR, userDir: string | null = u
     const path = join(userDir, "layouts", `${name}.json`);
     try {
       const layout = checkLayout(name, readJson(path));
-      const ids = layoutPanels(layout);
-      const missing = ids.filter((id) => !panelIds.includes(id));
-      if (missing.length) throw new StudioFileError(`layouts/${name}.json`, `no panel file for ${missing.join(", ")} (expected panels/<id>.js in either layer)`);
-      result.layouts[name] = { ...layout, panels: ids };
+      result.layouts[name] = { ...layout, panels: layoutPanels(layout), missing: missingPanels(layout, panelIds) };
       sources.layouts[name] = "user";
     } catch (error) {
       problem(describe(error));

@@ -6,7 +6,7 @@ description: Use when the person asks to change the ukiyo Studio (their window o
 # The ukiyo Studio
 
 The Studio (`studio/`, started with `bun studio/src/server.ts`) shows the person the running game: the real frame,
-transport, values, entities, input recording, activity. It is **a view, never the source of truth**: it reads and
+run and step controls, values, entities, input recording, activity. It is **a view, never the source of truth**: it reads and
 steers the game only through the dev bridge. Everything it looks like is a file you can edit, and every open page
 picks up the change without a reload.
 
@@ -91,8 +91,10 @@ the repo's; a user theme may `"extends"` another. Live-reloaded; a broken user f
 
 ## Running games
 
-The Games panel (`panels/sessions.js`) runs, reloads and stops games through `studio.launcher`; the server side is
-`src/launcher.ts` and `src/run-routes.ts`. Changing which hosts are offered means `discoverGames` there, not a panel.
+The shell header (Hub and Project, `web/header.js`, `web/studio.js`) runs, reloads and stops games; panels can do the
+same through `studio.launcher`. The server side is `src/launcher.ts`, `src/run-routes.ts` and, for the Hub list and
+new projects, `src/projects.ts`. Changing which hosts are offered means `discoverGames` there, not a panel.
+A layout can group panels into tabs: `"tabs": {"bottom": ["console", "assets"]}` (the area must exist in `areas`).
 
 ## Tools
 

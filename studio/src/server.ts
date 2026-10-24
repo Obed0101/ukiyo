@@ -14,6 +14,7 @@ import { MAX_BODY_BYTES, SECURITY_HEADERS, refuse, safeName } from "./guard.ts";
 import { readLayeredManifest, resolvePanel, problemText, userConfigDir, watchLayers, writeLayeredComposition, type CompositionTarget } from "./layers.ts";
 import { STUDIO_DIR, StudioFileError, type CompositionPatch } from "./manifest.ts";
 import { Launcher } from "./launcher.ts";
+import { projectRoutes } from "./project-routes.ts";
 import { runRoutes } from "./run-routes.ts";
 
 const VERSION = "0.1.0";
@@ -192,6 +193,9 @@ async function route(request: Request, url: URL): Promise<Response> {
 
   const launched = await runRoutes(launcher, request, pathname, (event, data) => log("info", event, data));
   if (launched) return launched;
+
+  const projects = await projectRoutes({ repoRoot: REPO_ROOT, configDir: userConfigDir, log }, request, pathname);
+  if (projects) return projects;
 
   switch (`${request.method} ${pathname}`) {
     case "GET /api/health":

@@ -23,8 +23,8 @@ are tracked in [G3](../docs/G3.md); running games from the Studio and controlled
 | Shell, shared styles | `web/studio.js`, `web/studio.css`, `web/dom.js`, `web/icons.js` | reload the page |
 
 Adding a panel is adding a file: drop `panels/<id>.js`, then name it in a layout's `areas` or add it to `show` in
-`studio.json`. People change the composition from the layout switch, the theme menu and the Panels panel; agents edit
-the same files or call `ukiyo_studio compose`. Either way it is one file, visible in `git diff`.
+`studio.json`. People change the composition in Settings (gear in the header, Cmd+, in the Mac app: theme, layout,
+panels); agents edit the same files or call `ukiyo_studio compose`. Either way it is one file, visible in `git diff`.
 
 The panel contract and the `studio` object every panel receives are typed in `web/types.d.ts`. Panels talk to the
 game only through `studio.call` / `studio.control` / `studio.capture`, never to the server directly.
@@ -42,7 +42,7 @@ Your dotfiles layer over the repo without forking it. The directory is `$UKIYO_S
   the active theme, so recolor with a theme, not `user.css`; `user.css` is for everything else.
 - A broken user file never stops the Studio: it is skipped (the repo file of that name stays in effect), shown in the
   status bar and reported by `ukiyo_studio list`/`check` as `[user] …`. A broken repo file is `[repo] …` and fatal, as before.
-- Where compose writes: the person's own UI (layout switch, theme menu) writes the user `studio.json`, creating it, so
+- Where compose writes: the person's own UI (Settings) writes the user `studio.json`, creating it, so
   the repo stays clean. `ukiyo_studio compose` writes the user `studio.json` when it exists (a repo write would be
   shadowed by it), otherwise the repo's, as before; `target: "user" | "repo"` forces one. The reply names the file.
 
@@ -52,9 +52,12 @@ and `wide`. Layering lives in `src/layers.ts`.
 
 ## Run and reload games
 
-The **Games** panel lists the runnable hosts of this repository (`samples/*/Desktop`, `games/*/Desktop`,
-`games/*/Hosts/Desktop`, one csproj each, with the dev bridge). **Run** starts `dotnet run --project <csproj>`
-(`UKIYO_DOTNET`, `~/.dotnet/dotnet`, then PATH). Build output and compiler errors appear in the panel; when the game
+The Studio opens on the **Hub**, the list of the runnable projects of this repository (`samples/*/Desktop`,
+`games/*/Desktop`, `games/*/Hosts/Desktop`, one csproj each, with the dev bridge), newest opened first. Opening one
+shows the editor (`#/p/<Name>`); **New project** scaffolds `games/<Name>` with the same code as `ukiyo_new_game`.
+Recents are kept in `~/.ukiyo/studio-recent.json` (`UKIYO_STUDIO_RECENT`), outside the repo and the config folder.
+The header's **Run** starts `dotnet run --project <csproj>`
+(`UKIYO_DOTNET`, `~/.dotnet/dotnet`, then PATH). Build state and compiler errors appear in the header; when the game
 announces itself in `~/.ukiyo/live` the Studio follows it. **Stop** ends it; quitting the Studio stops the games it
 started. **Reload** rebuilds (a failing build leaves the game running), relaunches and restores the same tick; see
 the reload section of [G3](../docs/G3.md) for what is and is not preserved. Only games the Studio started can be
