@@ -69,3 +69,23 @@ export function emptyState({ icon, title, text, command, action }) {
     : null;
   return h("div", { class: "empty-state" }, icon, h("p", { class: "empty-title", text: title }), text ? h("p", { class: "empty-text", text }) : null, copy, action);
 }
+
+/**
+ * "just now", "5 min ago", "yesterday", "3 d ago", else a short date. Tabular-friendly and locale-free on purpose.
+ * @param {string | null | undefined} iso
+ * @param {number} [now]
+ */
+export function relativeTime(iso, now = Date.now()) {
+  const at = iso ? Date.parse(iso) : NaN;
+  if (Number.isNaN(at)) return "";
+  const seconds = Math.max(0, Math.round((now - at) / 1000));
+  if (seconds < 45) return "just now";
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return "yesterday";
+  if (days < 30) return `${days} d ago`;
+  return new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: days > 330 ? "numeric" : undefined });
+}

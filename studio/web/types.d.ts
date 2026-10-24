@@ -49,7 +49,20 @@ export type LogEntry = { at: string; level: "info" | "success" | "warn" | "error
 
 export type Notice = { text: string; level: "info" | "success" | "warn" | "error"; from: string; at: string };
 
+/** A game or sample in this repository, as the Hub lists it. `name` matches the live session's game name. */
+export type Project = {
+  id: string;
+  name: string;
+  kind: "game" | "sample";
+  template: "2d" | "3d" | "lit";
+  path: string;
+  dir: string;
+  bridge: boolean;
+  lastOpened: string | null;
+};
+
 export type StudioEvents = {
+  project: Project | null;
   session: LiveSession | null;
   sessions: LiveSession[];
   status: GameStatus | null;
@@ -66,6 +79,7 @@ export type InputEvent = { key?: string; button?: "Left" | "Right" | "Middle"; d
 export type CompositionPatch = {
   layout?: string;
   theme?: string;
+  auto?: { light: string; dark: string };
   hide?: string[];
   show?: string[];
   panels?: Record<string, Record<string, unknown> | null>;
@@ -80,6 +94,8 @@ export type Studio = {
   readonly actions: HTMLElement;
   readonly h: typeof import("./dom.js").h;
   readonly icon: typeof import("./icons.js").icon;
+  /** The project open in the Studio, or null at the Hub. */
+  readonly project: Project | null;
   readonly session: LiveSession | null;
   readonly sessions: LiveSession[];
   readonly status: GameStatus | null;
@@ -108,7 +124,7 @@ export type Studio = {
   log(level: LogEntry["level"], text: string): void;
   /** Log entries since the page opened (last 500), oldest first. */
   readonly history: LogEntry[];
-  readonly manifest: { panels: { id: string }[]; layouts: Record<string, { description: string; panels: string[] }>; themes: Record<string, { description: string }>; composition: Required<CompositionPatch> };
+  readonly manifest: { panels: { id: string }[]; layouts: Record<string, { description: string; panels: string[]; tabs?: Record<string, string[]>; missing: string[] }>; themes: Record<string, { description: string }>; composition: Required<CompositionPatch> };
   /** Titles of every loaded panel module, for menus. */
   panelTitle(id: string): string;
 };

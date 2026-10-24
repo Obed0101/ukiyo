@@ -61,6 +61,7 @@ final class StudioWindowController: NSWindowController, WKNavigationDelegate, WK
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.delegate = self
+        DispatchQueue.main.async { [weak self] in self?.layoutTrafficLights() }
 
         controller.add(WeakScriptHandler(self), name: "host")
         webView.navigationDelegate = self
@@ -152,6 +153,12 @@ final class StudioWindowController: NSWindowController, WKNavigationDelegate, WK
         }
     }
 
+    /// Settings is a route in the page; the menu item and Command-comma navigate to it.
+    func openSettings() {
+        guard !webView.isHidden else { return }
+        webView.evaluateJavaScript("location.hash = '#/settings'", completionHandler: nil)
+    }
+
     func zoom(by factor: Double?) {
         let next = factor.map { min(3, max(0.5, webView.pageZoom * $0)) } ?? 1
         webView.pageZoom = next
@@ -195,6 +202,30 @@ final class StudioWindowController: NSWindowController, WKNavigationDelegate, WK
     // MARK: window
 
     func windowWillClose(_ notification: Notification) { NSApp.terminate(nil) }
+
+    /// The page header is the titlebar row (52 px, studio.css `.topbar`): the traffic lights sit centred in it, with the
+    /// breadcrumb starting 80 px in. AppKit puts them in a 28 px strip, so the titlebar container is made as tall as the
+    /// header and the buttons are centred in it again after every resize.
+    private static let headerHeight: CGFloat = 52
+    private static let lightsLeading: CGFloat = 20
+    private static let lightsSpacing: CGFloat = 20
+
+    private func layoutTrafficLights() {
+        guard let window, !window.styleMask.contains(.fullScreen),
+              let close = window.standardWindowButton(.closeButton),
+              let container = close.superview?.superview else { return }
+        let height = Self.headerHeight
+        container.frame = NSRect(x: 0, y: window.frame.height - height, width: window.frame.width, height: height)
+        let buttons: [NSWindow.ButtonType] = [.closeButton, .miniaturizeButton, .zoomButton]
+        for (index, type) in buttons.enumerated() {
+            guard let button = window.standardWindowButton(type) else { continue }
+            button.setFrameOrigin(NSPoint(x: Self.lightsLeading + CGFloat(index) * Self.lightsSpacing, y: ((button.superview?.frame.height ?? height) - button.frame.height) / 2))
+        }
+    }
+
+    func windowDidResize(_ notification: Notification) { layoutTrafficLights() }
+    func windowDidExitFullScreen(_ notification: Notification) { layoutTrafficLights() }
+    func windowDidBecomeKey(_ notification: Notification) { layoutTrafficLights() }
 }
 
 /// WKUserContentController retains its handlers; this keeps the window controller from being retained by it.

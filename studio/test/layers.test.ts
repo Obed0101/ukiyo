@@ -117,16 +117,17 @@ describe("invalid user files", () => {
     write(join(user, "studio.json"), { layout: "does-not-exist" });
 
     const m = readLayeredManifest(repo, user);
-    expect(m.problems).toHaveLength(5);
+    // A layout that names a panel without a file is not a problem: the shell shows a quiet placeholder.
+    expect(m.problems).toHaveLength(4);
     expect(m.problems.every((p) => p.layer === "user")).toBe(true);
     expect(Object.keys(m.themes)).not.toContain("broken");
     expect(m.sources.themes.ink).toBe("repo"); // the repo theme stays in effect
-    expect(Object.keys(m.layouts)).not.toContain("bad");
+    expect(m.layouts.bad.missing).toEqual(["ghostpanel"]);
     expect(m.panels.map((p) => p.id)).not.toContain("oops");
     expect(m.composition.layout).toBe(readManifest(repo).composition.layout);
 
     const check = checkLayered(repo, user);
-    expect(check).toHaveLength(5);
+    expect(check).toHaveLength(4);
     expect(check.every((line) => line.startsWith("[user] "))).toBe(true);
   });
 

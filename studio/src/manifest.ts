@@ -36,7 +36,8 @@ export const THEME_TOKENS = [
 
 export const ID_PATTERN = /^[a-z][a-z0-9-]{0,47}$/;
 
-export type Layout = { description: string; columns: string; rows: string; areas: string[] };
+/** `tabs` maps an area name to the panels shown as tabs in it (one active at a time); other areas are one panel each. */
+export type Layout = { description: string; columns: string; rows: string; areas: string[]; tabs?: Record<string, string[]> };
 export type Theme = { description: string; colorScheme: "dark" | "light"; tokens: Record<string, string> };
 export type Composition = {
   layout: string;
@@ -49,7 +50,8 @@ export type Composition = {
 export type PanelEntry = { id: string; file: string; version: number };
 export type Manifest = {
   panels: PanelEntry[];
-  layouts: Record<string, Layout & { panels: string[] }>;
+  /** `panels` are the panel ids the layout names (tab groups expanded); `missing` are those with no panel file in this Studio. */
+  layouts: Record<string, Layout & { panels: string[]; missing: string[] }>;
   themes: Record<string, Theme>;
   composition: Composition;
 };
@@ -74,8 +76,8 @@ function jsonFiles(directory: string): string[] {
   return existsSync(directory) ? readdirSync(directory).filter((f) => f.endsWith(".json")).sort() : [];
 }
 
-/** Panel ids named by a layout, in reading order (left to right, top to bottom). "." is an empty cell. */
-export function layoutPanels(layout: Layout): string[] {
+/** Area names of a layout in reading order (left to right, top to bottom). "." is an empty cell. */
+export function layoutAreas(layout: Layout): string[] {
   const seen: string[] = [];
   for (const row of layout.areas) {
     for (const cell of row.trim().split(/\s+/)) {
@@ -83,6 +85,16 @@ export function layoutPanels(layout: Layout): string[] {
     }
   }
   return seen;
+}
+
+/** Panel ids named by a layout in reading order; an area that is a tab group contributes its tabs, in tab order. */
+export function layoutPanels(layout: Layout): string[] {
+  return layoutAreas(layout).flatMap((area) => layout.tabs?.[area] ?? [area]);
+}
+
+/** Panel ids a layout names that have no panel file. They render as a quiet placeholder, never as an error. */
+export function missingPanels(layout: Layout, known: string[]): string[] {
+  return layoutPanels(layout).filter((id) => !known.includes(id));
 }
 
 const CSS_VALUE = /^[^;{}<>\\]{1,200}$/;
@@ -106,7 +118,9 @@ export function checkLayout(name: string, value: unknown): Layout {
   if (layout.columns!.trim().split(/\s+(?![^(]*\))/).length !== width) throw new StudioFileError(file, `columns must list ${width} tracks`);
   if (layout.rows!.trim().split(/\s+(?![^(]*\))/).length !== grid.length) throw new StudioFileError(file, `rows must list ${grid.length} tracks`);
 
-  for (const id of layoutPanels(layout as Layout)) {
+  const areas = layoutAreas(layout as Layout);
+  const tabs = checkTabs(file, layout.tabs, areas);
+  for (const id of areas) {
     if (!ID_PATTERN.test(id)) throw new StudioFileError(file, `"${id}" is not a panel id`);
     let top = Infinity, left = Infinity, bottom = -1, right = -1, cells = 0;
     grid.forEach((row, y) => row.forEach((cell, x) => {
@@ -118,7 +132,28 @@ export function checkLayout(name: string, value: unknown): Layout {
     if (cells !== (bottom - top + 1) * (right - left + 1)) throw new StudioFileError(file, `area "${id}" is not a rectangle`);
   }
 
-  return { description: layout.description, columns: layout.columns!, rows: layout.rows!, areas: layout.areas };
+  return { description: layout.description, columns: layout.columns!, rows: layout.rows!, areas: layout.areas, ...(tabs ? { tabs } : {}) };
+}
+
+/** `tabs` names areas of the grid and lists the panels shown as tabs there: two or more, each in at most one place. */
+function checkTabs(file: string, value: unknown, areas: string[]): Record<string, string[]> | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new StudioFileError(file, "tabs must map area names to panel id lists");
+  const placed = new Set<string>();
+  const tabs: Record<string, string[]> = {};
+  for (const [area, ids] of Object.entries(value)) {
+    if (!areas.includes(area)) throw new StudioFileError(file, `tabs.${area}: no such area in areas`);
+    if (!Array.isArray(ids) || ids.length < 2 || ids.some((id) => typeof id !== "string" || !ID_PATTERN.test(id))) {
+      throw new StudioFileError(file, `tabs.${area} must list two or more panel ids`);
+    }
+    for (const id of ids as string[]) {
+      if (areas.includes(id)) throw new StudioFileError(file, `tabs.${area}: "${id}" is also an area of its own`);
+      if (placed.has(id)) throw new StudioFileError(file, `tabs: "${id}" is listed twice`);
+      placed.add(id);
+    }
+    tabs[area] = ids as string[];
+  }
+  return tabs;
 }
 
 export function checkTheme(name: string, value: unknown): Theme {
@@ -205,10 +240,7 @@ export function readManifest(dir = STUDIO_DIR): Manifest {
   const layouts: Manifest["layouts"] = {};
   for (const name of known.layouts) {
     const layout = checkLayout(name, readJson(join(dir, "layouts", `${name}.json`)));
-    const ids = layoutPanels(layout);
-    const missing = ids.filter((id) => !known.panels.includes(id));
-    if (missing.length) throw new StudioFileError(`layouts/${name}.json`, `no panel file for ${missing.join(", ")} (expected panels/<id>.js)`);
-    layouts[name] = { ...layout, panels: ids };
+    layouts[name] = { ...layout, panels: layoutPanels(layout), missing: missingPanels(layout, known.panels) };
   }
 
   const themes: Manifest["themes"] = {};

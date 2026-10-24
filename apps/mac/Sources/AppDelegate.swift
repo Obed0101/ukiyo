@@ -39,6 +39,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func zoomOut(_ sender: Any?) { windowController?.zoom(by: 1 / 1.1) }
     @objc func actualSize(_ sender: Any?) { windowController?.zoom(by: nil) }
 
+    @objc func openSettings(_ sender: Any?) { windowController?.openSettings() }
+
     @objc func openConfigFolder(_ sender: Any?) {
         AppConfig.ensureStudioConfigFolder()
         NSWorkspace.shared.open(AppConfig.studioConfigFolder)

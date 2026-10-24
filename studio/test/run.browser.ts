@@ -19,9 +19,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   const errors: string[] = [];
   page.on("pageerror", (e) => errors.push(e.message));
-  await page.goto(url);
-  await page.locator("#layouts button").filter({ hasText: /^balanced$/i }).click();
-  const panel = page.locator('[data-panel="sessions"]');
+  await page.goto(`${url}#/p/LanternRun`);
+  const panel = page.locator("#topbar");
 
   async function api(path: string, body?: unknown) {
     return page.evaluate(async ({ path, body }) => {
@@ -41,10 +40,9 @@ try {
   };
 
   // 1. Run it from the Studio and wait for it to attach (the first build can take a while).
-  await panel.getByRole("button", { name: "Run LanternRun", exact: true }).first().click();
+  await panel.getByRole("button", { name: "Run the game" }).click();
   stopGame = async () => { await api("/api/run/stop", { game: "sample/LanternRun" }); };
-  await panel.getByRole("button", { name: "Reload LanternRun at the same tick" }).waitFor({ timeout: 240_000 });
-  await page.waitForFunction(() => document.querySelector('[data-panel="sessions"]')?.querySelector('.game-state[data-state="running"]'), null, { timeout: 60_000 });
+  await page.waitForSelector('#topbar .state[data-kind="attached"]', { timeout: 240_000 });
   const first = (await api("/api/games")).runs.at(-1);
   assert.equal(first.state, "running");
   await panel.screenshot({ path: `${out}/running.png` });
@@ -68,9 +66,12 @@ try {
   writeFileSync(`${out}/before.json`, JSON.stringify(before.snapshot, null, 2));
 
   // 3. Reload from the panel.
-  await panel.getByRole("button", { name: "Reload LanternRun at the same tick" }).click();
-  await page.waitForFunction(() => /Reloaded at tick \d+/.test(document.querySelector('[data-panel="sessions"]')?.textContent ?? ""), null, { timeout: 240_000 });
-  const text = (await panel.textContent()) ?? "";
+  await panel.getByRole("button", { name: "Reload at the same tick" }).click();
+  await page.waitForFunction(async () => {
+    const token = document.querySelector('meta[name="ukiyo-studio-token"]')!.getAttribute("content")!;
+    const listing = await (await fetch("/api/games", { headers: { "x-ukiyo-token": token } })).json();
+    return listing.runs.at(-1)?.reloads > 0 && listing.runs.at(-1)?.state === "running";
+  }, null, { timeout: 240_000, polling: 1000 });
   const run = (await api("/api/games")).runs.at(-1);
   const after = { status: await command("status"), snapshot: await command("snapshot") };
   writeFileSync(`${out}/after.json`, JSON.stringify(after.snapshot, null, 2));
@@ -84,7 +85,6 @@ try {
   const { source: _b, ...a } = after.snapshot;
   assert.deepEqual(a, b, "the restored state is the old state");
   assert.ok(run.reload.ok && run.reload.match, `reload report: ${JSON.stringify(run.reload)}`);
-  assert.match(text, /the restored state is identical/);
   console.log(`reload ok: tick ${before.status.tick}, pid ${first.pid} → ${run.pid}, ${run.reload.ms} ms, match=${run.reload.match}`);
   assert.deepEqual(errors, []);
 } finally {

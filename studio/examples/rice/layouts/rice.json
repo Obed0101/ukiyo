@@ -1,9 +1,8 @@
 {
   "description": "Frame on the left, values / entities / the clock stacked on the right.",
   "columns": "minmax(0, 1fr) minmax(260px, 320px)",
-  "rows": "auto minmax(0, 1fr) minmax(0, 1fr) auto",
+  "rows": "minmax(0, 1fr) minmax(0, 1fr) auto",
   "areas": [
-    "transport transport",
     "viewport values",
     "viewport entities",
     "viewport clock"

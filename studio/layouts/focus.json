@@ -1,9 +1,8 @@
 {
-  "description": "The frame as large as the window; transport below it. Nothing else.",
+  "description": "The frame as large as the window. Nothing else.",
   "columns": "minmax(0, 1fr)",
-  "rows": "minmax(0, 1fr) auto",
+  "rows": "minmax(0, 1fr)",
   "areas": [
-    "viewport",
-    "transport"
+    "viewport"
   ]
 }
