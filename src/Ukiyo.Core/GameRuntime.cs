@@ -93,6 +93,9 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     /// <summary>Hosts, the dev bridge and tests push input here; it is latched once per tick.</summary>
     public InputCollector Input { get; } = new();
 
+    /// <summary>Everything from outside that reached this runtime since tick 0 (input, patches, viewport): see <see cref="ReplayLog"/>.</summary>
+    public ReplayLog History { get; } = new();
+
     /// <summary>Scheduled input fed before each tick (headless agent runs and replays).</summary>
     public InputScript? Script { get; set; }
 
@@ -157,6 +160,8 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         for (var i = 0; i < ticks; i++)
         {
             Script?.Feed(Tick, Input);
+            Input.History ??= History;
+            History.NoteViewport(Tick, Viewport);
             var input = Input.Latch(Tick, Viewport);
             _sounds.Begin(Tick);
             scenes?.BeginUpdate(Tick);
@@ -186,8 +191,78 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     /// Submits a patch to the game's scene registry: applied at the boundary before tick <c>patch.Tick</c> (now, when
     /// paused exactly there). The one entry point for tests, the dev bridge, agent tools and reload.
     /// </summary>
-    public void SubmitPatch(ScenePatch patch) =>
-        (_context.Scenes ?? throw new InvalidOperationException($"[RUNTIME]: {Game.Name} has no SceneRegistry, so it cannot take patches")).Submit(patch);
+    public void SubmitPatch(ScenePatch patch)
+    {
+        var scenes = _context.Scenes ?? throw new InvalidOperationException($"[RUNTIME]: {Game.Name} has no SceneRegistry, so it cannot take patches");
+        // Refused submissions are kept too: one refused at the current boundary changes the snapshot's rejected list.
+        // A patch that cannot be written as JSON (NaN, infinity) is refused as malformed before it touches any state.
+        try
+        {
+            History.AddPatch(Tick, patch.ToJson());
+        }
+        catch (ArgumentException)
+        {
+        }
+
+        scenes.Submit(patch);
+    }
+
+    /// <summary>The replay log as JSON, for a fresh process to <see cref="RestoreFrom"/> to the current tick.</summary>
+    public string ExportHistoryJson() => History.ToJson(Tick, Input.Pending);
+
+    /// <summary>
+    /// Replays <paramref name="log"/> from tick 0 on this fresh runtime until it is at boundary <paramref name="tick"/>:
+    /// same code and same log give the same state as the process the log came from. Events that were queued but not
+    /// yet latched there are queued again. Refuses a runtime that already ran and a log that no longer holds the whole
+    /// history. If the code changed, the replay still runs and the state may differ: compare snapshots to see.
+    /// </summary>
+    public void RestoreFrom(ReplayLog log, long tick)
+    {
+        ArgumentNullException.ThrowIfNull(log);
+        if (log.Truncated)
+        {
+            throw new InvalidOperationException($"[REPLAY]: the history of this session outgrew {ReplayLog.MaxEntries} entries and is incomplete; it cannot be replayed");
+        }
+
+        if (Tick != 0 || History.Count != 0)
+        {
+            throw new InvalidOperationException($"[REPLAY]: only a fresh runtime can be restored (tick {Tick})");
+        }
+
+        var window = Viewport;
+        int inputAt = 0, patchAt = 0, viewportAt = 0;
+        for (var t = 0L; t <= tick; t++)
+        {
+            while (viewportAt < log.Viewports.Count && log.Viewports[viewportAt].Tick <= t)
+            {
+                Viewport = log.Viewports[viewportAt++].Extent;
+            }
+
+            while (patchAt < log.Patches.Count && log.Patches[patchAt].AtTick <= t)
+            {
+                try
+                {
+                    SubmitPatch(ScenePatch.Parse(log.Patches[patchAt++].PatchJson));
+                }
+                catch (SceneException)
+                {
+                    // Refused the same way the original session was; the refusal is part of the replayed history.
+                }
+            }
+
+            while (inputAt < log.Input.Count && log.Input[inputAt].Tick <= t)
+            {
+                Input.Push(log.Input[inputAt++].Event);
+            }
+
+            if (t < tick)
+            {
+                Step(1);
+            }
+        }
+
+        Viewport = window;
+    }
 
     public void StepTo(long tick)
     {

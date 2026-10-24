@@ -89,6 +89,11 @@ the repo's; a user theme may `"extends"` another. Live-reloaded; a broken user f
 - Do not hand-edit a repo `studio.json` field the user `studio.json` also sets: the user's wins. `list` shows the layer
   of every panel, layout and theme.
 
+## Running games
+
+The Games panel (`panels/sessions.js`) runs, reloads and stops games through `studio.launcher`; the server side is
+`src/launcher.ts` and `src/run-routes.ts`. Changing which hosts are offered means `discoverGames` there, not a panel.
+
 ## Tools
 
 - `ukiyo_studio {"action":"view"}`: what the person sees now — layout, theme, visible panels, `focusedPanel`, `session`,

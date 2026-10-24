@@ -11,7 +11,7 @@ import { parseArgs } from "../src/cli.ts";
 import { parseHeadless } from "../src/engine.ts";
 import { validate } from "../src/protocol.ts";
 import capture from "../src/tools/capture.ts";
-import live, { bridgeFailure, liveRequest } from "../src/tools/live.ts";
+import live, { bridgeFailure, liveRequest, reload } from "../src/tools/live.ts";
 import { headlessSummary } from "../src/tools/run.ts";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "ukiyo-passes-")));
@@ -227,4 +227,28 @@ describe("through a dev bridge on a socket (a fake game answering like DevBridge
       server.close();
     }
   }, 20_000);
+});
+
+describe("ukiyo_live reload", () => {
+  const session = { pid: 1, port: 2, token: "t", url: "u", startedAt: "", file: "f" };
+  const run = (reload: unknown) => ({ run: { name: "LanternRun", state: "running", pid: 77, detail: "", reload } });
+
+  test("is in the schema and asks the Studio to reload and wait", async () => {
+    expect(() => validate(live.inputSchema, { action: "reload" })).not.toThrow();
+    const calls: unknown[][] = [];
+    const result = await reload(5, [session], async (...args) => (calls.push(args), run({ ok: true, fromTick: 300, match: true, sourceChanged: false, wasPaused: false })));
+    expect(calls[0]!.slice(1, 3)).toEqual(["/api/run/reload", { wait: true, pid: 5 }]);
+    expect(result.isError).toBeUndefined();
+    expect((result.content[0] as { text: string }).text).toContain("reloaded at tick 300 (pid 77, running); restored state identical");
+  });
+
+  test("a state that differs is reported, a failed reload is an error, no Studio is a clear input error", async () => {
+    const differs = await reload(undefined, [session], async () => run({ ok: true, fromTick: 9, match: false, differences: ["values.score: 1 → 2"] }));
+    expect((differs.content[0] as { text: string }).text).toContain("DIFFERENT: values.score: 1 → 2");
+    const failed = await reload(undefined, [session], async () => run({ ok: false, error: "build failed (exit 1); the running game was not touched" }));
+    expect(failed.isError).toBe(true);
+    const refused = await reload(undefined, [session], async () => { throw new Error("[STUDIO]: /api/run/reload → 404 no running game"); });
+    expect(refused.isError).toBe(true);
+    await expect(reload(undefined, [])).rejects.toThrow("needs the Studio");
+  });
 });

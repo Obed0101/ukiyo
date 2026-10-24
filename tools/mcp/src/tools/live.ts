@@ -1,6 +1,7 @@
 // Drives a running development build through the dev bridge (see ../bridge.ts for discovery and the wire format).
 import { bridgeRequest, liveSessions, publicSessions } from "../bridge.ts";
 import { failure, png, text, ToolInputError, type Tool, type ToolResult } from "../protocol.ts";
+import { studioRequest, studioSessions, type StudioSession } from "../../../../studio/src/discovery.ts";
 import { inputEventSchema, patchSchema } from "./run.ts";
 
 /** The bridge request for an action (everything but list), from already schema-validated arguments. */
@@ -36,17 +37,44 @@ export function bridgeFailure(where: string, error: string | undefined): ToolRes
   return { ...failure(`${where}: ${message}`), structuredContent: { error: message, code } };
 }
 
+/** What the Studio's reload answers: the run after the relaunch attached (or failed), with the comparison report. */
+type ReloadRun = { name: string; state: string; pid: number | null; detail: string; reload: { ok: boolean; error?: string; fromTick?: number; match?: boolean; sourceChanged?: boolean; differences?: string[]; wasPaused?: boolean } | null };
+
+/**
+ * Reload is the Studio's job (it rebuilds and relaunches the processes it started), so this needs a running Studio and a
+ * game it launched. The call returns when the new process is attached at the same tick, or says why it did not.
+ */
+export async function reload(pid: number | undefined, sessions: StudioSession[] = studioSessions(), request = studioRequest): Promise<ToolResult> {
+  const studio = sessions[0];
+  if (!studio) throw new ToolInputError("reload needs the Studio: start it with `bun studio/src/server.ts`, run the game from its Games panel, then reload");
+  let run: ReloadRun;
+  try {
+    ({ run } = (await request(studio, "/api/run/reload", { wait: true, ...(pid === undefined ? {} : { pid }) }, 600_000)) as { run: ReloadRun });
+  } catch (error) {
+    return failure(error instanceof Error ? error.message : String(error));
+  }
+  const report = run.reload;
+  if (!report?.ok) return { ...failure(`reload: ${report?.error ?? run.detail}`), structuredContent: { run } };
+  const verdict = report.match
+    ? `identical to the old process${report.sourceChanged ? " (the code changed, and the state still matches)" : ""}`
+    : `DIFFERENT: ${(report.differences ?? []).slice(0, 5).join("; ")}${report.sourceChanged ? " (the code changed)" : ""}`;
+  return {
+    content: [text(`${run.name} reloaded at tick ${report.fromTick} (pid ${run.pid}${report.wasPaused ? ", paused" : ", running"}); restored state ${verdict}`)],
+    structuredContent: { run },
+  };
+}
+
 const live: Tool = {
   name: "ukiyo_live",
   title: "Drive a running game",
   description:
-    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K (or pass=primary, the game's view pass) only that camera of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick). Pass pid when several games run; default is the newest.",
+    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K (or pass=primary, the game's view pass) only that camera of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick), reload (rebuild and relaunch a game the Studio started and restore the same tick by replaying its recorded input and patches; needs a running Studio; answers with whether the restored state matches the old process). Pass pid when several games run; default is the newest.",
   inputSchema: {
     type: "object",
     required: ["action"],
     additionalProperties: false,
     properties: {
-      action: { type: "string", enum: ["list", "status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch"] },
+      action: { type: "string", enum: ["list", "status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch", "reload"] },
       pid: { type: "integer", minimum: 1 },
       ticks: { type: "integer", minimum: 0, maximum: 36_000, default: 1 },
       events: { type: "array", items: inputEventSchema, maxItems: 1000 },
@@ -64,6 +92,8 @@ const live: Tool = {
       const list = publicSessions(sessions);
       return { content: [text(list.length ? JSON.stringify(list, null, 2) : "No running dev builds. Start one: dotnet run --project games/<Name>/Hosts/Desktop")], structuredContent: { sessions: list } };
     }
+
+    if (args.action === "reload") return reload(args.pid as number | undefined);
 
     const request = liveRequest(args);
     const session = args.pid === undefined ? sessions[0] : sessions.find((s) => s.pid === args.pid);

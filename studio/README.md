@@ -10,7 +10,7 @@ bun studio/src/server.ts                          # → http://127.0.0.1:4100
 ```
 
 **State: base runs against a live game.** Remaining acceptance checks and automated recording/Frame-panel coverage
-are tracked in [G3](../docs/G3.md); controlled reload is not implemented yet.
+are tracked in [G3](../docs/G3.md); running games from the Studio and controlled reload are described below.
 
 ## The UI is files
 
@@ -50,6 +50,21 @@ Start from [`examples/rice/`](examples/rice): `cp -R studio/examples/rice ~/.con
 themes `graphite`, `contrast`, `linen` (all text at least 4.5:1, checked in `test/studio.test.ts`), layouts `focus`
 and `wide`. Layering lives in `src/layers.ts`.
 
+## Run and reload games
+
+The **Games** panel lists the runnable hosts of this repository (`samples/*/Desktop`, `games/*/Desktop`,
+`games/*/Hosts/Desktop`, one csproj each, with the dev bridge). **Run** starts `dotnet run --project <csproj>`
+(`UKIYO_DOTNET`, `~/.dotnet/dotnet`, then PATH). Build output and compiler errors appear in the panel; when the game
+announces itself in `~/.ukiyo/live` the Studio follows it. **Stop** ends it; quitting the Studio stops the games it
+started. **Reload** rebuilds (a failing build leaves the game running), relaunches and restores the same tick; see
+the reload section of [G3](../docs/G3.md) for what is and is not preserved. Only games the Studio started can be
+stopped or reloaded.
+
+API (same token, Host and origin guard as every call): `GET /api/games`, `POST /api/run {game}`,
+`POST /api/run/stop {run|pid|game}`, `POST /api/run/reload {run|pid|game, wait?}`. A game is named by its id
+(`sample/LanternRun`); the server only ever spawns a csproj it discovered under the repository, never a path or
+command from the request. Agents reload with `ukiyo_live {"action":"reload"}`, which needs a running Studio.
+
 ## What agents get
 
 - `ukiyo_studio view`: what the person is looking at — layout, theme, focused panel, selected entity and its pose,
@@ -63,7 +78,7 @@ and `wide`. Layering lives in `src/layers.ts`.
 The server binds 127.0.0.1. Every API call needs the token embedded in the page (other origins cannot read it); the
 Host header must be this server (DNS rebinding); POSTs must be JSON from this origin. Agents find the token in
 `~/.ukiyo/studio/<pid>.json` (mode 0600), as they do for games in `~/.ukiyo/live`. The bridge proxy only forwards the
-eight bridge commands.
+eight bridge commands; the run endpoints take game ids, not paths or commands.
 
 ## Design
 

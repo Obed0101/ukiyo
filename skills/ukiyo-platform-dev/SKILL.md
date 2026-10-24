@@ -66,6 +66,8 @@ discovery file `~/.ukiyo/live/<pid>.json`, requests executed in `Pump` on the ho
    must stay on one line (no pretty-printed JSON inside).
 2. Add it to the unknown-command message, to `BRIDGE_COMMANDS` in `tools/mcp/src/bridge.ts`, to the `ukiyo_live`
    action enum, and to `BridgeCommand` in `studio/web/types.d.ts` if the Studio uses it.
+   The bridge also has `history` (the replay log of this session) and, at startup, `UKIYO_RESTORE=<file>` makes
+   `DevBridgeServer.TryStart` replay that log before announcing (the Studio's reload uses both).
 3. Test it in `tests/Ukiyo.Tests/DevBridgeTests.cs` (a real loopback connection with the discovery token; the test
    pumps the session the way a host does) and document it in the ukiyo-live skill.
 

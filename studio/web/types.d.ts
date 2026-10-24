@@ -2,6 +2,22 @@
 
 export type LiveSession = { pid: number; port: number; game: string; target: string; startedAt: string };
 
+export type GameEntry = { id: string; name: string; kind: "sample" | "game"; project: string; bridge: boolean };
+
+export type GameRun = {
+  id: string;
+  game: string;
+  name: string;
+  state: "building" | "starting" | "running" | "reloading" | "stopping" | "stopped" | "failed";
+  detail: string;
+  pid: number | null;
+  error: string | null;
+  errors: string[];
+  output: string[];
+  reload: { ok: boolean; error?: string; errors?: string[]; fromTick?: number; tick?: number; match?: boolean; sourceChanged?: boolean; differences?: string[]; ms?: number } | null;
+  reloads: number;
+};
+
 export type GameStatus = {
   game: string;
   target: string;
@@ -76,6 +92,14 @@ export type Studio = {
   capture(): Promise<Frame | null>;
   refreshSnapshot(): Promise<void>;
   selectSession(pid: number | null): void;
+  /** Games the Studio can run from this repository, and the runs it started (stop and reload only work on those). */
+  readonly launcher: {
+    list(): Promise<{ games: GameEntry[]; runs: GameRun[]; dotnet: string }>;
+    start(game: string): Promise<{ run: GameRun }>;
+    stop(run: string): Promise<{ run: GameRun }>;
+    /** Rebuilds and relaunches at the same tick; answers at once, progress is in the run's state. */
+    reload(run: string): Promise<{ run: GameRun }>;
+  };
   on<K extends keyof StudioEvents>(event: K, handler: (value: StudioEvents[K]) => void): () => void;
   /** Tells agents what the person is looking at in this panel (merged into ukiyo_studio view). */
   view(patch: Record<string, unknown>): void;
