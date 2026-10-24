@@ -17,6 +17,10 @@ export function liveRequest(args: Record<string, unknown>): Record<string, unkno
     if (args.action !== "capture") throw new ToolInputError(`pass is a capture option; ${String(args.action)} does not take it`);
     request.pass = args.pass;
   }
+  if (args.action === "rewind") {
+    if (typeof args.tick !== "number") throw new ToolInputError("rewind needs tick: the tick to return to (at most the current tick; read it with status)");
+    request.tick = args.tick;
+  }
   if (args.action === "patch") {
     if (args.patch === undefined) throw new ToolInputError('patch needs patch: {"id":"p1","tick":<current tick + margin>,"ops":[…]}; read the tick with status first');
     request.patch = args.patch;
@@ -68,17 +72,18 @@ const live: Tool = {
   name: "ukiyo_live",
   title: "Drive a running game",
   description:
-    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K (or pass=primary, the game's view pass) only that camera of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick), reload (rebuild and relaunch a game the Studio started and restore the same tick by replaying its recorded input and patches; needs a running Studio; answers with whether the restored state matches the old process). Pass pid when several games run; default is the newest.",
+    "Talks to a desktop development build while it runs (dev bridge). Actions: list (running sessions), status, pause, resume, step (ticks), snapshot, capture (real GPU frame; with pass=K (or pass=primary, the game's view pass) only that camera of a multi-camera game, alone at its rect size; a pass the frame does not have is refused with [RENDER:OutOfRange]), input (inject key/pointer events, then resume or step to apply them), record (on=true starts recording player input; on=false returns it as a replayable input script), patch (submit one scene patch: queued for its tick, or applied now when its tick is the current one; refusals return the typed [SCENE:Code] message — read the tick with status, or pause, before choosing patch.tick), rewind (tick=N: time-travel back to tick N of a game that implements ISaveable — restores the nearest checkpoint, at most 60 ticks older, and replays forward deterministically; pauses; the abandoned future is dropped; answers tick, checkpoint, replayed and the reachable window; refusals are typed [SAVE:Code], e.g. OutOfWindow when N is older than the bounded checkpoint ring), reload (rebuild and relaunch a game the Studio started and restore the same tick by replaying its recorded input and patches; needs a running Studio; answers with whether the restored state matches the old process). Pass pid when several games run; default is the newest.",
   inputSchema: {
     type: "object",
     required: ["action"],
     additionalProperties: false,
     properties: {
-      action: { type: "string", enum: ["list", "status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch", "reload"] },
+      action: { type: "string", enum: ["list", "status", "pause", "resume", "step", "snapshot", "capture", "input", "record", "patch", "rewind", "reload"] },
       pid: { type: "integer", minimum: 1 },
       ticks: { type: "integer", minimum: 0, maximum: 36_000, default: 1 },
       events: { type: "array", items: inputEventSchema, maxItems: 1000 },
       on: { type: "boolean" },
+      tick: { type: "integer", minimum: 0, description: "rewind action: the tick to return to." },
       pass: {
         anyOf: [{ type: "integer", minimum: 0 }, { type: "string", enum: ["primary"] }],
         description: 'capture action: one pass (camera) of a multi-camera frame, by id or "primary" (the pass the game marks as its view); omitted, the whole composed frame.',

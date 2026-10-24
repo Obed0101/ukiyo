@@ -307,4 +307,13 @@ internal interface ISceneDirector
 
     /// <summary>Tick <paramref name="tick"/> is being simulated; patches for it are now in the past.</summary>
     void BeginUpdate(long tick);
+
+    /// <summary>Writes the active scene, entities (as arguments), patch history, pending patches and reserved patch ids.</summary>
+    void SaveState(SaveWriter writer);
+
+    /// <summary>
+    /// Replaces all of the above from a save, at boundary <paramref name="tick"/>. Everything is parsed and validated
+    /// first; live entities are then disposed (newest first) and rebuilt through their prefabs' Create.
+    /// </summary>
+    void RestoreState(SaveReader reader, long tick);
 }

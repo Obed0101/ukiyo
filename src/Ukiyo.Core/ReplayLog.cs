@@ -63,6 +63,14 @@ public sealed class ReplayLog
         }
     }
 
+    /// <summary>Drops what happened from <paramref name="tick"/> on: a rewind abandoned that part of the timeline.</summary>
+    internal void TruncateFrom(long tick)
+    {
+        _input.RemoveAll(entry => entry.Tick >= tick);
+        _patches.RemoveAll(entry => entry.AtTick >= tick);
+        _viewports.RemoveAll(entry => entry.Tick >= tick);
+    }
+
     private bool HasRoom()
     {
         if (Count < MaxEntries)

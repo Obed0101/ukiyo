@@ -94,6 +94,13 @@ _scenes.LoadScene("meadow");                                       // live at ti
   `bun tools/mcp/src/cli.ts live patch --pid N --patch p.json` (`queued` or `applied`). Details per entry point:
   docs/scenes-patches.md.
 
+## Save, replay and rewind (opt-in)
+
+Implement `ISaveable` (`SaveVersion`, `Save(SaveWriter)`, `Load(SaveReader)`) to let the engine save, restore, replay
+from a checkpoint (`ukiyo_run` `saveTo`/`loadFrom`) and rewind a live game (`ukiyo_live` `rewind`). Write only your
+own state, in a fixed order; scene entities come back as new instances, so re-look-up cached references in `Load`.
+Prove it by comparing restore + replay with an uninterrupted run. docs/save-replay.md.
+
 ## Resources
 
 `GameContext` returns handles: `CreateMesh(MeshData)`, `CreateMaterial(MaterialData)`, `CreateTexture(TextureData)`,

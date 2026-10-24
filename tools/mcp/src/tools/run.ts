@@ -56,6 +56,8 @@ const schema: JsonSchema & { type: "object" } = {
     input: { type: "array", items: { ...inputEventSchema, required: ["tick"] }, maxItems: 10_000, description: "Scripted input fed tick by tick. Deterministic: the same script always gives the same snapshots." },
     patches: { type: "array", items: patchSchema, minItems: 1, maxItems: 1000, description: "Scene patch log, submitted in order before tick 0 (games with a SceneRegistry). Same log ⇒ same snapshots." },
     patchLog: { type: "string", description: "Instead of `patches`: path (inside the repository) of a patch log file, a JSON array of patches." },
+    loadFrom: { type: "string", description: "Path (inside the repository) of a save written by saveTo: the run restores it before the first tick and continues from its tick; checkpoints before that tick are skipped, and patch-log entries the save already holds are skipped. The same input script and patch log as the saved run continue exactly where it stopped (docs/save-replay.md). Games that implement ISaveable only." },
+    saveTo: { type: "string", description: "Path (inside the repository) to write a save of the final state to, after the last checkpoint. Games that implement ISaveable only." },
     size: { type: "string", pattern: "^\\d{2,4}x\\d{2,4}$", default: "1280x720", description: "Drawing-buffer size, e.g. 640x360." },
     audio: { type: "boolean", default: false, description: "Mix every sound the run plays into a WAV and report duration, sound count, peak and RMS (silence is peak 0)." },
     timeoutSeconds: { type: "integer", minimum: 10, maximum: 900, default: 240 },
@@ -151,6 +153,8 @@ export function headlessSummary(game: string, result: Pick<ProcessResult, "code"
     captures: output.captures,
     ...(output.passes.length > 0 ? { passes: output.passes } : {}),
     audio: output.audio,
+    ...(output.load ? { load: output.load } : {}),
+    ...(output.save ? { save: output.save } : {}),
     info: output.info,
   };
 }
@@ -169,6 +173,12 @@ export async function runHeadless(args: Record<string, unknown>, context: ToolCo
   }
   const patchLog = patchLogFile(args, context.root, work);
   if (patchLog) cliArgs.push("--patches", patchLog.path);
+  if (args.loadFrom !== undefined) {
+    const path = insideRoot(context.root, String(args.loadFrom));
+    if (!existsSync(path)) throw new ToolInputError(`loadFrom ${args.loadFrom} does not exist`);
+    cliArgs.push("--load", path);
+  }
+  if (args.saveTo !== undefined) cliArgs.push("--save", insideRoot(context.root, String(args.saveTo)));
   if (capture) cliArgs.push("--capture", join(work, "frames"));
   if (args.audio === true) cliArgs.push("--audio", join(work, "run.wav"));
 
@@ -208,7 +218,7 @@ const run: Tool = {
   name: "ukiyo_run",
   title: "Run headless",
   description:
-    "Builds and runs a game with no window or GPU, optionally with scripted input and a scene patch log (patches inline or patchLog file), and returns a JSON snapshot (entity poses + named values) at each checkpoint tick. With patches it also reports how many were applied and how many the world rejected at their tick (the last 16 of each, rejections with the typed [SCENE:Code] message, plus a hash chain over all of them that two runs can compare), and which were not reached by the last checkpoint; an invalid log fails the run before tick 0. Use it to prove behavior: positions, scores, state machines.",
+    "Builds and runs a game with no window or GPU, optionally with scripted input and a scene patch log (patches inline or patchLog file), and returns a JSON snapshot (entity poses + named values) at each checkpoint tick. Games that implement ISaveable can write their final state (saveTo) and resume from it (loadFrom): restore plus replay forward gives the same snapshots as an uninterrupted run. With patches it also reports how many were applied and how many the world rejected at their tick (the last 16 of each, rejections with the typed [SCENE:Code] message, plus a hash chain over all of them that two runs can compare), and which were not reached by the last checkpoint; an invalid log fails the run before tick 0. Use it to prove behavior: positions, scores, state machines.",
   inputSchema: schema,
   run: (args, context) => runHeadless(args, context, false),
 };

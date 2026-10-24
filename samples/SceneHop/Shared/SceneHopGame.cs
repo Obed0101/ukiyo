@@ -24,7 +24,7 @@ public sealed class Mote(string kind, Vector2 home, float size)
 /// JSON under Shared/assets/scenes; each scene runs <see cref="SceneTicks"/> ticks and then asks for the other one,
 /// which the registry loads at the next tick boundary. Patches (spawn, dispose, retarget) go through the same registry.
 /// </summary>
-public sealed class SceneHopGame : IGame
+public sealed class SceneHopGame : IGame, ISaveable
 {
     public const int SceneTicks = 60;
     public static readonly string[] SceneOrder = ["meadow", "cavern"];
@@ -97,6 +97,43 @@ public sealed class SceneHopGame : IGame
         {
             var next = (Array.IndexOf(SceneOrder, _scenes.ActiveScene) + 1) % SceneOrder.Length;
             _scenes.LoadScene(SceneOrder[next]);
+        }
+    }
+
+    /// <summary>The registry saves which entities exist; this adds what the game moved on them (drift, glow).</summary>
+    public void Save(SaveWriter writer)
+    {
+        writer.Int32(_scenes.Entities.Count);
+        foreach (var entity in _scenes.Entities)
+        {
+            var mote = entity.Instance;
+            writer.String(entity.Id);
+            writer.Vector2(mote.Position);
+            writer.Vector2(mote.Home);
+            writer.Single(mote.Size);
+            writer.Single(mote.Speed);
+            writer.Single(mote.Glow);
+        }
+    }
+
+    public void Load(SaveReader reader)
+    {
+        var count = reader.Count();
+        if (count != _scenes.Entities.Count)
+        {
+            throw new SaveException(SaveErrorCode.Layout, $"[SceneHop]: {_scenes.Entities.Count} entities live, the save has {count}");
+        }
+
+        for (var i = 0; i < count; i++)
+        {
+            var id = reader.String();
+            var mote = _scenes.Entities.FirstOrDefault(e => e.Id == id)?.Instance
+                ?? throw new SaveException(SaveErrorCode.Layout, $"[SceneHop]: entity {id} is not live");
+            mote.Position = reader.Vector2();
+            mote.Home = reader.Vector2();
+            mote.Size = reader.Single();
+            mote.Speed = reader.Single();
+            mote.Glow = reader.Single();
         }
     }
 

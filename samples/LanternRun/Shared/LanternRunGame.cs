@@ -21,7 +21,7 @@ public enum RunState
 /// input, so a headless input script reproduces any run exactly.
 /// Controls: arrows/A-D move, Space/Up/W jump, Escape pauses. Collect every ember, then reach the shrine.
 /// </summary>
-public sealed class LanternRunGame : IGame
+public sealed class LanternRunGame : IGame, ISaveable
 {
     public const float RunSpeed = 6f;
     public const float JumpSpeed = 12.5f;
@@ -157,6 +157,36 @@ public sealed class LanternRunGame : IGame
         frame.DrawSprite(playerFrame, _player.Position, new Vector2(1f), layer: 2, flipX: _facingLeft);
 
         _ui.Draw(frame);
+    }
+
+    public void Save(SaveWriter writer)
+    {
+        writer.Byte((byte)_state);
+        writer.Int64(_tick);
+        writer.Int32(_score);
+        writer.Int32(_lives);
+        writer.Bool(_facingLeft);
+        writer.Int64(_stateSince);
+        _world.Save(writer);
+        _ui.Save(writer);
+    }
+
+    public void Load(SaveReader reader)
+    {
+        var state = reader.Byte();
+        if (!Enum.IsDefined((RunState)state))
+        {
+            throw new SaveException(SaveErrorCode.Invalid, $"[LanternRun]: run state {state}");
+        }
+
+        _state = (RunState)state;
+        _tick = reader.Int64();
+        _score = reader.Int32();
+        _lives = reader.Int32();
+        _facingLeft = reader.Bool();
+        _stateSince = reader.Int64();
+        _world.Load(reader);
+        _ui.Load(reader);
     }
 
     public GameSnapshot Snapshot(long tick)

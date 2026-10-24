@@ -50,6 +50,10 @@ while (running) {
 - Both are AOT-safe by construction; never use `DllImport` with non-blittable marshalling or reflection-based JS
   interop.
 
+`rewind` (`Rewind` in `DevBridgeServer`) is an example of a command with typed refusals: it catches `SaveException`
+and answers `Error(id, ex.Message)`. The bridge enables the checkpoint ring in its constructor for `ISaveable` games
+(`UKIYO_TIME_TRAVEL=off` opts out). docs/save-replay.md.
+
 ## Flags and export profiles
 
 - Headless flags are parsed in `HeadlessOptions.Parse`: validate every value and throw `ArgumentException` with a

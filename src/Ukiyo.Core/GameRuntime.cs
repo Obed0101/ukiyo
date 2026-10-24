@@ -87,6 +87,9 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
     private readonly SoundQueue _sounds = new();
     private IRenderer? _renderer;
     private uint _sequence;
+    private bool _started;
+    private bool _replaying;
+    private TimeTravel? _timeline;
 
     public IGame Game { get; } = game;
 
@@ -135,6 +138,8 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         Game.Initialize(_context);
         _context.Scenes?.AtBoundary(Tick);
         FlushResources();
+        _started = true;
+        CaptureIfDue();
         var caps = renderer.Capabilities;
         Console.WriteLine($"[ukiyo] renderer={caps.RendererName} backend={caps.Backend} device=\"{caps.Device}\" profile={caps.Profile} capture={caps.SupportsCapture}");
     }
@@ -159,25 +164,212 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         var scenes = _context.Scenes;
         for (var i = 0; i < ticks; i++)
         {
-            Script?.Feed(Tick, Input);
-            Input.History ??= History;
-            History.NoteViewport(Tick, Viewport);
+            if (!_replaying)
+            {
+                Script?.Feed(Tick, Input);
+                Input.History ??= History;
+                History.NoteViewport(Tick, Viewport);
+            }
+
             var input = Input.Latch(Tick, Viewport);
             _sounds.Begin(Tick);
             scenes?.BeginUpdate(Tick);
             Game.Update(new TickInfo(Tick, Simulation.TickSeconds) { Input = input, Audio = _sounds });
-            foreach (var sound in _sounds.Events)
+            if (!_replaying)
             {
-                SoundLog?.Add(sound);
-                Audio?.Play(sound, _context.Sound(sound.Sound));
+                foreach (var sound in _sounds.Events)
+                {
+                    SoundLog?.Add(sound);
+                    Audio?.Play(sound, _context.Sound(sound.Sound));
+                }
+
+                Audio?.EndTick(Tick);
             }
 
-            Audio?.EndTick(Tick);
             Tick++;
 
             // Tick boundary: scene loads requested during the tick and patches due at the new tick apply here, so a
             // snapshot at tick N already shows them and Update(N) runs on the changed world.
             scenes?.AtBoundary(Tick);
+            if (!_replaying)
+            {
+                CaptureIfDue();
+            }
+        }
+    }
+
+    /// <summary>Whether the game implements <see cref="ISaveable"/>, so it can be saved, restored and rewound.</summary>
+    public bool CanSave => Game is ISaveable;
+
+    /// <summary>
+    /// The whole game state at the current tick boundary as bytes (docs/save-replay.md): tick, input state, scene
+    /// registry and patch history, and what the game writes in <see cref="ISaveable.Save"/>. The same state gives the
+    /// same bytes. Throws <see cref="SaveErrorCode.NotSaveable"/> for a game that does not opt in.
+    /// </summary>
+    public byte[] Save()
+    {
+        var saveable = Game as ISaveable ?? throw new SaveException(SaveErrorCode.NotSaveable, $"{Game.Name} does not implement ISaveable");
+        var payload = new SaveWriter();
+        payload.Tag("engine");
+        Input.Save(payload);
+        _context.Scenes?.SaveState(payload);
+        var game = new SaveWriter();
+        saveable.Save(game);
+        payload.Tag("game");
+        payload.Bytes(game.ToArray());
+        return SaveFile.Write(Game.Name, saveable.SaveVersion, Tick, _context.Scenes is not null, payload.ToArray());
+    }
+
+    /// <summary>Reads the header of a save (game, tick, versions) after checking its magic, format and checksum, without restoring it.</summary>
+    public static SaveInfo Inspect(ReadOnlySpan<byte> save) => SaveFile.Read(save).Info;
+
+    /// <summary>
+    /// Replaces the game state with a save made by <see cref="Save"/> of the same game and save version. The game must be
+    /// started (<see cref="StartAsync"/>) so its resources and scene registry exist. The header, checksum and engine
+    /// sections are validated before anything changes; a typed <see cref="SaveException"/> reports a mismatch. If the
+    /// game's own <see cref="ISaveable.Load"/> throws midway the game is left half-loaded: restore again or discard it.
+    /// An attached <see cref="Script"/> continues from the restored tick.
+    /// </summary>
+    public void Restore(ReadOnlySpan<byte> save)
+    {
+        var saveable = Game as ISaveable ?? throw new SaveException(SaveErrorCode.NotSaveable, $"{Game.Name} does not implement ISaveable");
+        if (!_started)
+        {
+            throw new InvalidOperationException("[RUNTIME]: not started; call StartAsync before Restore");
+        }
+
+        var (info, payload) = SaveFile.Read(save);
+        if (info.Game != Game.Name)
+        {
+            throw new SaveException(SaveErrorCode.Mismatch, $"saved by {info.Game}, this is {Game.Name}");
+        }
+
+        if (info.GameVersion != saveable.SaveVersion)
+        {
+            throw new SaveException(SaveErrorCode.GameVersion, $"{Game.Name} save version {info.GameVersion}, this build reads {saveable.SaveVersion}");
+        }
+
+        if (info.HasScenes != (_context.Scenes is not null))
+        {
+            throw new SaveException(SaveErrorCode.Mismatch, $"the save {(info.HasScenes ? "has" : "has no")} scene registry but {Game.Name} {(_context.Scenes is not null ? "has one" : "has none")}");
+        }
+
+        var reader = new SaveReader(payload);
+        reader.Expect("engine");
+        Input.Restore(reader);
+        _context.Scenes?.RestoreState(reader, info.Tick);
+        reader.Expect("game");
+        var game = new SaveReader(reader.Bytes());
+        reader.RequireEnd("engine state");
+        Tick = info.Tick;
+        saveable.Load(game);
+        game.RequireEnd($"{Game.Name}.Load");
+        Script?.SeekTo(Tick);
+        _clock.Reset();
+    }
+
+    /// <summary>
+    /// Keeps a ring of checkpoints (<see cref="TimeTravelOptions"/>) and a journal of outside input and patches so that
+    /// <see cref="Rewind"/> can return to any recent tick. The dev bridge calls this for saveable games. A checkpoint
+    /// of the current tick is taken immediately when the game already started, otherwise when it does.
+    /// </summary>
+    public void EnableTimeTravel(TimeTravelOptions? options = null)
+    {
+        if (!CanSave)
+        {
+            throw new SaveException(SaveErrorCode.NotSaveable, $"{Game.Name} does not implement ISaveable");
+        }
+
+        options ??= new TimeTravelOptions();
+        options.Validate();
+        _timeline = new TimeTravel(options);
+        Input.Journal = _timeline.Inputs;
+        if (_started)
+        {
+            _timeline.Add(Tick, Save());
+        }
+    }
+
+    /// <summary>The ticks <see cref="Rewind"/> can reach right now, or null when time travel is not enabled or nothing was captured yet.</summary>
+    public TimeTravelWindow? RewindWindow => _timeline?.Window(Tick);
+
+    /// <summary>
+    /// Returns the game to <paramref name="tick"/> (at most the current tick): restores the newest checkpoint at or before
+    /// it and steps forward, feeding the input and patches that came from outside at their original ticks, so the state
+    /// equals what an uninterrupted run showed at that tick. Sounds do not replay. The future is abandoned: checkpoints,
+    /// journal entries and recorded input from <paramref name="tick"/> on are dropped, and the runtime continues from
+    /// here with whatever input arrives next. If the replay fails the previous state is restored and the error rethrown.
+    /// </summary>
+    public RewindResult Rewind(long tick)
+    {
+        var timeline = _timeline ?? throw new SaveException(SaveErrorCode.NoTimeline, $"time travel is not enabled for {Game.Name} (it must implement ISaveable and run under the dev bridge, or call EnableTimeTravel)");
+        if (tick < 0 || tick > Tick)
+        {
+            throw new SaveException(SaveErrorCode.FutureTick, $"cannot rewind to tick {tick}: the game is at {Tick} (rewind goes back; use step to go forward)");
+        }
+
+        var (checkpointTick, checkpoint) = timeline.Nearest(tick)
+            ?? throw new SaveException(SaveErrorCode.OutOfWindow, $"tick {tick} is older than the oldest checkpoint ({timeline.OldestTick}); the window is {timeline.OldestTick}..{Tick}");
+        var inputs = timeline.Inputs.Where(entry => entry.Tick >= checkpointTick && entry.Tick < tick).ToList();
+        var patches = timeline.Patches.Where(entry => entry.SubmitTick >= checkpointTick && entry.SubmitTick < tick).ToList();
+        var before = Save();
+        var journal = Input.Journal;
+        var history = Input.History;
+        _replaying = true;
+        Input.Journal = null;
+        Input.History = null;
+        try
+        {
+            Restore(checkpoint);
+            var nextInput = 0;
+            var nextPatch = 0;
+            while (Tick < tick)
+            {
+                for (; nextPatch < patches.Count && patches[nextPatch].SubmitTick == Tick; nextPatch++)
+                {
+                    try
+                    {
+                        _context.Scenes!.Submit(patches[nextPatch].Patch);
+                    }
+                    catch (SceneException)
+                    {
+                        // Refused the same way the first time: the refusal is part of the state it left behind.
+                    }
+                }
+
+                for (; nextInput < inputs.Count && inputs[nextInput].Tick == Tick; nextInput++)
+                {
+                    Input.Push(inputs[nextInput].Event);
+                }
+
+                Step(1);
+            }
+        }
+        catch
+        {
+            Restore(before);
+            throw;
+        }
+        finally
+        {
+            _replaying = false;
+            Input.Journal = journal;
+            Input.History = history;
+        }
+
+        timeline.TruncateFrom(tick);
+        Input.TruncateRecorded(tick);
+        History.TruncateFrom(tick);
+        Script?.SeekTo(tick);
+        _clock.Reset();
+        return new RewindResult(Tick, checkpointTick, tick - checkpointTick, timeline.Window(Tick)!);
+    }
+
+    private void CaptureIfDue()
+    {
+        if (_timeline is { } timeline && _started && Tick % timeline.Options.IntervalTicks == 0 && !timeline.Has(Tick))
+        {
+            timeline.Add(Tick, Save());
         }
     }
 
@@ -196,15 +388,44 @@ public sealed class GameRuntime(IGame game, SourceIdentity source)
         var scenes = _context.Scenes ?? throw new InvalidOperationException($"[RUNTIME]: {Game.Name} has no SceneRegistry, so it cannot take patches");
         // Refused submissions are kept too: one refused at the current boundary changes the snapshot's rejected list.
         // A patch that cannot be written as JSON (NaN, infinity) is refused as malformed before it touches any state.
-        try
+        if (!_replaying)
         {
-            History.AddPatch(Tick, patch.ToJson());
-        }
-        catch (ArgumentException)
-        {
+            try
+            {
+                History.AddPatch(Tick, patch.ToJson());
+            }
+            catch (ArgumentException)
+            {
+            }
         }
 
-        scenes.Submit(patch);
+        if (_timeline is not { } timeline || _replaying)
+        {
+            scenes.Submit(patch);
+            return;
+        }
+
+        // A patch from outside the simulation is journaled with the boundary it arrived at, so a rewind can submit it
+        // again at the same point. A refusal the world recorded counts too; one thrown before anything was recorded does not.
+        var rejectedBefore = scenes.State().RejectedCount;
+        var recorded = false;
+        try
+        {
+            scenes.Submit(patch);
+            recorded = true;
+        }
+        catch (SceneException)
+        {
+            recorded = scenes.State().RejectedCount > rejectedBefore;
+            throw;
+        }
+        finally
+        {
+            if (recorded)
+            {
+                timeline.Patches.Add(new JournaledPatch(Tick, patch));
+            }
+        }
     }
 
     /// <summary>The replay log as JSON, for a fresh process to <see cref="RestoreFrom"/> to the current tick.</summary>

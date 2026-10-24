@@ -116,6 +116,71 @@ public sealed class InputCollector
 
     public IReadOnlyList<ScriptedInput> Recorded => _recorded;
 
+    /// <summary>When set, every latched event is also appended here (the time-travel journal). Independent of <see cref="Recording"/>.</summary>
+    internal List<ScriptedInput>? Journal { get; set; }
+
+    /// <summary>Drops recorded events from <paramref name="tick"/> on: the timeline they belonged to was abandoned by a rewind.</summary>
+    internal void TruncateRecorded(long tick) => _recorded.RemoveAll(entry => entry.Tick >= tick);
+
+    /// <summary>Held keys and buttons, pointer and events pushed but not yet latched.</summary>
+    internal void Save(SaveWriter writer)
+    {
+        writer.Tag("input");
+        var held = Enumerable.Range(0, _held.Length).Where(i => _held[i]).ToArray();
+        writer.Int32(held.Length);
+        foreach (var key in held)
+        {
+            writer.Byte((byte)key);
+        }
+
+        writer.Byte(_buttonsHeld);
+        writer.Vector2(_pointer);
+        writer.Int32(_queue.Count);
+        foreach (var e in _queue)
+        {
+            writer.Byte((byte)e.Kind);
+            writer.Byte((byte)e.Key);
+            writer.Byte((byte)e.Button);
+            writer.Vector2(e.Position);
+        }
+    }
+
+    internal void Restore(SaveReader reader)
+    {
+        reader.Expect("input");
+        var held = new bool[_held.Length];
+        for (var i = reader.Count(); i > 0; i--)
+        {
+            var key = reader.Byte();
+            if (key >= held.Length)
+            {
+                throw new SaveException(SaveErrorCode.Invalid, $"held key {key} is not a key slot");
+            }
+
+            held[key] = true;
+        }
+
+        var buttons = reader.Byte();
+        var pointer = reader.Vector2();
+        var queue = new List<InputEvent>();
+        for (var i = reader.Count(); i > 0; i--)
+        {
+            var e = new InputEvent((InputEventKind)reader.Byte(), (Key)reader.Byte(), (PointerButton)reader.Byte(), reader.Vector2());
+            if (!Enum.IsDefined(e.Kind) || (int)e.Key >= 128)
+            {
+                throw new SaveException(SaveErrorCode.Invalid, $"queued input event {e}");
+            }
+
+            queue.Add(e);
+        }
+
+        Array.Copy(held, _held, held.Length);
+        _buttonsHeld = buttons;
+        _pointer = pointer;
+        _queue.Clear();
+        _queue.AddRange(queue);
+    }
+
     /// <summary>Events pushed but not latched yet.</summary>
     public IReadOnlyList<InputEvent> Pending => _queue;
 
@@ -150,6 +215,8 @@ public sealed class InputCollector
             {
                 _recorded.Add(new ScriptedInput(tick, e));
             }
+
+            Journal?.Add(new ScriptedInput(tick, e));
 
             // A move followed by another pointer event in the same latch is overwritten by it: not worth replaying.
             if (History is { } history && !(e.Kind == InputEventKind.PointerMove && index + 1 < _queue.Count && _queue[index + 1].Kind >= InputEventKind.PointerMove))
@@ -251,6 +318,19 @@ public sealed class InputScript
         while (_next < _events.Length && _events[_next].Tick <= tick)
         {
             collector.Push(_events[_next].Event);
+            _next++;
+        }
+    }
+
+    /// <summary>
+    /// Positions the script as if it had run up to the boundary before <paramref name="tick"/>: events scheduled before
+    /// it count as delivered, the rest are fed as usual. Used when a save is restored or the game is rewound.
+    /// </summary>
+    public void SeekTo(long tick)
+    {
+        _next = 0;
+        while (_next < _events.Length && _events[_next].Tick < tick)
+        {
             _next++;
         }
     }

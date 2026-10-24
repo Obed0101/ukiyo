@@ -44,6 +44,159 @@ public sealed class PhysicsWorld2D
 
     public long Steps { get; private set; }
 
+    /// <summary>
+    /// Writes the world's mutable state for <see cref="ISaveable"/>: settings, step count, sensor overlaps and every
+    /// body's motion and tuning, in creation order. Bodies themselves (their ids, names, types and shapes) are written
+    /// only so <see cref="Load"/> can check the structure; <see cref="Body2D.UserData"/> is not saved.
+    /// </summary>
+    public void Save(SaveWriter writer)
+    {
+        writer.Tag("physics2d");
+        writer.Vector2(Gravity);
+        writer.Int32(VelocityIterations);
+        writer.Int64(Steps);
+        writer.Int32(_bodies.Count);
+        foreach (var body in _bodies)
+        {
+            writer.Int32(body.Id);
+            writer.String(body.Name);
+            writer.Byte((byte)body.Type);
+            switch (body.Shape)
+            {
+                case CircleShape circle:
+                    writer.Byte(0);
+                    writer.Single(circle.Radius);
+                    break;
+                case BoxShape box:
+                    writer.Byte(1);
+                    writer.Vector2(box.HalfExtents);
+                    break;
+                default:
+                    throw new NotSupportedException($"[PHYSICS]: cannot save shape {body.Shape.GetType().Name}");
+            }
+
+            writer.Vector2(body.Position);
+            writer.Single(body.Angle);
+            writer.Vector2(body.Velocity);
+            writer.Single(body.AngularVelocity);
+            writer.Single(body.Friction);
+            writer.Single(body.Restitution);
+            writer.Single(body.LinearDamping);
+            writer.Single(body.AngularDamping);
+            writer.Single(body.GravityScale);
+            writer.Single(body.Density);
+            writer.Bool(body.FixedRotation);
+            writer.Bool(body.IsSensor);
+            writer.UInt32(body.Layer);
+            writer.UInt32(body.Mask);
+            writer.Bool(body.Enabled);
+            writer.Bool(body.IsGrounded);
+            writer.Vector2(body.GroundNormal);
+            writer.Vector2(body.Force);
+            writer.Single(body.Torque);
+        }
+
+        var pairs = _sensorPairs.Order().ToArray();
+        writer.Int32(pairs.Length);
+        foreach (var pair in pairs)
+        {
+            writer.Int64(pair);
+        }
+    }
+
+    /// <summary>
+    /// Restores what <see cref="Save"/> wrote into the existing bodies, in place (references the game holds stay valid).
+    /// The world must already have the same bodies in the same order; a different structure throws
+    /// <see cref="SaveErrorCode.Layout"/> and changes nothing. Contacts and trigger events of the last step are cleared.
+    /// </summary>
+    public void Load(SaveReader reader)
+    {
+        reader.Expect("physics2d");
+        var gravity = reader.Vector2();
+        var iterations = reader.Int32();
+        var steps = reader.Int64();
+        var count = reader.Int32();
+        if (count != _bodies.Count)
+        {
+            throw new SaveException(SaveErrorCode.Layout, $"physics world has {_bodies.Count} bodies, the save has {count}; build the same bodies before loading");
+        }
+
+        var states = new BodyState[count];
+        for (var i = 0; i < count; i++)
+        {
+            var body = _bodies[i];
+            var id = reader.Int32();
+            var name = reader.String();
+            var type = (BodyType)reader.Byte();
+            Shape2D shape = reader.Byte() switch
+            {
+                0 => new CircleShape(reader.Single()),
+                1 => new BoxShape(reader.Vector2()),
+                var other => throw new SaveException(SaveErrorCode.Invalid, $"shape kind {other}"),
+            };
+            if (id != body.Id || name != body.Name || type != body.Type || shape != body.Shape)
+            {
+                throw new SaveException(SaveErrorCode.Layout, $"physics body #{i} is {body.Name}#{body.Id} {body.Type} {body.Shape}, the save has {name}#{id} {type} {shape}");
+            }
+
+            states[i] = new BodyState(
+                reader.Vector2(), reader.Single(), reader.Vector2(), reader.Single(),
+                reader.Single(), reader.Single(), reader.Single(), reader.Single(), reader.Single(), reader.Single(),
+                reader.Bool(), reader.Bool(), reader.UInt32(), reader.UInt32(), reader.Bool(), reader.Bool(),
+                reader.Vector2(), reader.Vector2(), reader.Single());
+            if (!(states[i].Density > 0) || !float.IsFinite(states[i].Density))
+            {
+                throw new SaveException(SaveErrorCode.Invalid, $"body {name} density {states[i].Density}");
+            }
+        }
+
+        var pairs = new HashSet<long>();
+        for (var i = reader.Count(); i > 0; i--)
+        {
+            pairs.Add(reader.Int64());
+        }
+
+        Gravity = gravity;
+        VelocityIterations = iterations;
+        Steps = steps;
+        for (var i = 0; i < count; i++)
+        {
+            var body = _bodies[i];
+            var s = states[i];
+            body.Position = s.Position;
+            body.Angle = s.Angle;
+            body.Velocity = s.Velocity;
+            body.AngularVelocity = s.AngularVelocity;
+            body.Friction = s.Friction;
+            body.Restitution = s.Restitution;
+            body.LinearDamping = s.LinearDamping;
+            body.AngularDamping = s.AngularDamping;
+            body.GravityScale = s.GravityScale;
+            body.Density = s.Density;
+            body.FixedRotation = s.FixedRotation;
+            body.IsSensor = s.IsSensor;
+            body.Layer = s.Layer;
+            body.Mask = s.Mask;
+            body.Enabled = s.Enabled;
+            body.IsGrounded = s.IsGrounded;
+            body.GroundNormal = s.GroundNormal;
+            body.Force = s.Force;
+            body.Torque = s.Torque;
+        }
+
+        _sensorPairs.Clear();
+        _sensorPairs.UnionWith(pairs);
+        _contacts.Clear();
+        _triggerEvents.Clear();
+        _solver.Clear();
+    }
+
+    private readonly record struct BodyState(
+        Vector2 Position, float Angle, Vector2 Velocity, float AngularVelocity,
+        float Friction, float Restitution, float LinearDamping, float AngularDamping, float GravityScale, float Density,
+        bool FixedRotation, bool IsSensor, uint Layer, uint Mask, bool Enabled, bool IsGrounded,
+        Vector2 GroundNormal, Vector2 Force, float Torque);
+
     public Body2D Add(string name, BodyType type, Shape2D shape, Vector2 position, float angle = 0f)
     {
         ArgumentException.ThrowIfNullOrEmpty(name);

@@ -24,6 +24,7 @@ Start a game: `dotnet run --project games/<Name>/Hosts/Desktop` (or `samples/Lan
 | `input` + `events` | queue key/pointer events (same JSON as input scripts, without `tick`); they apply on the next tick |
 | `record` + `on` | start recording the player's input; `on:false` stops and returns it as an input script |
 | `patch` + `patch` | submit one scene patch (games with a `SceneRegistry`): `queued` for a later tick, `applied` when its tick is the current one; refusals return the typed `[SCENE:Code]` message |
+| `rewind` + `tick` | time-travel back to tick N (games with `ISaveable`): restores the nearest checkpoint (every 60 ticks, bounded ring) and replays forward; pauses; drops the abandoned future. Answers `tick`, `checkpoint`, `replayed`, `window`; refusals are typed `[SAVE:Code]` (`OutOfWindow`, `FutureTick`, `NoTimeline`). docs/save-replay.md |
 | `reload` | rebuild and relaunch a game the Studio started, restoring the same tick by replaying its recorded input and patches. Needs a running Studio (`bun studio/src/server.ts`) and the game started from its Games panel. The result says whether the restored state matches the old process; code changes after the replay may make it differ |
 
 Requests run on the game's own thread between frames, so a snapshot or capture is always of a consistent tick.

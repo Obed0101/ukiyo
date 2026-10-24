@@ -120,6 +120,8 @@ describe("ukiyo_live capture with pass", () => {
   test("pass is forwarded to the bridge's capture; omitted, the request is unchanged", () => {
     expect(liveRequest(validate(live.inputSchema, { action: "capture", pass: 1 }) as Record<string, unknown>)).toEqual({ cmd: "capture", pass: 1 });
     expect(liveRequest(validate(live.inputSchema, { action: "capture" }) as Record<string, unknown>)).toEqual({ cmd: "capture" });
+    expect(liveRequest(validate(live.inputSchema, { action: "rewind", tick: 120 }) as Record<string, unknown>)).toEqual({ cmd: "rewind", tick: 120 });
+    expect(() => liveRequest(validate(live.inputSchema, { action: "rewind" }) as Record<string, unknown>)).toThrow("rewind needs tick");
     expect(liveRequest(validate(live.inputSchema, { action: "capture", pass: 0 }) as Record<string, unknown>)).toEqual({ cmd: "capture", pass: 0 });
   });
 
