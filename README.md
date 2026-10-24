@@ -96,7 +96,7 @@ still open. [G1](docs/G1.md) and [G3](docs/G3.md) list what ran, what passed and
 - **LanternRun.** A small platformer in `samples/LanternRun` that uses the 2D layer, input, physics, UI and audio.
 
 Samples: `RotatingCube` (the template), `LanternRun`, `TexturedQuad`, `LitCube`, `ImportedMesh`, `Minimap`,
-`SceneHop`. Docs: [assets](docs/assets.md) · [conventions](docs/conventions.md) · [export](docs/export.md) ·
+`SceneHop`, `Sparks` (particles). Docs: [assets](docs/assets.md) · [conventions](docs/conventions.md) · [export](docs/export.md) ·
 [game layout](docs/game-layout.md) · [protocol](docs/protocol.md) · [lighting](docs/rendering-lighting.md) ·
 [passes](docs/rendering-passes.md) · [scenes and patches](docs/scenes-patches.md) · reports
 [G0](docs/G0.md), [G1](docs/G1.md), [G3](docs/G3.md).
@@ -114,6 +114,7 @@ bun studio/src/server.ts                                  # → http://127.0.0.1
 ```
 
 Status: the base runs against a live Metal game ([G3](docs/G3.md)); controlled reload is not implemented yet.
+On a Mac, `scripts/mac-app.sh` builds and installs `apps/mac` as Ukiyo.app, the Studio in a native window.
 Details: [studio/README.md](studio/README.md).
 
 ## Quickstart
@@ -216,7 +217,9 @@ src/Ukiyo.Audio               mixer, WAV, sound synthesizer       (G1)
 src/Ukiyo.DevBridge           live control of dev builds          (G1)
 templates/game                the layout every new game copies    (docs/game-layout.md)
 samples/RotatingCube          that template filled in: Shared/Program.cs and Shared/Game.cs (CubeGame)
-samples/*                     RotatingCube, LanternRun, TexturedQuad, LitCube, ImportedMesh, Minimap, SceneHop
+samples/*                     RotatingCube, LanternRun, TexturedQuad, LitCube, ImportedMesh, Minimap, SceneHop, Sparks
+src/Ukiyo.Particles          deterministic particles and VFX
+apps/mac                      Ukiyo.app, the Studio as a native Mac window (scripts/mac-app.sh)
 tools/Ukiyo.Import            art importer: sprites, atlases, glTF meshes
 web/three-adapter             three.js presentation adapter, no game rules
 tools/mcp                     MCP server for agents               (G1)
