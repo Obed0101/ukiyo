@@ -79,7 +79,9 @@ export default {
 
       const lines = [];
       if (run) {
-        const summary = run.state === "failed" ? run.detail : active ? `${run.state}: ${run.detail}` : run.reload ? "" : run.state === "stopped" ? "Stopped" : "";
+        const summary = run.state === "failed" ? run.detail
+          : active ? (run.state === "running" && run.reload ? "" : `${run.state}: ${run.detail}`)
+          : run.reload ? "" : run.state === "stopped" ? "Stopped" : "";
         if (summary) lines.push(h("p", { class: "muted", text: summary }));
         const reload = reloadSummary(run);
         if (reload) lines.push(h("p", { class: run.reload && !run.reload.ok ? "panel-error" : "muted", text: reload }));

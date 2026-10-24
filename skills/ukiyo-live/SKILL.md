@@ -24,6 +24,7 @@ Start a game: `dotnet run --project games/<Name>/Hosts/Desktop` (or `samples/Lan
 | `input` + `events` | queue key/pointer events (same JSON as input scripts, without `tick`); they apply on the next tick |
 | `record` + `on` | start recording the player's input; `on:false` stops and returns it as an input script |
 | `patch` + `patch` | submit one scene patch (games with a `SceneRegistry`): `queued` for a later tick, `applied` when its tick is the current one; refusals return the typed `[SCENE:Code]` message |
+| `reload` | rebuild and relaunch a game the Studio started, restoring the same tick by replaying its recorded input and patches. Needs a running Studio (`bun studio/src/server.ts`) and the game started from its Games panel. The result says whether the restored state matches the old process; code changes after the replay may make it differ |
 
 Requests run on the game's own thread between frames, so a snapshot or capture is always of a consistent tick.
 
@@ -49,7 +50,7 @@ bun tools/mcp/src/cli.ts live patch --pid 123 --patch patch.json   # one patch o
 Use these as editor tasks or terminal commands. `--pid` is mandatory when multiple games are running; unlike the
 MCP adapter, the CLI does not choose the newest implicitly. Output files are created exclusively and never
 overwritten. Captures write PNG; recordings write the script array accepted by headless `--input`. Discovery tokens
-are handled internally and are never part of normal CLI output. This is runtime control, not code hot reload.
+are handled internally and are never part of normal CLI output. This is runtime control; `reload` (MCP tool and Studio) is a rebuild and relaunch, not in-process hot reload.
 
 Recordings preserve absolute ticks and contain input, not a saved game state. Replaying a mid-game recording from
 a fresh runtime requires the same prior state/input history and viewport.
