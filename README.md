@@ -292,7 +292,7 @@ goes to the game.
 - [x] **G1 · Runtime slice.** Input, 2D sprites, physics, game UI, audio, dev bridge, MCP and skills. Headless, Metal and WebGL2 match in simulation and pixels; NativeAOT export without the dev bridge ([report](docs/G1.md)). Merged, not released yet.
 - [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI. In the tree: scenes, prefabs, patches with history and replay (headless and live), glTF and sprite import, lit meshes, camera passes, the CLI and `ukiyo_check`. No G2 report yet, so the gate stays open.
 - [ ] **G3 · Studio and reload.** A human window onto a running game, a dev bridge from any editor, controlled reload. In the tree: Hub, editor layout, Settings, Ukiyo.app, Run and reload from the Studio, with live Metal evidence ([report](docs/G3.md)). Remaining acceptance checks are listed there.
-- [ ] **G4 · Evidence and games.** Replays, visual conformance and the first real games.
+- [ ] **G4 · Evidence and games.** Visual conformance across renderers, replay-based regression suites and the first real games.
 - [ ] **G5 · The open library.** Models, materials, sounds, templates and game systems published as packages by the community. Free and open source, no marketplace cut.
 
 Order and scope can still change.

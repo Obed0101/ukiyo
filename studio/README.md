@@ -29,6 +29,23 @@ panels); agents edit the same files or call `ukiyo_studio compose`. Either way i
 The panel contract and the `studio` object every panel receives are typed in `web/types.d.ts`. Panels talk to the
 game only through `studio.call` / `studio.control` / `studio.capture`, never to the server directly.
 
+## Panels and layouts
+
+| Panel | Shows |
+|---|---|
+| `viewport` (Frame) | The game's real rendered frame, on demand or continuously, with keyboard and pointer passthrough |
+| `hierarchy` | Entities grouped by scene; selection is shared with the Inspector and with agents |
+| `inspector` | Pose and values of the selected entity; position edits are scene patches applied at a tick boundary |
+| `console` | Output of games the Studio launched, Studio activity and bridge errors in one stream |
+| `assets` | `Shared/assets` and art, with PNG previews and stale-import marks (read-only) |
+| `values` | Snapshot values with their last change |
+| `entities` | Positions, rotations and scales from the snapshot |
+| `input` | Records play as a replayable input script |
+| `log` (Activity) | Bridge commands, file changes, agent notices and errors |
+
+Layouts: `editor` (default: Hierarchy, Frame and Inspector, with Console and Assets as tabs below), `simple`, `focus`,
+`balanced`, `wide` and `complete`. A layout groups panels into tabs with `"tabs": {"bottom": ["console", "assets"]}`.
+
 ## Your own config (the rice)
 
 Your dotfiles layer over the repo without forking it. The directory is `$UKIYO_STUDIO_CONFIG`, else
