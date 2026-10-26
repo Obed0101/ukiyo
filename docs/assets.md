@@ -94,7 +94,7 @@ on three.js, once per texture to floats on the CPU), then tint and blend in line
 
 The UKIYO-30 task text asked for "linear RGBA, premultiply". That is deliberately **not** what the importer emits:
 
-- **Parity.** G1 proved this exact contract pixel for pixel on CPU, Metal and WebGL2 (`docs/G1.md`). Premultiplied
+- **Parity.** This exact contract matches pixel for pixel on CPU, Metal and WebGL2 (`scripts/g1.sh`). Premultiplied
   alpha changes the blend state and the tint math in every renderer, and the golden protocol fixtures; it would be a
   protocol v2 change, not an importer feature.
 - **Precision.** Linear values stored in 8 bits band visibly in dark tones: sRGB encoding spends its 256 codes where

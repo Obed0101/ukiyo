@@ -42,7 +42,8 @@ while (running) {
 
 - SDL3 (`src/Ukiyo.Platform.Desktop/Sdl3.cs`): `[LibraryImport]`, blittable structs, event union read by offset.
   Offsets and constants come from the pinned SDL3 headers; when you write a binding without the header at hand, mark
-  it unverified in docs/G1.md (current example: the audio stream bindings) and verify on a device.
+  it unverified in a comment next to the binding and in the PR (current example: the audio stream bindings) and
+  verify on a device.
 - Browser (`src/Ukiyo.Platform.Browser`): `[JSImport(name, "ukiyo-host")]` for calls into `web/three-adapter/
   ukiyo-host.js`, `[JSExport]` for calls from JS (`Frame`, `SetPaused`, `Step`, `Snapshot`, `KeyEvent`,
   `PointerEvent`). Marshalled types are limited (numbers, bool, string, byte[], JSObject); keep signatures simple and

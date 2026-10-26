@@ -27,7 +27,7 @@ tools/mcp                  MCP server (Bun); studio/ the Studio (Bun + plain JS)
 tools/Ukiyo.Import         dev-time asset importer: PNG + atlas JSON, glTF 2.0 meshes → Shared/gen/*.g.cs (docs/assets.md);
                            bump MeshImporter.Version when the same model would generate different code or data
 tests/Ukiyo.Tests          xUnit for everything in src/; Bun tests live next to their JS/TS
-docs/                      protocol, conventions, gate reports (G0.md, G1.md, G3.md)
+docs/                      protocol, conventions, assets, scenes, export, decisions
 ```
 
 Dependency direction: Render ← Core ← (Physics, UI, AI, Audio) ← Platform.* ← games. Render.* depend only on Render.

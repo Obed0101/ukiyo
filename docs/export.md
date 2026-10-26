@@ -30,8 +30,8 @@ TexturedQuad, LitCube and SceneHop keep the older layout (`<game>/<Host>/`, docs
 csproj is the template's with relative references, no `UkiyoGameDir` (the game folder is the host folder's parent,
 which is where `Directory.Build.targets` finds `Shared/assets`) and the same `UkiyoSharedSource` glob and optional
 `ProjectReference`s as the game's Desktop host: TexturedQuad globs `Shared/**/*.cs` so `gen/QuadArt.g.cs` is compiled
-and hashed, LitCube adds `Ukiyo.Physics`, SceneHop embeds `Shared/assets/scenes/*.json`. RotatingCube's checks are in
-G0.md and G1.md and run in `scripts/g0.sh`.
+and hashed, LitCube adds `Ukiyo.Physics`, SceneHop embeds `Shared/assets/scenes/*.json`. RotatingCube's checks run in
+`scripts/g0.sh`.
 
 ## Checks
 
@@ -85,3 +85,15 @@ frames written; every dylib dyld reported came from the OS. PASS.
 
 Not covered: the binaries have not run on a physical Mac that has no .NET SDK installed at all (the clean run hides it
 from the process but it is on this disk), and no export was checked with `--input` scripts or beyond tick 60.
+
+## Toolchain and known limits
+
+- Pinned toolchain: .NET SDK 10.0.401 (`global.json`), wgpu-native v29.0.1.1 and SDL 3.4.16 (`scripts/fetch-native.sh`),
+  three 0.186.0, Emscripten 3.1.56 from the `wasm-tools` workload the browser hosts are built with.
+- The desktop capture re-renders the last packet into an offscreen texture with the same pipeline and reads it back; it
+  is not a readback of the swapchain image itself.
+- Startup frames while the window is still occluded are skipped and counted (`skipped=` in the log), never hidden.
+- Desktop resize is exercised programmatically (`SDL_SetWindowSize`), not by dragging.
+- JS→C# error translation (`[RENDER:Code]` → `RenderException`) has automated tests on the decoder side only, not a
+  live browser round trip.
+- The SDL3 audio stream bindings were written without the header at hand and are not verified on a device yet.

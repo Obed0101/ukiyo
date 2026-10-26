@@ -36,7 +36,7 @@ jobs:
         with:
           persist-credentials: false
 
-      # The SDK pinned in global.json; wasm-tools is the workload the browser hosts are built with (docs/G0.md).
+      # The SDK pinned in global.json; wasm-tools is the workload the browser hosts are built with (docs/export.md).
       - uses: actions/setup-dotnet@v6
         with:
           global-json-file: global.json
