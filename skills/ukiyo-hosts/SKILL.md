@@ -82,7 +82,7 @@ A host csproj with `<UkiyoDevBridge>true</UkiyoDevBridge>` gets `src/Ukiyo.DevBr
 sets `DevHooks.Factory`; the desktop loop calls `DevHooks.Start`, which is `null` everywhere else. Only Desktop dev hosts
 set it. Headless and Browser never start a bridge (`ukiyo_live` works only with a running Desktop dev build). Never set
 it in an export, and never call bridge types from `Shared/`. Proof for a published binary: `strings <binary> | grep -c
-DevBridge` prints 0 (docs/G1.md recorded this for RotatingCube).
+DevBridge` prints 0.
 
 ## Static web export: no daemon
 
@@ -98,7 +98,7 @@ services, no server-side code. Anything the game needs is compiled in or embedde
 
 After an AOT publish, the Browser host's `obj/` holds AOT-trimmed assemblies; a following plain publish can fail at
 runtime start ("NIY encountered", page status `error: Program terminated with exit(1)`). Move that `obj/` away and
-publish again (docs/G1.md).
+publish again.
 
 ## How `web/three-adapter` reaches the page
 

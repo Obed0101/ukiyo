@@ -9,8 +9,7 @@ dotnet run --project samples/LanternRun/Desktop   # any development build; it an
 bun studio/src/server.ts                          # → http://127.0.0.1:4100
 ```
 
-**State: base runs against a live game.** Remaining acceptance checks and automated recording/Frame-panel coverage
-are tracked in [G3](../docs/G3.md); running games from the Studio and controlled reload are described below.
+It runs against a live Metal game; running games from the Studio and controlled reload are described below.
 
 ## The UI is files
 
@@ -76,9 +75,19 @@ Recents are kept in `~/.ukiyo/studio-recent.json` (`UKIYO_STUDIO_RECENT`), outsi
 The header's **Run** starts `dotnet run --project <csproj>`
 (`UKIYO_DOTNET`, `~/.dotnet/dotnet`, then PATH). Build state and compiler errors appear in the header; when the game
 announces itself in `~/.ukiyo/live` the Studio follows it. **Stop** ends it; quitting the Studio stops the games it
-started. **Reload** rebuilds (a failing build leaves the game running), relaunches and restores the same tick; see
-the reload section of [G3](../docs/G3.md) for what is and is not preserved. Only games the Studio started can be
-stopped or reloaded.
+started. **Reload** rebuilds (a failing build leaves the game running), relaunches and restores the same tick. Only
+games the Studio started can be stopped or reloaded.
+
+How reload works: an always-on `ReplayLog` in `GameRuntime` records latched input, patch submissions and viewport
+changes. Reload builds first, pauses the old game at a tick boundary, exports its snapshot and history, stops it and
+relaunches `dotnet run --no-build` with `UKIYO_RESTORE=<log file>`. The new process replays tick 0 to the old tick
+before it announces itself and stays paused; the Studio compares the snapshots and resumes if the old game was running.
+
+- Preserved: the snapshot at that tick, pending queued input, patches and their refusals, paused or running.
+- Not preserved: audio (silent during replay); window size (the new process keeps its own, so state that depends on
+  the pointer's viewport position may differ). Sessions with more than 2,000,000 log entries are refused rather than
+  guessed. If the code changed, the replay still runs; the report flags `sourceChanged` and lists the first
+  differences.
 
 API (same token, Host and origin guard as every call): `GET /api/games`, `POST /api/run {game}`,
 `POST /api/run/stop {run|pid|game}`, `POST /api/run/reload {run|pid|game, wait?}`. A game is named by its id

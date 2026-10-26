@@ -14,7 +14,7 @@ Assemble it like Arch Linux: simple, balanced or complete.
 
 <br>
 
-[![status](https://img.shields.io/badge/status-pre--alpha_0.0.1-000?style=flat-square)](docs/G0.md)
+[![status](https://img.shields.io/badge/status-pre--alpha_0.0.1-000?style=flat-square)](#roadmap)
 [![.NET](https://img.shields.io/badge/.NET-10-000?style=flat-square)](https://dotnet.microsoft.com/)
 [![renderers](https://img.shields.io/badge/renderers-wgpu_·_three.js_·_cpu_·_null-000?style=flat-square)](#how-it-works)
 [![targets](https://img.shields.io/badge/targets-macOS_·_web_·_headless-000?style=flat-square)](#quickstart)
@@ -51,14 +51,7 @@ ukiyo starts from the other end.
 
 ## Status
 
-Pre-alpha. Gates close only with evidence, and each report says what ran, what passed and what is still open.
-
-| Gate | State | Evidence |
-|---|---|---|
-| **G0** · one program, two real renderers | closed, released as 0.0.1 | [G0 report](docs/G0.md) |
-| **G1** · runtime slice | every check passes, on `main`, not released | [G1 report](docs/G1.md) |
-| **G2** · authoring and data | most of it in the tree, no report yet | [scenes and patches](docs/scenes-patches.md) · [assets](docs/assets.md) |
-| **G3** · Studio and reload | base runs against a live game; Run and reload implemented | [G3 report](docs/G3.md) |
+Pre-alpha. What is done and what comes next is in the [roadmap](#roadmap).
 
 What 0.0.1 proves, reproducible with `scripts/g0.sh`:
 
@@ -69,7 +62,7 @@ What 0.0.1 proves, reproducible with `scripts/g0.sh`:
 - **Single binary.** `rotating-cube` is one 10.3 MB NativeAOT executable with wgpu and SDL linked in. It runs copied alone into an empty folder.
 - **Static web.** The published site runs from any static file server, in IL or WebAssembly-AOT form.
 
-Since then, G1 added the runtime slice: LanternRun, a small platformer, runs headless, on Metal and in the browser with
+Since then, the runtime slice landed on `main`: LanternRun, a small platformer, runs headless, on Metal and in the browser with
 the same simulation and the same pixels.
 
 ## What is in the tree
@@ -161,8 +154,8 @@ dotnet publish samples/RotatingCube/Hosts/Export.Desktop -c Release -o artifacts
 Verify:
 
 ```sh
-scripts/g0.sh                            # G0 end to end (opens a window for a few seconds)
-scripts/g1.sh                            # G1: headless, Metal and WebGL2 parity
+scripts/g0.sh                            # RotatingCube on every target (opens a window for a few seconds)
+scripts/g1.sh                            # LanternRun: headless, Metal and WebGL2 parity
 scripts/clean-run.sh RotatingCube        # an export runs alone, with no .NET or dylibs (docs/export.md)
 ```
 
@@ -186,7 +179,7 @@ bun studio/src/server.ts                 # → http://127.0.0.1:4100
 - **Hub.** The start screen lists the games and samples in the repository and creates new ones.
 - **Editor.** Hierarchy, the real frame and Inspector side by side, with Console and Assets as tabs below. The header
   runs, pauses, steps and reloads the game. Run starts the desktop host; reload rebuilds and relaunches it at the same
-  tick and checks that the snapshot matches ([G3](docs/G3.md)).
+  tick and checks that the snapshot matches ([reload](studio/README.md#run-and-reload-games)).
 - **Settings.** Theme (`contrast`, `graphite`, `ink`, `linen`, `paper`), layout (`editor`, `simple`, `focus`,
   `balanced`, `wide`, `complete`) and which panels are shown.
 - **The UI is files.** Panels are `studio/panels/*.js`, layouts and themes are JSON. Your own copies live in
@@ -283,17 +276,24 @@ goes to the game.
 - Engine: [conventions](docs/conventions.md) · [protocol](docs/protocol.md) · [lighting](docs/rendering-lighting.md) · [camera passes](docs/rendering-passes.md)
 - Games: [game layout](docs/game-layout.md) · [assets](docs/assets.md) · [scenes and patches](docs/scenes-patches.md) · [save and replay](docs/save-replay.md) · [export](docs/export.md)
 - Decisions: [input contract](docs/decisions/input-contract.md) · [WebGPU in the browser](docs/decisions/webgpu-browser.md)
-- Reports: [G0](docs/G0.md) · [G1](docs/G1.md) · [G3](docs/G3.md)
 - Studio: [studio/README.md](studio/README.md)
 
 ## Roadmap
 
-- [x] **G0 · One program, two real renderers.** Metal and WebGL2 from the same C#, NativeAOT single binary, static web export.
-- [x] **G1 · Runtime slice.** Input, 2D sprites, physics, game UI, audio, dev bridge, MCP and skills. Headless, Metal and WebGL2 match in simulation and pixels; NativeAOT export without the dev bridge ([report](docs/G1.md)). Merged, not released yet.
-- [ ] **G2 · Authoring and data.** Scenes and prefabs as code plus data, validated patches, the agent CLI. In the tree: scenes, prefabs, patches with history and replay (headless and live), glTF and sprite import, lit meshes, camera passes, the CLI and `ukiyo_check`. No G2 report yet, so the gate stays open.
-- [ ] **G3 · Studio and reload.** A human window onto a running game, a dev bridge from any editor, controlled reload. In the tree: Hub, editor layout, Settings, Ukiyo.app, Run and reload from the Studio, with live Metal evidence ([report](docs/G3.md)). Remaining acceptance checks are listed there.
-- [ ] **G4 · Evidence and games.** Visual conformance across renderers, replay-based regression suites and the first real games.
-- [ ] **G5 · The open library.** Models, materials, sounds, templates and game systems published as packages by the community. Free and open source, no marketplace cut.
+Done:
+
+- **One program, two real renderers.** Metal and WebGL2 from the same C#, NativeAOT single binary, static web export. Released as 0.0.1.
+- **Runtime slice.** Input, 2D sprites, physics, game UI, audio, dev bridge, MCP and skills. Headless, Metal and WebGL2 match in simulation and pixels. On `main`, not released yet.
+
+In progress:
+
+- **Authoring and the agent CLI.** Scenes and prefabs as code plus data, patches with history and replay, glTF and sprite import, lit meshes, camera passes, the CLI and `ukiyo_check` are in the tree.
+- **Studio and reload.** Hub, editor layout, Settings, Ukiyo.app, Run and reload from the Studio, against a live Metal game.
+
+Later:
+
+- **Evidence and first games.** Visual conformance across renderers, replay-based regression suites and the first real games.
+- **The open library.** Models, materials, sounds, templates and game systems published as packages by the community. Free and open source, no marketplace cut.
 
 Order and scope can still change.
 

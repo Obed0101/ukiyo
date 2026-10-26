@@ -1,7 +1,7 @@
 # Decision · WebGPU in the browser path
 
 **Decision: stay on WebGL2 (`WebGLRenderer`) as the only shipped browser renderer. No dual path for now.**
-Spike UKIYO-15, measured 2026-10-16. Resolves [G0](../G0.md) *Pending* item 2.
+Spike UKIYO-15, measured 2026-10-16.
 
 ## Context
 
