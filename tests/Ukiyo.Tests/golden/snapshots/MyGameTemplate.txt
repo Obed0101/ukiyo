@@ -1,0 +1,14 @@
+# MyGameTemplate: headless snapshots at 0,1,60,180,600
+# Pinned on every CI machine. Regenerate only for an intended change: UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests --filter SnapshotGoldenTests
+snapshot {"tick":0,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}}}
+snapshot {"tick":1,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0.0024346067,0.0069560194,0.001391204,0.99997187],"scale":[1,1,1]}}}
+snapshot {"tick":60,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0.14119732,0.4034209,0.080684185,0.90044713],"scale":[1,1,1]}}}
+snapshot {"tick":180,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[0.31673664,0.9049618,0.18099236,0.21900678],"scale":[1,1,1]}}}
+snapshot {"tick":600,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"cube":{"position":[0,0,0],"rotation":[-0.31732315,-0.9066376,-0.18132752,-0.2107958],"scale":[1,1,1]}}}
+[ukiyo] null frames=5 instances=5 sprites=0 meshes=1 materials=1 textures=0
+resources fb5041a4257d63be5710060b3fac7f4263ef7fd34e6ff72c27bffaa1d78bfe5a
+frame 0 a8311c748852db7ed6f51b15ee47e903f38340eb9d81f424765c2e625d029802
+frame 1 84aeaea46071d41c46818842717e5164b8ae8a96225e5183b4c6dab0de8c62db
+frame 60 6a32b7cfd8d372b43ff6a446640ad699884d4322988c3c9da71dc6d6a93a75c7
+frame 180 e73bf320d86ca0a2f7cf94c02af6cdf8d89a79e82e5559c31f657342ff216aaf
+frame 600 c93b546e927e6a538491517f48aa956262245755ac6cee6f8732de048f26f955

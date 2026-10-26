@@ -1,0 +1,7 @@
+[ukiyo] target=headless game=LitCube LitCubeGame.cs=DBA95819877B Program.cs=81948D92886F
+[ukiyo] renderer=SoftwareRenderer backend=CPU device="managed rasterizer" profile=G1Lit capture=True
+snapshot {"tick":0,"renderer":"SoftwareRenderer","backend":"CPU","source":{"LitCubeGame.cs":"DBA95819877B573DA211DE1B1AB06DF3F6BE6236A909F00CBB01FB2CB4F8C7AF","Program.cs":"81948D92886FE5E3E5D91460DB6B9F3FBB730E317B3A68E08EAB3D4A4D98FFA6"},"entities":{"cube":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]},"lamp":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+capture <frames>/headless-tick-000000.png
+snapshot {"tick":60,"renderer":"SoftwareRenderer","backend":"CPU","source":{"LitCubeGame.cs":"DBA95819877B573DA211DE1B1AB06DF3F6BE6236A909F00CBB01FB2CB4F8C7AF","Program.cs":"81948D92886FE5E3E5D91460DB6B9F3FBB730E317B3A68E08EAB3D4A4D98FFA6"},"entities":{"cube":{"position":[0,0,0],"rotation":[0.11131055,0.31803012,0.06360603,0.9393727],"scale":[1,1,1]},"lamp":{"position":[1.3506707,0.85,0.6524483],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"lights":2}}
+capture <frames>/headless-tick-000060.png
+[ukiyo] software frames=2 size=1280x720

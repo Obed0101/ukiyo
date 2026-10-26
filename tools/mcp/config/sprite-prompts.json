@@ -1,0 +1,24 @@
+{
+  "$comment": "Prompts and palettes for ukiyo_sprite_generate. Editing this file changes generation without touching code. {subject}, {frames}, {style} and {action} are filled in by the tool.",
+  "background": "#FF00FF",
+  "templates": {
+    "single": "A single {style} game sprite of {subject}. Centered, full body, side view, facing right, one character only. Flat solid pure magenta (#FF00FF) background filling the whole image, no gradient, no floor, no shadow, no text, no border, no frame. Crisp hard pixel edges, limited palette, clear dark outline, readable silhouette at small size.",
+    "strip": "A horizontal sprite strip of exactly {frames} animation frames of {subject} {action}, {style}. The frames sit side by side in one row in equal-width cells, left to right in time order, same character, same size, same scale and same baseline in every cell, side view facing right. Flat solid pure magenta (#FF00FF) background everywhere, no grid lines, no gaps of another color, no floor, no shadow, no text, no numbers.",
+    "tile": "A single seamless square {style} game tile of {subject}, viewed straight on, filling the entire image edge to edge, tileable on all four sides. No magenta, no border, no text."
+  },
+  "styles": {
+    "pixel": "16-bit era pixel art",
+    "ukiyo": "pixel art in the style of an ukiyo-e woodblock print: sumi ink black outlines, washi paper white, seal vermilion red accents, warm lantern orange and gold",
+    "gameboy": "4-color Game Boy pixel art in shades of green",
+    "nes": "8-bit NES pixel art with a 3-color-plus-transparent palette per sprite"
+  },
+  "palettes": {
+    "ukiyo": ["#111214", "#F2F0EA", "#D8432E", "#F08A3C", "#E8B04A", "#3A3D44", "#26282D"],
+    "pico8": ["#000000", "#1D2B53", "#7E2553", "#008751", "#AB5236", "#5F574F", "#C2C3C7", "#FFF1E8", "#FF004D", "#FFA300", "#FFEC27", "#00E436", "#29ADFF", "#83769C", "#FF77A8", "#FFCCAA"],
+    "gameboy": ["#0F380F", "#306230", "#8BAC0F", "#9BBC0F"]
+  },
+  "providers": {
+    "openai": { "model": "gpt-image-2", "size": "1024x1024", "endpoint": "https://api.openai.com/v1/images/generations", "keyEnv": "OPENAI_API_KEY" },
+    "gemini": { "model": "gemini-2.5-flash-image", "endpoint": "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent", "keyEnv": "GEMINI_API_KEY" }
+  }
+}

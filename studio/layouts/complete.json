@@ -1,0 +1,10 @@
+{
+  "description": "Everything: input recording, the game's numbers, entities and the activity log around the frame.",
+  "columns": "minmax(220px, 260px) minmax(0, 1fr) minmax(280px, 340px)",
+  "rows": "minmax(0, 1fr) minmax(0, 1fr) minmax(180px, 0.7fr)",
+  "areas": [
+    "input viewport values",
+    "input viewport entities",
+    "log log entities"
+  ]
+}

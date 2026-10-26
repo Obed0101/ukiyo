@@ -1,0 +1,8 @@
+{
+  "description": "The frame with the game's numbers beside it.",
+  "columns": "minmax(0, 1fr) minmax(280px, 340px)",
+  "rows": "minmax(0, 1fr)",
+  "areas": [
+    "viewport values"
+  ]
+}

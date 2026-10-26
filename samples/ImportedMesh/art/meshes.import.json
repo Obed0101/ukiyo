@@ -1,0 +1,6 @@
+{
+  "class": "SceneMeshes",
+  "namespace": "Ukiyo.Samples.ImportedMesh",
+  "output": "../Shared/gen/SceneMeshes.g.cs",
+  "inputs": ["suzanne.gltf", "pedestal.glb"]
+}

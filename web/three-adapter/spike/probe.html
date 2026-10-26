@@ -1,0 +1,69 @@
+<!doctype html>
+<!--
+  SPIKE (UKIYO-15, docs/decisions/webgpu-browser.md). Not part of any shipped page.
+  Reports what this browser instance actually offers: navigator.gpu, the adapter it returns, whether a WebGPU canvas
+  can be read back with toDataURL in the same task (the path ThreeJsRenderer.CaptureAsync relies on), and which device
+  WebGL2 runs on in the same launch. Posts the JSON to /report on the spike server (scripts/spike-webgpu.ts).
+-->
+<html lang="en">
+<head><meta charset="utf-8"><title>ukiyo webgpu probe</title></head>
+<body>
+<canvas id="gpu" width="64" height="64"></canvas>
+<canvas id="gl" width="64" height="64"></canvas>
+<script type="module">
+const report = { userAgent: navigator.userAgent, hasNavigatorGpu: "gpu" in navigator };
+const pixelOf = (url) => new Promise((resolve, reject) => {
+  const image = new Image();
+  image.onload = () => {
+    const c = document.createElement("canvas");
+    c.width = image.width; c.height = image.height;
+    const ctx = c.getContext("2d");
+    ctx.drawImage(image, 0, 0);
+    resolve([...ctx.getImageData(32, 32, 1, 1).data]);
+  };
+  image.onerror = () => reject(new Error("toDataURL produced an undecodable image"));
+  image.src = url;
+});
+
+try {
+  const gl = document.getElementById("gl").getContext("webgl2");
+  const debug = gl?.getExtension("WEBGL_debug_renderer_info");
+  report.webgl2 = gl ? { renderer: debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER), vendor: debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : null } : null;
+} catch (error) { report.webgl2Error = String(error); }
+
+try {
+  if (report.hasNavigatorGpu) {
+    report.preferredCanvasFormat = navigator.gpu.getPreferredCanvasFormat();
+    for (const [name, options] of [["default", {}], ["highPerformance", { powerPreference: "high-performance" }], ["compatibility", { powerPreference: "high-performance", featureLevel: "compatibility" }]]) {
+      const adapter = await navigator.gpu.requestAdapter(options);
+      report[`adapter_${name}`] = adapter ? {
+        info: { vendor: adapter.info.vendor, architecture: adapter.info.architecture, device: adapter.info.device, description: adapter.info.description, isFallbackAdapter: adapter.info.isFallbackAdapter },
+        coreFeaturesAndLimits: adapter.features.has("core-features-and-limits"),
+        features: adapter.features.size,
+        maxTextureDimension2D: adapter.limits.maxTextureDimension2D,
+      } : null;
+    }
+    const adapter = await navigator.gpu.requestAdapter({ powerPreference: "high-performance" });
+    if (adapter) {
+      const device = await adapter.requestDevice();
+      const canvas = document.getElementById("gpu");
+      const context = canvas.getContext("webgpu");
+      context.configure({ device, format: report.preferredCanvasFormat, alphaMode: "opaque" });
+      // Clear to known 8-bit values (unorm, no sRGB view): 64/255, 128/255, 192/255.
+      const encoder = device.createCommandEncoder();
+      const pass = encoder.beginRenderPass({ colorAttachments: [{ view: context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store", clearValue: { r: 64 / 255, g: 128 / 255, b: 192 / 255, a: 1 } }] });
+      pass.end();
+      device.queue.submit([encoder.finish()]);
+      const sameTask = canvas.toDataURL("image/png"); // same task as the submit, as CaptureAsync does
+      report.canvasReadback = { expected: [64, 128, 192, 255], sameTaskPixel: await pixelOf(sameTask) };
+      await new Promise((r) => setTimeout(r, 100));
+      report.canvasReadback.nextTaskPixel = await pixelOf(canvas.toDataURL("image/png"));
+    }
+  }
+} catch (error) { report.webgpuError = String(error?.stack ?? error); }
+
+await fetch("/report", { method: "POST", body: JSON.stringify(report) });
+document.title = "probe-done";
+</script>
+</body>
+</html>

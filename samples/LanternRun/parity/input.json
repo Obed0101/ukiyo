@@ -1,0 +1,14 @@
+[
+  { "tick": 5, "key": "Enter", "down": true },
+  { "tick": 7, "key": "Enter", "down": false },
+  { "tick": 20, "key": "Right", "down": true },
+  { "tick": 34, "key": "Space", "down": true },
+  { "tick": 38, "key": "Space", "down": false },
+  { "tick": 90, "key": "Space", "down": true },
+  { "tick": 96, "key": "Space", "down": false },
+  { "tick": 150, "key": "Right", "down": false },
+  { "tick": 160, "key": "Left", "down": true },
+  { "tick": 200, "key": "Left", "down": false },
+  { "tick": 230, "key": "Escape", "down": true },
+  { "tick": 232, "key": "Escape", "down": false }
+]

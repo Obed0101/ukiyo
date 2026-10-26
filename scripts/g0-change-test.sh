@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# G0.4 "one change in C# changes every target": edits ONLY samples/RotatingCube/Shared/CubeGame.cs (rotation speed
-# and cube size), rebuilds headless, desktop and web, captures tick 60 on each, then always restores the file.
+# G0.4 "one change in C# changes every target": edits ONLY samples/RotatingCube/Shared/Game.cs (CubeGame: rotation
+# speed and cube size), rebuilds headless, desktop and web, captures tick 60 on each, then always restores the file.
+# (Before the template layout, UKIYO-16, the same bytes lived in Shared/CubeGame.cs and hosts in samples/RotatingCube/<Host>.)
 # Evidence lands in artifacts/evidence-change/. Renderer code is untouched (checked with git diff at the end).
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 export PATH="$HOME/.dotnet:$PATH" DOTNET_ROOT="$HOME/.dotnet" DOTNET_NOLOGO=1
-GAME="samples/RotatingCube/Shared/CubeGame.cs"
+GAME="samples/RotatingCube/Shared/Game.cs"
+HOSTS="samples/RotatingCube/Hosts"
 OUT="artifacts/evidence-change"
 BACKUP="$(mktemp)"
 cp "$GAME" "$BACKUP"
@@ -22,10 +24,10 @@ sed -i '' 's/public const float HalfSize = 0.5f;/public const float HalfSize = 0
 grep -q "RadiansPerSecond = 2.1f" "$GAME" && grep -q "HalfSize = 0.3f" "$GAME"
 git diff --no-index --stat "$BACKUP" "$GAME" > "$OUT/change.diffstat" || true
 
-dotnet run --project samples/RotatingCube/Headless -- --checkpoints 60 > "$OUT/headless.log"
-dotnet build samples/RotatingCube/Desktop -v q -nologo >/dev/null
-dotnet run --project samples/RotatingCube/Desktop --no-build -- --capture "$OUT/desktop" --checkpoints 60 | grep -v '^snapshot' || true
-dotnet publish samples/RotatingCube/Browser -c Release -o "$OUT/web-export" -v q -nologo >/dev/null
+dotnet run --project "$HOSTS/Headless" -- --checkpoints 60 > "$OUT/headless.log"
+dotnet build "$HOSTS/Desktop" -v q -nologo >/dev/null
+dotnet run --project "$HOSTS/Desktop" --no-build -- --capture "$OUT/desktop" --checkpoints 60 | grep -v '^snapshot' || true
+dotnet publish "$HOSTS/Browser" -c Release -o "$OUT/web-export" -v q -nologo >/dev/null
 scripts/web-evidence.sh "$OUT/web-export/wwwroot" "$OUT/web-dom.html" 8767
 
 AFTER="$(renderer_checksum)"

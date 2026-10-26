@@ -1,0 +1,74 @@
+// @ts-check
+/** @typedef {import("../web/types").PanelModule} PanelModule */
+import { recorder } from "../web/recorder.js";
+
+/**
+ * Records what the person plays (keys and pointer, per tick) and turns it into an input script: the same JSON
+ * ukiyo_run {"input": …} and headless --input replay deterministically. This is how a human shows an agent a bug.
+ * @type {PanelModule}
+ */
+export default {
+  id: "input",
+  title: "Input",
+  icon: "keyboard",
+  description: "Record the person's play as a replayable input script for agents and tests.",
+  mount(root, studio) {
+    const { h, icon } = studio;
+    const record = h("button", { type: "button", class: "button", "aria-pressed": "false" });
+    const copy = h("button", { type: "button", class: "button", hidden: true, "aria-label": "Copy script" }, icon("copy"), "Copy");
+    const save = h("button", { type: "button", class: "button", hidden: true, "aria-label": "Save input.json" }, icon("download"), "Save");
+    const summary = h("p", { class: "muted" });
+    const output = h("pre", { class: "script mono", "aria-label": "Recorded input script" });
+    root.classList.add("stack");
+    root.append(h("div", { class: "row" }, record, copy, save), summary, output);
+
+    function render() {
+      const { recording, script } = recorder.state;
+      record.replaceChildren(icon("circle-dot"), recording ? "Stop recording" : "Record");
+      record.setAttribute("aria-pressed", String(recording));
+      record.toggleAttribute("disabled", !studio.session);
+      copy.hidden = !script;
+      save.hidden = !script;
+      output.textContent = script;
+      output.hidden = !script;
+      if (!studio.session) summary.textContent = "Start a game to record input.";
+      else if (recording) summary.textContent = "Recording. Play in the game window, or turn on Play in the Frame panel.";
+      else if (!script) summary.textContent = "Record a session to replay it exactly in tests.";
+    }
+
+    record.addEventListener("click", async () => {
+      try {
+        const events = await recorder.toggle(studio);
+        if (events !== null) {
+          summary.textContent = `${events} events recorded.`;
+          studio.view({ lastRecording: { events } });
+          studio.log("success", `recorded ${events} input events`);
+        }
+      } catch (error) {
+        summary.textContent = error instanceof Error ? error.message : String(error);
+      }
+      render();
+    });
+
+    copy.addEventListener("click", async () => {
+      try {
+        await navigator.clipboard.writeText(recorder.state.script);
+        summary.textContent = "Copied.";
+      } catch {
+        summary.textContent = "Clipboard blocked. Use Save.";
+      }
+    });
+
+    save.addEventListener("click", () => {
+      const url = URL.createObjectURL(new Blob([recorder.state.script], { type: "application/json" }));
+      const link = h("a", { href: url, download: "input.json" });
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    });
+
+    studio.on("session", () => recorder.reset());
+    const unsubscribe = recorder.subscribe(render);
+    render();
+    return unsubscribe;
+  },
+};

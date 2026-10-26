@@ -1,0 +1,15 @@
+{
+  "extends": "graphite",
+  "description": "Graphite with a violet accent and rounder corners. Only the changed tokens are listed.",
+  "tokens": {
+    "bg": "#12121a",
+    "panel": "#181824",
+    "panel-raised": "#1f1f2e",
+    "line": "#2a2a3d",
+    "line-strong": "#3b3b55",
+    "accent": "#a995f5",
+    "accent-fg": "#0e0e16",
+    "radius-control": "10px",
+    "radius-panel": "16px"
+  }
+}

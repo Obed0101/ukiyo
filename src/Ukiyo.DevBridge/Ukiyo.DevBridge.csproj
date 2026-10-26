@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- Development only. Linked by hosts that set UkiyoDevBridge=true (see Directory.Build.targets); never by exports. -->
+  <PropertyGroup>
+    <RootNamespace>Ukiyo.DevBridge</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Compiled into each dev host, not into this library: its module initializer must run in the app assembly. -->
+    <Compile Remove="Registration/**" />
+    <None Include="Registration/**" />
+    <ProjectReference Include="../Ukiyo.Core/Ukiyo.Core.csproj" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="ukiyo-studio-token" content="__UKIYO_STUDIO_TOKEN__">
+  <title>ukiyo Studio</title>
+  <link rel="icon" href="/brand/mark.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/web/studio.css">
+  <link rel="stylesheet" href="/user.css" id="user-css">
+  <script src="/web/boot.js"></script>
+</head>
+<body>
+  <a class="skip" href="#main">Skip to content</a>
+  <header class="topbar" id="topbar">
+    <div class="topbar-start" id="header-start"></div>
+    <div class="topbar-center" id="header-center"></div>
+    <div class="topbar-end" id="header-end"></div>
+  </header>
+  <main id="main" class="main" tabindex="-1">
+    <section id="hub" class="view" aria-label="Projects" hidden></section>
+    <section id="settings" class="view" aria-label="Settings" hidden></section>
+    <div id="grid" class="grid" hidden>
+      <p class="loading">Loading the Studio files…</p>
+    </div>
+  </main>
+  <footer id="statusbar" class="statusbar" aria-label="Game and Studio status"></footer>
+  <div id="notices" class="notices" aria-live="polite"></div>
+  <script type="module" src="/web/studio.js"></script>
+</body>
+</html>

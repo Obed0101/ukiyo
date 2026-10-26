@@ -9,16 +9,36 @@ namespace Ukiyo.Rendering;
 //   Matrices use System.Numerics (row vectors: v' = v * M). Serialized in field order M11..M44,
 //   which is the column-major array of the equivalent column-vector matrix (WGSL, Three.js).
 
-/// <summary>Rendering profile a renderer implements. G0 only needs indexed unlit meshes.</summary>
+/// <summary>
+/// Rendering profile a game runs and a renderer implements. Profiles are cumulative: a higher value contains every
+/// lower one, so a G1Lit renderer still draws G0Unlit packets byte for byte as before. A game declares its profile
+/// (<c>IGame.Profile</c>); old games keep <see cref="G0Unlit"/> and never see lit data.
+/// </summary>
 public enum RenderProfile
 {
+    /// <summary>Indexed meshes with vertex/base colors, textures and sprites. No normals, no lights.</summary>
     G0Unlit = 1,
+
+    /// <summary>G0Unlit plus per-pixel Lambert lighting: mesh normals, lit materials and a light list per frame (docs/rendering-lighting.md).</summary>
+    G1Lit = 2,
+}
+
+public static class RenderProfiles
+{
+    /// <summary>The highest profile this engine version defines.</summary>
+    public const RenderProfile Latest = RenderProfile.G1Lit;
+
+    public static bool IsDefined(RenderProfile profile) => profile is RenderProfile.G0Unlit or RenderProfile.G1Lit;
+
+    /// <summary>True when a renderer running <paramref name="active"/> can draw data that needs <paramref name="required"/>.</summary>
+    public static bool Includes(this RenderProfile active, RenderProfile required) => IsDefined(active) && (int)active >= (int)required;
 }
 
 public enum ResourceKind : byte
 {
     Mesh = 1,
     Material = 2,
+    Texture = 3,
 }
 
 /// <summary>Generational handle: index into a renderer-side table plus a generation that detects stale use.</summary>
@@ -35,8 +55,21 @@ public readonly record struct RenderExtent(int Width, int Height, float PixelRat
 
 public sealed record RenderConfiguration(string ApplicationName, RenderExtent InitialExtent, RenderProfile Profile = RenderProfile.G0Unlit);
 
-/// <summary>What a renderer actually runs on. Backend is the effective API (e.g. "Metal", "WebGL2"), never a guess.</summary>
-public sealed record RenderCapabilities(string RendererName, string Backend, string Device, RenderProfile Profile, bool SupportsCapture);
+/// <summary>
+/// What a renderer actually runs on. Backend is the effective API (e.g. "Metal", "WebGL2"), never a guess.
+/// <see cref="Profile"/> is the profile it was initialized with; data from a higher profile fails with UnsupportedFeature.
+/// </summary>
+public sealed record RenderCapabilities(string RendererName, string Backend, string Device, RenderProfile Profile, bool SupportsCapture)
+{
+    /// <summary>Textures and the 2D sprite layer. A packet with sprites fails on a renderer without it.</summary>
+    public bool SupportsSprites { get; init; }
+
+    /// <summary>
+    /// Multi-camera frames (packets with a <see cref="FramePass"/>). The runtime refuses a frame with passes on a renderer
+    /// without it (UnsupportedFeature) instead of letting every pass draw over the whole buffer.
+    /// </summary>
+    public bool SupportsPasses { get; init; }
+}
 
 /// <summary>Vertex layout for <see cref="RenderProfile.G0Unlit"/>: position (xyz) and linear color (rgb), 24 bytes.</summary>
 public readonly record struct VertexPositionColor(Vector3 Position, Vector3 Color)
@@ -44,29 +77,150 @@ public readonly record struct VertexPositionColor(Vector3 Position, Vector3 Colo
     public const int SizeInBytes = 24;
 }
 
-public sealed record MeshData(VertexPositionColor[] Vertices, uint[] Indices);
+/// <summary>
+/// Indexed triangle mesh. <see cref="Normals"/> (G1Lit) gives one object-space normal per vertex; it need not be unit
+/// length (renderers normalize per pixel) but must be finite and non-zero. Lit materials require it.
+/// </summary>
+public sealed record MeshData(VertexPositionColor[] Vertices, uint[] Indices)
+{
+    public Vector3[]? Normals { get; init; }
+}
 
-/// <summary>Unlit material: final color = vertex color (when enabled) * base color. Colors are linear.</summary>
-public sealed record MaterialData(Vector4 BaseColor, bool UseVertexColors);
+/// <summary>
+/// Material. Albedo = vertex color (when enabled) * base color, linear. Unlit (default): final color = albedo.
+/// <see cref="Lit"/> (G1Lit): final color = albedo * (ambient + Σ lights), the model in docs/rendering-lighting.md.
+/// </summary>
+public sealed record MaterialData(Vector4 BaseColor, bool UseVertexColors)
+{
+    public bool Lit { get; init; }
+}
+
+public enum LightKind : byte
+{
+    /// <summary>Parallel light. <see cref="Light.PositionOrDirection"/> is the direction the light travels (world).</summary>
+    Directional = 1,
+
+    /// <summary>Omni light at <see cref="Light.PositionOrDirection"/> (world) with a smooth falloff to zero at <see cref="Light.Range"/>.</summary>
+    Point = 2,
+}
+
+/// <summary>
+/// One light (G1Lit). <see cref="Color"/> is linear RGB ≥ 0 and is multiplied by <see cref="Intensity"/> ≥ 0.
+/// <see cref="Range"/> is in meters, &gt; 0 for point lights and 0 for directional lights.
+/// </summary>
+public readonly record struct Light(LightKind Kind, Vector3 PositionOrDirection, Vector3 Color, float Intensity, float Range)
+{
+    public static Light Directional(Vector3 direction, Vector3 color, float intensity = 1f) => new(LightKind.Directional, direction, color, intensity, 0f);
+
+    public static Light Point(Vector3 position, Vector3 color, float intensity, float range) => new(LightKind.Point, position, color, intensity, range);
+}
+
+/// <summary>Per-frame lighting (G1Lit): linear ambient RGB plus up to <see cref="RenderValidation.MaxLights"/> lights, applied in order.</summary>
+public sealed record SceneLighting(Vector3 Ambient, IReadOnlyList<Light> Lights);
 
 public sealed record CameraState(Vector3 Position, Quaternion Rotation, float FieldOfViewY, float NearPlane, float FarPlane);
 
 public readonly record struct RenderInstance(ResourceHandle Mesh, ResourceHandle Material, Matrix4x4 World);
 
+public enum TextureFilter : byte
+{
+    /// <summary>Pixel art: every texel stays a hard square.</summary>
+    Nearest = 1,
+    Linear = 2,
+}
+
+/// <summary>
+/// RGBA8 image, rows top to bottom, sRGB-encoded color with straight (non-premultiplied) alpha — what a PNG holds.
+/// Renderers decode to linear before tinting and blending.
+/// </summary>
+public sealed record TextureData(int Width, int Height, byte[] Rgba, TextureFilter Filter = TextureFilter.Nearest);
+
+public enum SpriteSpace : byte
+{
+    /// <summary>World units through <see cref="Camera2D"/>: +Y up, centered on the camera.</summary>
+    World = 1,
+
+    /// <summary>Drawing-buffer pixels: origin top-left, +Y down. Used by game UI.</summary>
+    Screen = 2,
+}
+
+/// <summary>Orthographic 2D camera for world-space sprites. <see cref="ViewHeight"/> world units fill the viewport height.</summary>
+public readonly record struct Camera2D(Vector2 Center, float ViewHeight)
+{
+    public static Camera2D Default => new(Vector2.Zero, 10f);
+}
+
+/// <summary>
+/// One textured quad. <see cref="Position"/> is where the pivot lands; <see cref="Pivot"/> is normalized in image space
+/// ((0,0) top-left, (1,1) bottom-right); <see cref="Size"/> is in world units or pixels depending on <see cref="Space"/>.
+/// <see cref="Rotation"/> is counter-clockwise on screen, in radians. <see cref="Uv"/> is (u0, v0, u1, v1) with v down;
+/// a flipped rect mirrors the image. <see cref="Color"/> is a linear RGBA tint multiplied with the texel.
+/// Order: 3D instances, then world sprites, then screen sprites; within a space by <see cref="Layer"/>, then submission.
+/// </summary>
+public readonly record struct SpriteInstance(
+    ResourceHandle Texture,
+    SpriteSpace Space,
+    Vector2 Position,
+    Vector2 Size,
+    Vector2 Pivot,
+    float Rotation,
+    Vector4 Uv,
+    Vector4 Color,
+    int Layer)
+{
+    public static readonly Vector4 FullUv = new(0, 0, 1, 1);
+}
+
+/// <summary>Rectangle in drawing-buffer pixels: origin top-left, +Y down (the same space as screen sprites).</summary>
+public readonly record struct PassRect(int X, int Y, int Width, int Height)
+{
+    public static PassRect Covering(RenderExtent extent) => new(0, 0, Math.Max(0, extent.Width), Math.Max(0, extent.Height));
+}
+
+/// <summary>
+/// One camera pass of a multi-camera frame (docs/rendering-passes.md). A frame of <see cref="Count"/> passes is sent as
+/// that many consecutive packets (sequence s, s+1, …; ids 0, 1, …; same tick, count, primary and drawing buffer). Each
+/// pass draws exactly like a single-camera frame whose drawing buffer is <see cref="Rect"/>'s size, placed at its
+/// position; passes compose in id order over a buffer cleared to pass 0's clear color. <see cref="PrimaryId"/> marks
+/// the pass tools show as the game view (inspector preview); it does not change what is drawn.
+/// </summary>
+public readonly record struct FramePass(int Id, int Count, int PrimaryId, PassRect Rect)
+{
+    public bool IsPrimary => Id == PrimaryId;
+
+    public bool IsLast => Id == Count - 1;
+}
+
 /// <summary>One frame of presentation data. Contains no gameplay logic; renderers must copy what they keep.</summary>
-public sealed record RenderPacket(uint Sequence, long Tick, RenderExtent Viewport, Vector4 ClearColor, CameraState Camera, IReadOnlyList<RenderInstance> Instances);
+public sealed record RenderPacket(uint Sequence, long Tick, RenderExtent Viewport, Vector4 ClearColor, CameraState Camera, IReadOnlyList<RenderInstance> Instances)
+{
+    public Camera2D Camera2D { get; init; } = Camera2D.Default;
+
+    public IReadOnlyList<SpriteInstance> Sprites { get; init; } = [];
+
+    /// <summary>G1Lit lighting for lit materials. Null keeps the frame in the G0 format (no lighting section).</summary>
+    public SceneLighting? Lighting { get; init; }
+
+    /// <summary>
+    /// Set when this packet is one pass of a multi-camera frame. Null is a single-camera frame covering the whole drawing
+    /// buffer, in the exact format it always had (no pass section).
+    /// </summary>
+    public FramePass? Pass { get; init; }
+}
 
 public enum ResourceCommandKind : byte
 {
     CreateMesh = 1,
     CreateMaterial = 2,
     Destroy = 3,
+    CreateTexture = 4,
 }
 
-public readonly record struct ResourceCommand(ResourceCommandKind Kind, ResourceHandle Handle, MeshData? Mesh, MaterialData? Material)
+public readonly record struct ResourceCommand(ResourceCommandKind Kind, ResourceHandle Handle, MeshData? Mesh, MaterialData? Material, TextureData? Texture = null)
 {
     public static ResourceCommand CreateMesh(ResourceHandle handle, MeshData mesh) => new(ResourceCommandKind.CreateMesh, handle, mesh, null);
     public static ResourceCommand CreateMaterial(ResourceHandle handle, MaterialData material) => new(ResourceCommandKind.CreateMaterial, handle, null, material);
+    public static ResourceCommand CreateTexture(ResourceHandle handle, TextureData texture) => new(ResourceCommandKind.CreateTexture, handle, null, null, texture);
     public static ResourceCommand Destroy(ResourceHandle handle) => new(ResourceCommandKind.Destroy, handle, null, null);
 }
 
@@ -92,7 +246,16 @@ public enum CaptureStatus
     UnsupportedCapture = 2,
 }
 
-public sealed record CaptureRequest(long Tick);
+/// <summary>
+/// Capture of the last frame, which must be at <see cref="Tick"/> and complete. <see cref="Pass"/> null is the whole
+/// drawing buffer as presented (every pass composed). <see cref="Pass"/> = k is pass k's own image at its rect size,
+/// before later passes drew over it: the same pixels a single-camera frame of that size would produce. A single-camera
+/// frame is its own pass 0.
+/// </summary>
+public sealed record CaptureRequest(long Tick)
+{
+    public int? Pass { get; init; }
+}
 
 /// <summary>PNG bytes of what the renderer presented. Renderers without images return <see cref="CaptureStatus.UnsupportedCapture"/>.</summary>
 public sealed record CaptureResult(CaptureStatus Status, byte[] Png, int Width, int Height, string Backend)
@@ -119,6 +282,7 @@ public enum RenderErrorCode
     DuplicateHandle = 9,
     NotInitialized = 10,
     BackendFailure = 11,
+    UnsupportedFeature = 12,
 }
 
 /// <summary>Controlled failure at the render boundary. Never swallowed as a dropped frame.</summary>

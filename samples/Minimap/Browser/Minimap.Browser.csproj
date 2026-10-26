@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <!-- Browser host: the same Shared C# compiled to .NET WebAssembly, presented by the Three.js adapter. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>minimap-web</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.Minimap</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UkiyoBrowserHost>true</UkiyoBrowserHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Browser/Ukiyo.Platform.Browser.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+    <SupportedPlatform Include="browser" />
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>browser</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

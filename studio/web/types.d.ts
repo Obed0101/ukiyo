@@ -1,0 +1,156 @@
+// Types for panel authors. Panels are plain JS modules checked with // @ts-check and JSDoc against these.
+
+export type LiveSession = { pid: number; port: number; game: string; target: string; startedAt: string };
+
+export type GameEntry = { id: string; name: string; kind: "sample" | "game"; project: string; bridge: boolean };
+
+export type GameRun = {
+  id: string;
+  game: string;
+  name: string;
+  state: "building" | "starting" | "running" | "reloading" | "stopping" | "stopped" | "failed";
+  detail: string;
+  pid: number | null;
+  error: string | null;
+  errors: string[];
+  output: string[];
+  reload: { ok: boolean; error?: string; errors?: string[]; fromTick?: number; tick?: number; match?: boolean; sourceChanged?: boolean; differences?: string[]; ms?: number } | null;
+  reloads: number;
+};
+
+export type GameStatus = {
+  game: string;
+  target: string;
+  tick: number;
+  paused: boolean;
+  droppedTicks: number;
+  renderer: string;
+  backend: string;
+  capture: boolean;
+  width: number;
+  height: number;
+};
+
+export type EntitySnapshot = { position: [number, number, number]; rotation: [number, number, number, number]; scale: [number, number, number] };
+
+export type GameSnapshot = {
+  tick: number;
+  renderer: string;
+  backend: string;
+  source: Record<string, string>;
+  entities: Record<string, EntitySnapshot>;
+  values?: Record<string, number>;
+  /** Only games with a SceneRegistry (docs/scenes-patches.md). */
+  scene?: SceneSnapshot;
+};
+
+export type SceneSnapshot = {
+  active: string | null;
+  loadedAt: number;
+  appliedCount: number;
+  appliedHash: string;
+  patches: { id: string; tick: number }[];
+  rejectedCount: number;
+  rejectedHash: string;
+  rejected: { id: string; tick: number; code?: string; message?: string }[];
+};
+
+/** A real frame read back from the game's renderer (GPU on desktop). */
+export type Frame = { tick: number; width: number; height: number; backend: string; url: string; pid: number };
+
+export type LogEntry = { at: string; level: "info" | "success" | "warn" | "error"; source: string; text: string };
+
+export type Notice = { text: string; level: "info" | "success" | "warn" | "error"; from: string; at: string };
+
+/** A game or sample in this repository, as the Hub lists it. `name` matches the live session's game name. */
+export type Project = {
+  id: string;
+  name: string;
+  kind: "game" | "sample";
+  template: "2d" | "3d" | "lit";
+  path: string;
+  dir: string;
+  bridge: boolean;
+  lastOpened: string | null;
+};
+
+export type StudioEvents = {
+  project: Project | null;
+  session: LiveSession | null;
+  sessions: LiveSession[];
+  status: GameStatus | null;
+  snapshot: GameSnapshot | null;
+  frame: Frame | null;
+  log: LogEntry;
+  notice: Notice;
+};
+
+export type BridgeCommand = "status" | "pause" | "resume" | "step" | "snapshot" | "capture" | "input" | "record" | "patch";
+
+export type InputEvent = { key?: string; button?: "Left" | "Right" | "Middle"; down?: boolean; pointer?: [number, number] };
+
+export type CompositionPatch = {
+  layout?: string;
+  theme?: string;
+  auto?: { light: string; dark: string };
+  hide?: string[];
+  show?: string[];
+  panels?: Record<string, Record<string, unknown> | null>;
+};
+
+/** What every panel receives. Everything a panel does goes through here: it never talks to the server directly. */
+export type Studio = {
+  /** This panel's id (its file name) and its options from studio.json → panels.<id>. */
+  readonly id: string;
+  readonly options: Record<string, unknown>;
+  /** Header slot for this panel's buttons. */
+  readonly actions: HTMLElement;
+  readonly h: typeof import("./dom.js").h;
+  readonly icon: typeof import("./icons.js").icon;
+  /** The project open in the Studio, or null at the Hub. */
+  readonly project: Project | null;
+  readonly session: LiveSession | null;
+  readonly sessions: LiveSession[];
+  readonly status: GameStatus | null;
+  readonly snapshot: GameSnapshot | null;
+  readonly frame: Frame | null;
+  /** Sends one dev bridge command to the selected game. Rejects with the bridge's error message. */
+  call(cmd: BridgeCommand, args?: { ticks?: number; events?: InputEvent[]; on?: boolean; patch?: Record<string, unknown> }): Promise<unknown>;
+  /** Pause/resume/step through these so every panel sees the new status and snapshot. */
+  control(cmd: "pause" | "resume" | "step", ticks?: number): Promise<void>;
+  capture(): Promise<Frame | null>;
+  refreshSnapshot(): Promise<void>;
+  selectSession(pid: number | null): void;
+  /** Games the Studio can run from this repository, and the runs it started (stop and reload only work on those). */
+  readonly launcher: {
+    list(): Promise<{ games: GameEntry[]; runs: GameRun[]; dotnet: string }>;
+    start(game: string): Promise<{ run: GameRun }>;
+    stop(run: string): Promise<{ run: GameRun }>;
+    /** Rebuilds and relaunches at the same tick; answers at once, progress is in the run's state. */
+    reload(run: string): Promise<{ run: GameRun }>;
+  };
+  on<K extends keyof StudioEvents>(event: K, handler: (value: StudioEvents[K]) => void): () => void;
+  /** Tells agents what the person is looking at in this panel (merged into ukiyo_studio view). */
+  view(patch: Record<string, unknown>): void;
+  /** Changes studio.json (layout, theme, panels shown, panel options). Agents see the same file. */
+  compose(patch: CompositionPatch): Promise<void>;
+  log(level: LogEntry["level"], text: string): void;
+  /** Log entries since the page opened (last 500), oldest first. */
+  readonly history: LogEntry[];
+  readonly manifest: { panels: { id: string }[]; layouts: Record<string, { description: string; panels: string[]; tabs?: Record<string, string[]>; missing: string[] }>; themes: Record<string, { description: string }>; composition: Required<CompositionPatch> };
+  /** Titles of every loaded panel module, for menus. */
+  panelTitle(id: string): string;
+};
+
+export type PanelModule = {
+  /** Must equal the file name: panels/<id>.js. */
+  id: string;
+  title: string;
+  /** Name from studio/web/icons.js. */
+  icon: string;
+  description: string;
+  /** "bare" drops the visible header (a toolbar such as Transport); the title stays for assistive tech. */
+  chrome?: "bare";
+  /** Builds the panel inside root. Returns a cleanup that undoes timers and listeners not registered through studio.on. */
+  mount(root: HTMLElement, studio: Studio): void | (() => void);
+};

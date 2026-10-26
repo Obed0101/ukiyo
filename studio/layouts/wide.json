@@ -1,0 +1,8 @@
+{
+  "description": "Frame in the middle, the game's values on its left and entities on its right.",
+  "columns": "minmax(220px, 280px) minmax(0, 1fr) minmax(220px, 280px)",
+  "rows": "minmax(0, 1fr)",
+  "areas": [
+    "values viewport entities"
+  ]
+}

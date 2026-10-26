@@ -44,17 +44,130 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
         """;
 
+    private const int LitUniformSize = 224;      // mat4 mvp + mat4 world + mat4 normal + vec4 color + vec4 params
+    private const int LightsUniformSize = 32 + RenderValidation.MaxLights * 32;
+    private const int LitVertexSize = 36;        // position, color, normal
+
+    // G1Lit forward pass. fs_lit is LightingMath.Shade (src/Ukiyo.Render/Lighting.cs) in the same operation order;
+    // keep the two identical. Meshes without normals never reach this pipeline; they use the G0 one above.
+    private const string LitShader = """
+        struct LitInstance {
+            mvp: mat4x4<f32>,
+            world: mat4x4<f32>,
+            normalMatrix: mat4x4<f32>,
+            color: vec4<f32>,
+            params: vec4<f32>,
+        };
+        struct GpuLight {
+            vector: vec4<f32>,
+            radiance: vec4<f32>,
+        };
+        struct SceneLights {
+            ambient: vec4<f32>,
+            count: vec4<u32>,
+            lights: array<GpuLight, 8>,
+        };
+        @group(0) @binding(0) var<uniform> inst: LitInstance;
+        @group(1) @binding(0) var<uniform> scene: SceneLights;
+
+        struct LitOut {
+            @builtin(position) position: vec4<f32>,
+            @location(0) albedo: vec3<f32>,
+            @location(1) worldPosition: vec3<f32>,
+            @location(2) normal: vec3<f32>,
+        };
+
+        @vertex
+        fn vs_lit(@location(0) position: vec3<f32>, @location(1) color: vec3<f32>, @location(2) normal: vec3<f32>) -> LitOut {
+            var out: LitOut;
+            out.position = inst.mvp * vec4<f32>(position, 1.0);
+            out.albedo = select(vec3<f32>(1.0), color, inst.params.x != 0.0) * inst.color.rgb;
+            out.worldPosition = (inst.world * vec4<f32>(position, 1.0)).xyz;
+            out.normal = (inst.normalMatrix * vec4<f32>(normal, 0.0)).xyz;
+            return out;
+        }
+
+        @fragment
+        fn fs_lit(input: LitOut) -> @location(0) vec4<f32> {
+            if (inst.params.y == 0.0) {
+                return vec4<f32>(input.albedo, 1.0);
+            }
+
+            let n = normalize(input.normal);
+            var sum = scene.ambient.rgb;
+            for (var i = 0u; i < scene.count.x; i = i + 1u) {
+                let light = scene.lights[i];
+                var l: vec3<f32>;
+                var attenuation = 1.0;
+                if (light.vector.w == 1.0) {
+                    l = normalize(-light.vector.xyz);
+                } else {
+                    let v = light.vector.xyz - input.worldPosition;
+                    let d2 = dot(v, v);
+                    if (!(d2 > 0.0)) {
+                        continue;
+                    }
+
+                    l = v / sqrt(d2);
+                    let t = clamp(1.0 - d2 / (light.radiance.w * light.radiance.w), 0.0, 1.0);
+                    attenuation = t * t;
+                }
+
+                sum = sum + light.radiance.rgb * (max(dot(n, l), 0.0) * attenuation);
+            }
+
+            return vec4<f32>(input.albedo * sum, 1.0);
+        }
+        """;
+
+    private const int SpriteVertexFloats = 8;      // position xy (NDC), uv, linear rgba tint
+    private const int MaxSpritesPerFrame = 16384;
+
+    private const string SpriteShader = """
+        @group(0) @binding(0) var spriteTexture: texture_2d<f32>;
+        @group(0) @binding(1) var spriteSampler: sampler;
+
+        struct SpriteOut {
+            @builtin(position) position: vec4<f32>,
+            @location(0) uv: vec2<f32>,
+            @location(1) color: vec4<f32>,
+        };
+
+        @vertex
+        fn vs_sprite(@location(0) position: vec2<f32>, @location(1) uv: vec2<f32>, @location(2) color: vec4<f32>) -> SpriteOut {
+            var out: SpriteOut;
+            out.position = vec4<f32>(position, 0.0, 1.0);
+            out.uv = uv;
+            out.color = color;
+            return out;
+        }
+
+        @fragment
+        fn fs_sprite(input: SpriteOut) -> @location(0) vec4<f32> {
+            return textureSample(spriteTexture, spriteSampler, input.uv) * input.color;
+        }
+        """;
+
     private readonly nint _metalLayer;
     private readonly ResourceTable<GpuMesh> _meshes = new();
     private readonly ResourceTable<MaterialData> _materials = new();
+    private readonly ResourceTable<GpuTexture> _textures = new();
+    private nint _spriteShader, _spriteBindGroupLayout, _spritePipelineLayout, _spritePipeline, _spriteVertices;
+    private nint _rectClearVertices;
+    private GpuTexture? _whiteTexel;
+    private nint _nearestSampler, _linearSampler;
     private readonly List<string> _deviceErrors = [];
     private GCHandle _self;
     private nint _instance, _surface, _adapter, _device, _queue;
     private nint _shader, _bindGroupLayout, _pipelineLayout, _pipeline, _uniformBuffer, _bindGroup;
+    private nint _litShader, _litBindGroupLayout, _lightsBindGroupLayout, _litPipelineLayout, _litPipeline, _litBindGroup, _lightsBuffer, _lightsBindGroup;
     private nint _depthTexture, _depthView;
     private uint _surfaceFormat;
     private RenderExtent _extent;
-    private RenderPacket? _lastPacket;
+    private readonly PassSequencer _passes = new();
+    private readonly List<RenderPacket> _pendingPasses = [];
+    private readonly PassTarget?[] _passTargets = new PassTarget?[RenderValidation.MaxPasses];
+    private RenderPacket[]? _lastFrame;
     private bool _disposed;
 
     public WgpuRenderer(nint metalLayer)
@@ -67,7 +180,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         _metalLayer = metalLayer;
     }
 
-    public RenderCapabilities Capabilities { get; private set; } = new("WgpuRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true);
+    public RenderCapabilities Capabilities { get; private set; } = new("WgpuRenderer", "uninitialized", "", RenderProfile.G0Unlit, SupportsCapture: true) { SupportsSprites = true, SupportsPasses = true };
 
     public long FramesPresented { get; private set; }
 
@@ -86,6 +199,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
     public ValueTask InitializeAsync(RenderConfiguration configuration, CancellationToken cancellationToken)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        RenderValidation.RequireImplemented(configuration.Profile, RenderProfile.G1Lit, "WgpuRenderer");
         _self = GCHandle.Alloc(this);
         _extent = configuration.InitialExtent;
         _instance = Require(wgpuCreateInstance(null), "instance");
@@ -114,7 +228,9 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         _surfaceFormat = PickSurfaceFormat();
         ConfigureSurface();
         CreatePipeline();
-        Capabilities = new RenderCapabilities("WgpuRenderer", "Metal", $"{device} · wgpu-native {NativeVersion}", configuration.Profile, SupportsCapture: true);
+        CreateLitPipeline();
+        CreateSpritePipeline();
+        Capabilities = new RenderCapabilities("WgpuRenderer", "Metal", $"{device} · wgpu-native {NativeVersion}", configuration.Profile, SupportsCapture: true) { SupportsSprites = true, SupportsPasses = true };
         ThrowOnDeviceErrors("initialize");
         return ValueTask.CompletedTask;
     }
@@ -123,6 +239,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
     {
         RequireDevice();
         RenderValidation.Validate(resources);
+        RenderValidation.RequireProfile(Capabilities.Profile, resources);
         foreach (var command in resources.Commands)
         {
             switch (command.Kind)
@@ -133,8 +250,14 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
                 case ResourceCommandKind.CreateMaterial:
                     _materials.Add(command.Handle, command.Material!);
                     break;
+                case ResourceCommandKind.CreateTexture:
+                    _textures.Add(command.Handle, UploadTexture(command.Texture!));
+                    break;
                 case ResourceCommandKind.Destroy when command.Handle.Kind == ResourceKind.Mesh:
                     _meshes.Remove(command.Handle).Release();
+                    break;
+                case ResourceCommandKind.Destroy when command.Handle.Kind == ResourceKind.Texture:
+                    _textures.Remove(command.Handle).Release();
                     break;
                 case ResourceCommandKind.Destroy:
                     _materials.Remove(command.Handle);
@@ -158,17 +281,28 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         ConfigureSurface();
     }
 
+    /// <summary>
+    /// Draws and presents a frame. A multi-camera frame is collected pass by pass (each checked on arrival) and drawn and
+    /// presented when its last pass arrives: one surface texture, one present, whatever the pass count.
+    /// </summary>
     public void Render(RenderPacket packet)
     {
         RequireDevice();
         RenderValidation.Validate(packet);
-        _lastPacket = packet;
+        RenderValidation.RequireProfile(Capabilities.Profile, packet);
+        if (!AssembleFrame(packet))
+        {
+            return;
+        }
+
+        var frame = _lastFrame!;
         if (_extent.IsEmpty)
         {
             SkippedFrames++;
             return;
         }
 
+        var multiCamera = frame[0].Pass is not null;
         var surfaceTexture = default(SurfaceTexture);
         wgpuSurfaceGetCurrentTexture(_surface, &surfaceTexture);
         switch (surfaceTexture.Status)
@@ -199,7 +333,15 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         var view = Require(wgpuTextureCreateView(surfaceTexture.Texture, null), "surface view");
         try
         {
-            Encode(packet, view, _depthView, (uint)_extent.Width, (uint)_extent.Height, copy: null);
+            if (multiCamera)
+            {
+                ComposePasses(frame, view);
+            }
+            else
+            {
+                Encode(packet, view, _depthView, (uint)_extent.Width, (uint)_extent.Height);
+            }
+
             if (wgpuSurfacePresent(_surface) != WgpuConst.StatusSuccess)
             {
                 throw new RenderException(RenderErrorCode.BackendFailure, "wgpuSurfacePresent failed");
@@ -216,25 +358,75 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         ThrowOnDeviceErrors($"frame {packet.Sequence}");
     }
 
-    /// <summary>Re-renders the last packet into an offscreen texture of the same size and reads it back from the GPU.</summary>
+    /// <summary>
+    /// Re-renders the last frame offscreen and reads it back from the GPU: the whole drawing buffer (every pass composed
+    /// exactly as presented), or one pass alone at its rect size.
+    /// </summary>
     public ValueTask<CaptureResult> CaptureAsync(CaptureRequest request, CancellationToken cancellationToken)
     {
         RequireDevice();
-        var packet = _lastPacket ?? throw new RenderException(RenderErrorCode.NotInitialized, "capture requested before any frame");
-        if (packet.Tick != request.Tick)
+        _passes.RequireComplete();
+        var frame = _lastFrame ?? throw new RenderException(RenderErrorCode.NotInitialized, "capture requested before any frame");
+        if (frame[0].Tick != request.Tick)
         {
-            throw new RenderException(RenderErrorCode.OutOfRange, $"capture for tick {request.Tick} but last frame is tick {packet.Tick}");
+            throw new RenderException(RenderErrorCode.OutOfRange, $"capture for tick {request.Tick} but last frame is tick {frame[0].Tick}");
         }
 
+        RenderValidation.RequireCapturablePass(request.Pass, frame[0].Pass?.Count ?? 1);
+        if (request.Pass is { } id && frame[id].Pass is { } pass)
+        {
+            var passTarget = PassTargetFor(pass);
+            Encode(frame[id], passTarget.ColorView, passTarget.DepthView, passTarget.Width, passTarget.Height);
+            return ValueTask.FromResult(ReadBack(passTarget.Color, passTarget.Width, passTarget.Height));
+        }
+
+        var multiCamera = frame[0].Pass is not null;
         var width = (uint)_extent.Width;
         var height = (uint)_extent.Height;
-        var bytesPerRow = (width * 4 + 255) & ~255u;
         var target = CreateTexture(width, height, _surfaceFormat, WgpuConst.TextureUsageRenderAttachment | WgpuConst.TextureUsageCopySrc, "capture color");
         var targetView = Require(wgpuTextureCreateView(target, null), "capture view");
+        try
+        {
+            if (multiCamera)
+            {
+                ComposePasses(frame, targetView);
+            }
+            else
+            {
+                Encode(frame[0], targetView, _depthView, width, height);
+            }
+
+            return ValueTask.FromResult(ReadBack(target, width, height));
+        }
+        finally
+        {
+            wgpuTextureViewRelease(targetView);
+            wgpuTextureDestroy(target);
+            wgpuTextureRelease(target);
+        }
+    }
+
+    /// <summary>Copies a color texture of the surface format into a mapped buffer and encodes it as PNG (RGBA, opaque).</summary>
+    private CaptureResult ReadBack(nint texture, uint width, uint height)
+    {
+        var bytesPerRow = (width * 4 + 255) & ~255u;
         var readback = CreateBuffer((ulong)bytesPerRow * height, WgpuConst.BufferUsageMapRead | WgpuConst.BufferUsageCopyDst, "capture readback");
         try
         {
-            Encode(packet, targetView, _depthView, width, height, copy: (target, readback, bytesPerRow));
+            var encoder = Require(wgpuDeviceCreateCommandEncoder(_device, null), "readback encoder");
+            try
+            {
+                var source = new TexelCopyTextureInfo { Texture = texture, Aspect = WgpuConst.TextureAspectAll };
+                var destination = new TexelCopyBufferInfo { Buffer = readback, Layout = new TexelCopyBufferLayout { BytesPerRow = bytesPerRow, RowsPerImage = height } };
+                var size = new Extent3D { Width = width, Height = height, DepthOrArrayLayers = 1 };
+                wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &size);
+                Submit(encoder);
+            }
+            finally
+            {
+                wgpuCommandEncoderRelease(encoder);
+            }
+
             var status = WgpuConst.MapAsyncSuccess + 1;
             var callback = new BufferMapCallbackInfo
             {
@@ -271,16 +463,145 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
 
             wgpuBufferUnmap(readback);
             ThrowOnDeviceErrors("capture");
-            return ValueTask.FromResult(new CaptureResult(CaptureStatus.Captured, PngEncoder.EncodeRgba(rgba, (int)width, (int)height), (int)width, (int)height, "Metal"));
+            return new CaptureResult(CaptureStatus.Captured, PngEncoder.EncodeRgba(rgba, (int)width, (int)height), (int)width, (int)height, "Metal");
         }
         finally
         {
             wgpuBufferDestroy(readback);
             wgpuBufferRelease(readback);
-            wgpuTextureViewRelease(targetView);
-            wgpuTextureDestroy(target);
-            wgpuTextureRelease(target);
         }
+    }
+
+    /// <summary>
+    /// Collects multi-camera passes until the frame is complete. Returns true when <see cref="_lastFrame"/> holds a whole
+    /// frame to draw (a single-camera packet always is one). Each pass's handles are checked as it arrives.
+    /// </summary>
+    private bool AssembleFrame(RenderPacket packet)
+    {
+        var completesFrame = _passes.Accept(packet);
+        if (packet.Pass is not { } pass)
+        {
+            _lastFrame = [packet];
+            return true;
+        }
+
+        try
+        {
+            RequireDrawable(packet);
+        }
+        catch
+        {
+            _passes.Abort();
+            _pendingPasses.Clear();
+            throw;
+        }
+
+        if (pass.Id == 0)
+        {
+            _pendingPasses.Clear();
+        }
+
+        _pendingPasses.Add(packet);
+        if (!completesFrame)
+        {
+            return false;
+        }
+
+        _lastFrame = [.. _pendingPasses];
+        _pendingPasses.Clear();
+        return true;
+    }
+
+    /// <summary>The per-pass limits and handle checks <see cref="Encode"/> would hit, run when the pass arrives instead of with the last pass.</summary>
+    private void RequireDrawable(RenderPacket packet)
+    {
+        if (packet.Instances.Count > MaxInstancesPerFrame || packet.Sprites.Count > MaxSpritesPerFrame)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{packet.Instances.Count} instances / {packet.Sprites.Count} sprites exceed {MaxInstancesPerFrame} / {MaxSpritesPerFrame} per pass");
+        }
+
+        foreach (var instance in packet.Instances)
+        {
+            RenderValidation.RequireLitInputs(_meshes.Get(instance.Mesh).HasNormals, _materials.Get(instance.Material), packet, instance);
+        }
+
+        foreach (var sprite in packet.Sprites)
+        {
+            _textures.Get(sprite.Texture);
+        }
+    }
+
+    /// <summary>
+    /// Multi-camera frame into <paramref name="view"/> (the surface or a capture target of the drawing-buffer size), one
+    /// render pass per camera pass in pass order, with the rect as viewport and scissor. Pass 0 clears the whole buffer
+    /// to its clear color (pixels no rect covers keep it); later passes keep the frame and clear only their rect. Depth
+    /// is cleared for every pass. Metal surfaces in wgpu-native 29 are not copy destinations (usages 0x11), so passes are
+    /// drawn in place rather than copied in; viewport offsets are whole pixels, so coverage matches a pass drawn alone.
+    /// </summary>
+    private void ComposePasses(RenderPacket[] frame, nint view)
+    {
+        foreach (var packet in frame)
+        {
+            RenderValidation.RequirePassInside(packet.Pass!.Value, _extent);
+        }
+
+        foreach (var packet in frame)
+        {
+            var pass = packet.Pass!.Value;
+            Encode(packet, view, _depthView, (uint)pass.Rect.Width, (uint)pass.Rect.Height, placement: pass);
+        }
+    }
+
+    /// <summary>
+    /// Six vertices covering the viewport in the sprite layout, tinted with the pass's clear color at alpha 1: drawn with the
+    /// sprite pipeline and a white texel, straight-alpha blending gives exactly the clear color inside the scissor.
+    /// </summary>
+    private void WriteRectClear(Vector4 clear)
+    {
+        ReadOnlySpan<float> corners = [-1f, -1f, 1f, -1f, 1f, 1f, -1f, -1f, 1f, 1f, -1f, 1f];
+        var vertices = new float[6 * SpriteVertexFloats];
+        for (var i = 0; i < 6; i++)
+        {
+            var at = i * SpriteVertexFloats;
+            vertices[at] = corners[i * 2];
+            vertices[at + 1] = corners[i * 2 + 1];
+            vertices[at + 2] = 0.5f;
+            vertices[at + 3] = 0.5f;
+            vertices[at + 4] = clear.X;
+            vertices[at + 5] = clear.Y;
+            vertices[at + 6] = clear.Z;
+            vertices[at + 7] = 1f;
+        }
+
+        fixed (float* data = vertices)
+        {
+            wgpuQueueWriteBuffer(_queue, _rectClearVertices, 0, data, (nuint)(vertices.Length * sizeof(float)));
+        }
+    }
+
+    /// <summary>Color (surface format) and depth targets of one pass id for per-pass captures, recreated when the pass changes size.</summary>
+    private PassTarget PassTargetFor(FramePass pass)
+    {
+        var width = (uint)pass.Rect.Width;
+        var height = (uint)pass.Rect.Height;
+        if (_passTargets[pass.Id] is { } existing && existing.Width == width && existing.Height == height)
+        {
+            return existing;
+        }
+
+        _passTargets[pass.Id]?.Release();
+        var color = CreateTexture(width, height, _surfaceFormat, WgpuConst.TextureUsageRenderAttachment | WgpuConst.TextureUsageCopySrc, "pass color");
+        var depth = CreateTexture(width, height, WgpuConst.FormatDepth24Plus, WgpuConst.TextureUsageRenderAttachment, "pass depth");
+        var target = new PassTarget(color, Require(wgpuTextureCreateView(color, null), "pass color view"), depth, Require(wgpuTextureCreateView(depth, null), "pass depth view"), width, height);
+        _passTargets[pass.Id] = target;
+        return target;
+    }
+
+    private void Submit(nint encoder)
+    {
+        var commands = Require(wgpuCommandEncoderFinish(encoder, null), "command buffer");
+        wgpuQueueSubmit(_queue, 1, &commands);
+        wgpuCommandBufferRelease(commands);
     }
 
     public void Dispose()
@@ -296,7 +617,52 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             mesh.Release();
         }
 
+        foreach (var texture in _textures.Values)
+        {
+            texture.Release();
+        }
+
+        if (_spriteVertices != 0)
+        {
+            wgpuBufferDestroy(_spriteVertices);
+        }
+
+        Release(ref _spriteVertices, wgpuBufferRelease);
+        if (_rectClearVertices != 0)
+        {
+            wgpuBufferDestroy(_rectClearVertices);
+        }
+
+        Release(ref _rectClearVertices, wgpuBufferRelease);
+        _whiteTexel?.Release();
+        _whiteTexel = null;
+        Release(ref _spritePipeline, wgpuRenderPipelineRelease);
+        Release(ref _spritePipelineLayout, wgpuPipelineLayoutRelease);
+        Release(ref _spriteBindGroupLayout, wgpuBindGroupLayoutRelease);
+        Release(ref _spriteShader, wgpuShaderModuleRelease);
+        Release(ref _nearestSampler, wgpuSamplerRelease);
+        Release(ref _linearSampler, wgpuSamplerRelease);
+
+        for (var i = 0; i < _passTargets.Length; i++)
+        {
+            _passTargets[i]?.Release();
+            _passTargets[i] = null;
+        }
+
         ReleaseDepth();
+        Release(ref _lightsBindGroup, wgpuBindGroupRelease);
+        Release(ref _litBindGroup, wgpuBindGroupRelease);
+        if (_lightsBuffer != 0)
+        {
+            wgpuBufferDestroy(_lightsBuffer);
+        }
+
+        Release(ref _lightsBuffer, wgpuBufferRelease);
+        Release(ref _litPipeline, wgpuRenderPipelineRelease);
+        Release(ref _litPipelineLayout, wgpuPipelineLayoutRelease);
+        Release(ref _lightsBindGroupLayout, wgpuBindGroupLayoutRelease);
+        Release(ref _litBindGroupLayout, wgpuBindGroupLayoutRelease);
+        Release(ref _litShader, wgpuShaderModuleRelease);
         Release(ref _bindGroup, wgpuBindGroupRelease);
         if (_uniformBuffer != 0)
         {
@@ -324,7 +690,11 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
     }
 
-    private void Encode(RenderPacket packet, nint colorView, nint depthView, uint width, uint height, (nint Texture, nint Buffer, uint BytesPerRow)? copy)
+    /// <summary>
+    /// One camera that sees a <paramref name="width"/>×<paramref name="height"/> drawing buffer: a single-camera frame, a
+    /// pass drawn alone (captures) or, with <paramref name="placement"/>, a pass drawn at its rect inside the frame.
+    /// </summary>
+    private void Encode(RenderPacket packet, nint colorView, nint depthView, uint width, uint height, FramePass? placement = null)
     {
         if (packet.Instances.Count > MaxInstancesPerFrame)
         {
@@ -339,13 +709,22 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             var instance = packet.Instances[i];
             var mesh = _meshes.Get(instance.Mesh);
             var material = _materials.Get(instance.Material);
+            RenderValidation.RequireLitInputs(mesh.HasNormals, material, packet, instance);
             var slot = uniforms.AsSpan(i * (UniformStride / sizeof(float)));
-            WriteMatrix(slot, instance.World * viewProjection);
-            slot[16] = material.BaseColor.X;
-            slot[17] = material.BaseColor.Y;
-            slot[18] = material.BaseColor.Z;
-            slot[19] = material.BaseColor.W;
-            slot[20] = material.UseVertexColors ? 1f : 0f;
+            if (mesh.HasNormals)
+            {
+                WriteLitInstance(slot, instance.World, viewProjection, material);
+            }
+            else
+            {
+                WriteMatrix(slot, instance.World * viewProjection);
+                slot[16] = material.BaseColor.X;
+                slot[17] = material.BaseColor.Y;
+                slot[18] = material.BaseColor.Z;
+                slot[19] = material.BaseColor.W;
+                slot[20] = material.UseVertexColors ? 1f : 0f;
+            }
+
             draws[i] = (mesh, (uint)(i * UniformStride));
         }
 
@@ -357,6 +736,15 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             }
         }
 
+        WriteLights(packet.Lighting);
+
+        var spriteBatches = WriteSpriteVertices(packet, width, height);
+        var clearsRectOnly = placement is { Id: > 0 };
+        if (clearsRectOnly)
+        {
+            WriteRectClear(packet.ClearColor);
+        }
+
         var encoder = Require(wgpuDeviceCreateCommandEncoder(_device, null), "command encoder");
         try
         {
@@ -364,7 +752,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             {
                 View = colorView,
                 DepthSlice = WgpuConst.DepthSliceUndefined,
-                LoadOp = WgpuConst.LoadOpClear,
+                LoadOp = clearsRectOnly ? WgpuConst.LoadOpLoad : WgpuConst.LoadOpClear,
                 StoreOp = WgpuConst.StoreOpStore,
                 ClearValue = new Color { R = packet.ClearColor.X, G = packet.ClearColor.Y, B = packet.ClearColor.Z, A = packet.ClearColor.W },
             };
@@ -377,34 +765,238 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             };
             var passDescriptor = new RenderPassDescriptor { ColorAttachmentCount = 1, ColorAttachments = &color, DepthStencilAttachment = &depth };
             var pass = Require(wgpuCommandEncoderBeginRenderPass(encoder, &passDescriptor), "render pass");
-            wgpuRenderPassEncoderSetPipeline(pass, _pipeline);
+            if (placement is { Rect: var rect })
+            {
+                wgpuRenderPassEncoderSetViewport(pass, rect.X, rect.Y, rect.Width, rect.Height, 0f, 1f);
+                wgpuRenderPassEncoderSetScissorRect(pass, (uint)rect.X, (uint)rect.Y, (uint)rect.Width, (uint)rect.Height);
+            }
+
+            if (clearsRectOnly)
+            {
+                wgpuRenderPassEncoderSetPipeline(pass, _spritePipeline);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, _rectClearVertices, 0, WgpuConst.WholeSize);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, _whiteTexel!.BindGroup, 0, null);
+                wgpuRenderPassEncoderDraw(pass, 6, 1, 0, 0);
+            }
+
+            // Submission order is kept; the pipeline switches only when consecutive instances differ in vertex layout.
+            var boundLit = (bool?)null;
             foreach (var (mesh, offset) in draws)
             {
+                if (boundLit != mesh.HasNormals)
+                {
+                    boundLit = mesh.HasNormals;
+                    wgpuRenderPassEncoderSetPipeline(pass, mesh.HasNormals ? _litPipeline : _pipeline);
+                    if (mesh.HasNormals)
+                    {
+                        wgpuRenderPassEncoderSetBindGroup(pass, 1, _lightsBindGroup, 0, null);
+                    }
+                }
+
                 var dynamicOffset = offset;
-                wgpuRenderPassEncoderSetBindGroup(pass, 0, _bindGroup, 1, &dynamicOffset);
+                wgpuRenderPassEncoderSetBindGroup(pass, 0, mesh.HasNormals ? _litBindGroup : _bindGroup, 1, &dynamicOffset);
                 wgpuRenderPassEncoderSetVertexBuffer(pass, 0, mesh.Vertices, 0, WgpuConst.WholeSize);
                 wgpuRenderPassEncoderSetIndexBuffer(pass, mesh.Indices, WgpuConst.IndexFormatUint32, 0, WgpuConst.WholeSize);
                 wgpuRenderPassEncoderDrawIndexed(pass, mesh.IndexCount, 1, 0, 0, 0);
             }
 
-            wgpuRenderPassEncoderEnd(pass);
-            wgpuRenderPassEncoderRelease(pass);
-            if (copy is { } c)
+            if (spriteBatches.Count > 0)
             {
-                var source = new TexelCopyTextureInfo { Texture = c.Texture, Aspect = WgpuConst.TextureAspectAll };
-                var destination = new TexelCopyBufferInfo { Buffer = c.Buffer, Layout = new TexelCopyBufferLayout { BytesPerRow = c.BytesPerRow, RowsPerImage = height } };
-                var size = new Extent3D { Width = width, Height = height, DepthOrArrayLayers = 1 };
-                wgpuCommandEncoderCopyTextureToBuffer(encoder, &source, &destination, &size);
+                wgpuRenderPassEncoderSetPipeline(pass, _spritePipeline);
+                wgpuRenderPassEncoderSetVertexBuffer(pass, 0, _spriteVertices, 0, WgpuConst.WholeSize);
+                foreach (var (texture, firstVertex, vertexCount) in spriteBatches)
+                {
+                    wgpuRenderPassEncoderSetBindGroup(pass, 0, texture.BindGroup, 0, null);
+                    wgpuRenderPassEncoderDraw(pass, vertexCount, 1, firstVertex, 0);
+                }
             }
 
-            var commands = Require(wgpuCommandEncoderFinish(encoder, null), "command buffer");
-            wgpuQueueSubmit(_queue, 1, &commands);
-            wgpuCommandBufferRelease(commands);
+            wgpuRenderPassEncoderEnd(pass);
+            wgpuRenderPassEncoderRelease(pass);
+            Submit(encoder);
         }
         finally
         {
             wgpuCommandEncoderRelease(encoder);
         }
+    }
+
+    /// <summary>
+    /// Expands sprites into pixel-space quads with the shared <see cref="SpriteGeometry"/>, converts them to NDC, uploads
+    /// them and returns draw batches (consecutive sprites sharing a texture become one draw).
+    /// </summary>
+    private List<(GpuTexture Texture, uint FirstVertex, uint VertexCount)> WriteSpriteVertices(RenderPacket packet, uint width, uint height)
+    {
+        var batches = new List<(GpuTexture Texture, uint FirstVertex, uint VertexCount)>();
+        if (packet.Sprites.Count == 0)
+        {
+            return batches;
+        }
+
+        if (packet.Sprites.Count > MaxSpritesPerFrame)
+        {
+            throw new RenderException(RenderErrorCode.OutOfRange, $"{packet.Sprites.Count} sprites exceed {MaxSpritesPerFrame} per frame");
+        }
+
+        var extent = new RenderExtent((int)width, (int)height, 1f);
+        var vertices = new float[packet.Sprites.Count * 6 * SpriteVertexFloats];
+        Span<SpriteVertex> quad = stackalloc SpriteVertex[4];
+        ReadOnlySpan<int> corners = [0, 1, 2, 0, 2, 3];
+        var written = 0;
+        foreach (var index in SpriteGeometry.DrawOrder(packet.Sprites))
+        {
+            var sprite = packet.Sprites[index];
+            var texture = _textures.Get(sprite.Texture);
+            SpriteGeometry.Quad(sprite, packet.Camera2D, extent, quad);
+            var first = (uint)(written / SpriteVertexFloats);
+            foreach (var corner in corners)
+            {
+                var v = quad[corner];
+                vertices[written++] = v.Pixel.X / width * 2f - 1f;
+                vertices[written++] = 1f - v.Pixel.Y / height * 2f;
+                vertices[written++] = v.Uv.X;
+                vertices[written++] = v.Uv.Y;
+                vertices[written++] = sprite.Color.X;
+                vertices[written++] = sprite.Color.Y;
+                vertices[written++] = sprite.Color.Z;
+                vertices[written++] = sprite.Color.W;
+            }
+
+            if (batches.Count > 0 && ReferenceEquals(batches[^1].Texture, texture))
+            {
+                var last = batches[^1];
+                batches[^1] = (last.Texture, last.FirstVertex, last.VertexCount + 6);
+            }
+            else
+            {
+                batches.Add((texture, first, 6));
+            }
+        }
+
+        fixed (float* data = vertices)
+        {
+            wgpuQueueWriteBuffer(_queue, _spriteVertices, 0, data, (nuint)(vertices.Length * sizeof(float)));
+        }
+
+        return batches;
+    }
+
+    private void CreateSpritePipeline()
+    {
+        var code = Utf8(SpriteShader);
+        fixed (byte* codePtr = code)
+        {
+            var wgsl = new ShaderSourceWgsl { Chain = new ChainedStruct { SType = WgpuConst.STypeShaderSourceWgsl }, Code = new StringView { Data = codePtr, Length = (nuint)code.Length } };
+            var moduleDescriptor = new ShaderModuleDescriptor { NextInChain = (ChainedStruct*)&wgsl };
+            _spriteShader = Require(wgpuDeviceCreateShaderModule(_device, &moduleDescriptor), "sprite shader module");
+        }
+
+        var entries = stackalloc BindGroupLayoutEntry[2];
+        entries[0] = new BindGroupLayoutEntry
+        {
+            Binding = 0,
+            Visibility = WgpuConst.ShaderStageFragment,
+            Texture = new TextureBindingLayout { SampleType = WgpuConst.TextureSampleTypeFloat, ViewDimension = WgpuConst.TextureViewDimension2D },
+        };
+        entries[1] = new BindGroupLayoutEntry
+        {
+            Binding = 1,
+            Visibility = WgpuConst.ShaderStageFragment,
+            Sampler = new SamplerBindingLayout { Type = WgpuConst.SamplerBindingFiltering },
+        };
+        var layoutDescriptor = new BindGroupLayoutDescriptor { EntryCount = 2, Entries = entries };
+        _spriteBindGroupLayout = Require(wgpuDeviceCreateBindGroupLayout(_device, &layoutDescriptor), "sprite bind group layout");
+        var bindGroupLayout = _spriteBindGroupLayout;
+        var pipelineLayoutDescriptor = new PipelineLayoutDescriptor { BindGroupLayoutCount = 1, BindGroupLayouts = &bindGroupLayout };
+        _spritePipelineLayout = Require(wgpuDeviceCreatePipelineLayout(_device, &pipelineLayoutDescriptor), "sprite pipeline layout");
+
+        _nearestSampler = CreateSampler(WgpuConst.FilterModeNearest, "nearest sampler");
+        _linearSampler = CreateSampler(WgpuConst.FilterModeLinear, "linear sampler");
+        _spriteVertices = CreateBuffer((ulong)(MaxSpritesPerFrame * 6 * SpriteVertexFloats * sizeof(float)), WgpuConst.BufferUsageVertex | WgpuConst.BufferUsageCopyDst, "sprite vertices");
+        _rectClearVertices = CreateBuffer(6 * SpriteVertexFloats * sizeof(float), WgpuConst.BufferUsageVertex | WgpuConst.BufferUsageCopyDst, "pass rect clear vertices");
+
+        var vsEntry = Utf8("vs_sprite");
+        var fsEntry = Utf8("fs_sprite");
+        var attributes = stackalloc VertexAttribute[3];
+        attributes[0] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x2, Offset = 0, ShaderLocation = 0 };
+        attributes[1] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x2, Offset = 8, ShaderLocation = 1 };
+        attributes[2] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x4, Offset = 16, ShaderLocation = 2 };
+        var vertexLayout = new VertexBufferLayout { StepMode = WgpuConst.VertexStepModeVertex, ArrayStride = SpriteVertexFloats * sizeof(float), AttributeCount = 3, Attributes = attributes };
+        var blend = new BlendState
+        {
+            Color = new BlendComponent { Operation = WgpuConst.BlendOperationAdd, SrcFactor = WgpuConst.BlendFactorSrcAlpha, DstFactor = WgpuConst.BlendFactorOneMinusSrcAlpha },
+            Alpha = new BlendComponent { Operation = WgpuConst.BlendOperationAdd, SrcFactor = WgpuConst.BlendFactorOne, DstFactor = WgpuConst.BlendFactorOneMinusSrcAlpha },
+        };
+        var colorTarget = new ColorTargetState { Format = _surfaceFormat, Blend = &blend, WriteMask = WgpuConst.ColorWriteAll };
+
+        // The pass carries the 3D depth buffer, so the pipeline must declare it; sprites neither test nor write depth.
+        var keep = new StencilFaceState { Compare = WgpuConst.CompareAlways, FailOp = WgpuConst.StencilKeep, DepthFailOp = WgpuConst.StencilKeep, PassOp = WgpuConst.StencilKeep };
+        var depthStencil = new DepthStencilState
+        {
+            Format = WgpuConst.FormatDepth24Plus,
+            DepthWriteEnabled = WgpuConst.OptionalBoolFalse,
+            DepthCompare = WgpuConst.CompareAlways,
+            StencilFront = keep,
+            StencilBack = keep,
+        };
+        fixed (byte* vs = vsEntry)
+        fixed (byte* fs = fsEntry)
+        {
+            var fragment = new FragmentState { Module = _spriteShader, EntryPoint = new StringView { Data = fs, Length = (nuint)fsEntry.Length }, TargetCount = 1, Targets = &colorTarget };
+            var descriptor = new RenderPipelineDescriptor
+            {
+                Layout = _spritePipelineLayout,
+                Vertex = new VertexState { Module = _spriteShader, EntryPoint = new StringView { Data = vs, Length = (nuint)vsEntry.Length }, BufferCount = 1, Buffers = &vertexLayout },
+                Primitive = new PrimitiveState { Topology = WgpuConst.TopologyTriangleList, FrontFace = WgpuConst.FrontFaceCcw, CullMode = WgpuConst.CullModeNone },
+                DepthStencil = &depthStencil,
+                Multisample = new MultisampleState { Count = 1, Mask = uint.MaxValue },
+                Fragment = &fragment,
+            };
+            _spritePipeline = Require(wgpuDeviceCreateRenderPipeline(_device, &descriptor), "sprite pipeline");
+        }
+
+        // Multi-camera rect clears are a quad through this pipeline sampling one white texel.
+        _whiteTexel = UploadTexture(new TextureData(1, 1, [255, 255, 255, 255]));
+    }
+
+    private nint CreateSampler(uint filter, string label)
+    {
+        var descriptor = new SamplerDescriptor
+        {
+            AddressModeU = WgpuConst.AddressModeClampToEdge,
+            AddressModeV = WgpuConst.AddressModeClampToEdge,
+            AddressModeW = WgpuConst.AddressModeClampToEdge,
+            MagFilter = filter,
+            MinFilter = filter,
+            MipmapFilter = WgpuConst.MipmapFilterModeNearest,
+            LodMinClamp = 0,
+            LodMaxClamp = 32,
+            MaxAnisotropy = 1,
+        };
+        return Require(wgpuDeviceCreateSampler(_device, &descriptor), label);
+    }
+
+    /// <summary>RGBA8 sRGB texture: the GPU decodes to linear when sampling, so tint and blending happen in linear space.</summary>
+    private GpuTexture UploadTexture(TextureData data)
+    {
+        var width = (uint)data.Width;
+        var height = (uint)data.Height;
+        var texture = CreateTexture(width, height, WgpuConst.FormatRgba8UnormSrgb, WgpuConst.TextureUsageTextureBinding | WgpuConst.TextureUsageCopyDst, "sprite texture");
+        var destination = new TexelCopyTextureInfo { Texture = texture, Aspect = WgpuConst.TextureAspectAll };
+        var layout = new TexelCopyBufferLayout { BytesPerRow = width * 4, RowsPerImage = height };
+        var size = new Extent3D { Width = width, Height = height, DepthOrArrayLayers = 1 };
+        fixed (byte* pixels = data.Rgba)
+        {
+            wgpuQueueWriteTexture(_queue, &destination, pixels, (nuint)data.Rgba.Length, &layout, &size);
+        }
+
+        var view = Require(wgpuTextureCreateView(texture, null), "sprite texture view");
+        var entries = stackalloc BindGroupEntry[2];
+        entries[0] = new BindGroupEntry { Binding = 0, TextureView = view };
+        entries[1] = new BindGroupEntry { Binding = 1, Sampler = data.Filter == TextureFilter.Linear ? _linearSampler : _nearestSampler };
+        var descriptor = new BindGroupDescriptor { Layout = _spriteBindGroupLayout, EntryCount = 2, Entries = entries };
+        var bindGroup = Require(wgpuDeviceCreateBindGroup(_device, &descriptor), "sprite bind group");
+        return new GpuTexture(texture, view, bindGroup);
     }
 
     /// <summary>Right-handed view (inverse of the camera's world transform) and a 0..1 depth perspective, as WebGPU expects.</summary>
@@ -417,6 +1009,54 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
 
         return view * Matrix4x4.CreatePerspectiveFieldOfView(camera.FieldOfViewY, aspect, camera.NearPlane, camera.FarPlane);
+    }
+
+    /// <summary>Lit uniform slot: mvp, world, normal matrix (from <see cref="LightingMath.NormalMatrix"/>), base color, params.</summary>
+    private static void WriteLitInstance(Span<float> slot, Matrix4x4 world, Matrix4x4 viewProjection, MaterialData material)
+    {
+        WriteMatrix(slot, world * viewProjection);
+        WriteMatrix(slot[16..], world);
+        WriteMatrix(slot[32..], material.Lit ? LightingMath.NormalMatrix(world) : Matrix4x4.Identity);
+        slot[48] = material.BaseColor.X;
+        slot[49] = material.BaseColor.Y;
+        slot[50] = material.BaseColor.Z;
+        slot[51] = material.BaseColor.W;
+        slot[52] = material.UseVertexColors ? 1f : 0f;
+        slot[53] = material.Lit ? 1f : 0f;
+    }
+
+    /// <summary>Scene lights uniform: ambient, count, then per light (vector, kind) and (radiance = color × intensity, range).</summary>
+    private void WriteLights(SceneLighting? lighting)
+    {
+        if (lighting is null)
+        {
+            return;
+        }
+
+        var data = new float[LightsUniformSize / sizeof(float)];
+        data[0] = lighting.Ambient.X;
+        data[1] = lighting.Ambient.Y;
+        data[2] = lighting.Ambient.Z;
+        data[4] = BitConverter.UInt32BitsToSingle((uint)lighting.Lights.Count);
+        for (var i = 0; i < lighting.Lights.Count; i++)
+        {
+            var light = lighting.Lights[i];
+            var radiance = LightingMath.Radiance(light);
+            var at = 8 + i * 8;
+            data[at] = light.PositionOrDirection.X;
+            data[at + 1] = light.PositionOrDirection.Y;
+            data[at + 2] = light.PositionOrDirection.Z;
+            data[at + 3] = (float)light.Kind;
+            data[at + 4] = radiance.X;
+            data[at + 5] = radiance.Y;
+            data[at + 6] = radiance.Z;
+            data[at + 7] = light.Range;
+        }
+
+        fixed (float* pointer = data)
+        {
+            wgpuQueueWriteBuffer(_queue, _lightsBuffer, 0, pointer, (nuint)LightsUniformSize);
+        }
     }
 
     /// <summary>Field order M11..M44 = column-major array of the column-vector matrix WGSL multiplies as mvp * v.</summary>
@@ -581,22 +1221,113 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         }
     }
 
+    /// <summary>
+    /// G1Lit pipeline: same depth, culling and target as the G0 pipeline, a 36-byte vertex (position, color, normal),
+    /// group 0 = per-instance uniforms in the shared buffer (224-byte binding), group 1 = scene lights.
+    /// </summary>
+    private void CreateLitPipeline()
+    {
+        var code = Utf8(LitShader);
+        fixed (byte* codePtr = code)
+        {
+            var wgsl = new ShaderSourceWgsl { Chain = new ChainedStruct { SType = WgpuConst.STypeShaderSourceWgsl }, Code = new StringView { Data = codePtr, Length = (nuint)code.Length } };
+            var moduleDescriptor = new ShaderModuleDescriptor { NextInChain = (ChainedStruct*)&wgsl };
+            _litShader = Require(wgpuDeviceCreateShaderModule(_device, &moduleDescriptor), "lit shader module");
+        }
+
+        var instanceEntry = new BindGroupLayoutEntry
+        {
+            Binding = 0,
+            Visibility = WgpuConst.ShaderStageVertex | WgpuConst.ShaderStageFragment,
+            Buffer = new BufferBindingLayout { Type = WgpuConst.BufferBindingUniform, HasDynamicOffset = 1, MinBindingSize = LitUniformSize },
+        };
+        var instanceLayout = new BindGroupLayoutDescriptor { EntryCount = 1, Entries = &instanceEntry };
+        _litBindGroupLayout = Require(wgpuDeviceCreateBindGroupLayout(_device, &instanceLayout), "lit bind group layout");
+
+        var lightsEntry = new BindGroupLayoutEntry
+        {
+            Binding = 0,
+            Visibility = WgpuConst.ShaderStageFragment,
+            Buffer = new BufferBindingLayout { Type = WgpuConst.BufferBindingUniform, HasDynamicOffset = 0, MinBindingSize = LightsUniformSize },
+        };
+        var lightsLayout = new BindGroupLayoutDescriptor { EntryCount = 1, Entries = &lightsEntry };
+        _lightsBindGroupLayout = Require(wgpuDeviceCreateBindGroupLayout(_device, &lightsLayout), "lights bind group layout");
+
+        var layouts = stackalloc nint[2];
+        layouts[0] = _litBindGroupLayout;
+        layouts[1] = _lightsBindGroupLayout;
+        var pipelineLayoutDescriptor = new PipelineLayoutDescriptor { BindGroupLayoutCount = 2, BindGroupLayouts = layouts };
+        _litPipelineLayout = Require(wgpuDeviceCreatePipelineLayout(_device, &pipelineLayoutDescriptor), "lit pipeline layout");
+
+        var instanceBind = new BindGroupEntry { Binding = 0, Buffer = _uniformBuffer, Offset = 0, Size = LitUniformSize };
+        var instanceBindDescriptor = new BindGroupDescriptor { Layout = _litBindGroupLayout, EntryCount = 1, Entries = &instanceBind };
+        _litBindGroup = Require(wgpuDeviceCreateBindGroup(_device, &instanceBindDescriptor), "lit bind group");
+
+        _lightsBuffer = CreateBuffer(LightsUniformSize, WgpuConst.BufferUsageUniform | WgpuConst.BufferUsageCopyDst, "scene lights");
+        var lightsBind = new BindGroupEntry { Binding = 0, Buffer = _lightsBuffer, Offset = 0, Size = LightsUniformSize };
+        var lightsBindDescriptor = new BindGroupDescriptor { Layout = _lightsBindGroupLayout, EntryCount = 1, Entries = &lightsBind };
+        _lightsBindGroup = Require(wgpuDeviceCreateBindGroup(_device, &lightsBindDescriptor), "lights bind group");
+
+        var vsEntry = Utf8("vs_lit");
+        var fsEntry = Utf8("fs_lit");
+        var attributes = stackalloc VertexAttribute[3];
+        attributes[0] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x3, Offset = 0, ShaderLocation = 0 };
+        attributes[1] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x3, Offset = 12, ShaderLocation = 1 };
+        attributes[2] = new VertexAttribute { Format = WgpuConst.VertexFormatFloat32x3, Offset = 24, ShaderLocation = 2 };
+        var vertexLayout = new VertexBufferLayout { StepMode = WgpuConst.VertexStepModeVertex, ArrayStride = LitVertexSize, AttributeCount = 3, Attributes = attributes };
+        var colorTarget = new ColorTargetState { Format = _surfaceFormat, WriteMask = WgpuConst.ColorWriteAll };
+        var keep = new StencilFaceState { Compare = WgpuConst.CompareAlways, FailOp = WgpuConst.StencilKeep, DepthFailOp = WgpuConst.StencilKeep, PassOp = WgpuConst.StencilKeep };
+        var depthStencil = new DepthStencilState
+        {
+            Format = WgpuConst.FormatDepth24Plus,
+            DepthWriteEnabled = WgpuConst.OptionalBoolTrue,
+            DepthCompare = WgpuConst.CompareLess,
+            StencilFront = keep,
+            StencilBack = keep,
+        };
+        fixed (byte* vs = vsEntry)
+        fixed (byte* fs = fsEntry)
+        {
+            var fragment = new FragmentState { Module = _litShader, EntryPoint = new StringView { Data = fs, Length = (nuint)fsEntry.Length }, TargetCount = 1, Targets = &colorTarget };
+            var descriptor = new RenderPipelineDescriptor
+            {
+                Layout = _litPipelineLayout,
+                Vertex = new VertexState { Module = _litShader, EntryPoint = new StringView { Data = vs, Length = (nuint)vsEntry.Length }, BufferCount = 1, Buffers = &vertexLayout },
+                Primitive = new PrimitiveState { Topology = WgpuConst.TopologyTriangleList, FrontFace = WgpuConst.FrontFaceCcw, CullMode = WgpuConst.CullModeBack },
+                DepthStencil = &depthStencil,
+                Multisample = new MultisampleState { Count = 1, Mask = uint.MaxValue },
+                Fragment = &fragment,
+            };
+            _litPipeline = Require(wgpuDeviceCreateRenderPipeline(_device, &descriptor), "lit pipeline");
+        }
+    }
+
+    /// <summary>Interleaved upload: 6 floats per vertex (G0 layout), or 9 with normals for the lit pipeline.</summary>
     private GpuMesh UploadMesh(MeshData mesh)
     {
-        var vertexBytes = (ulong)(mesh.Vertices.Length * VertexPositionColor.SizeInBytes);
+        var normals = mesh.Normals;
+        var stride = normals is null ? 6 : 9;
+        var vertexBytes = (ulong)(mesh.Vertices.Length * stride * sizeof(float));
         var indexBytes = (ulong)(mesh.Indices.Length * sizeof(uint));
         var vertexBuffer = CreateBuffer(vertexBytes, WgpuConst.BufferUsageVertex | WgpuConst.BufferUsageCopyDst, "mesh vertices");
         var indexBuffer = CreateBuffer(indexBytes, WgpuConst.BufferUsageIndex | WgpuConst.BufferUsageCopyDst, "mesh indices");
-        var floats = new float[mesh.Vertices.Length * 6];
+        var floats = new float[mesh.Vertices.Length * stride];
         for (var i = 0; i < mesh.Vertices.Length; i++)
         {
             var v = mesh.Vertices[i];
-            floats[i * 6] = v.Position.X;
-            floats[i * 6 + 1] = v.Position.Y;
-            floats[i * 6 + 2] = v.Position.Z;
-            floats[i * 6 + 3] = v.Color.X;
-            floats[i * 6 + 4] = v.Color.Y;
-            floats[i * 6 + 5] = v.Color.Z;
+            var at = i * stride;
+            floats[at] = v.Position.X;
+            floats[at + 1] = v.Position.Y;
+            floats[at + 2] = v.Position.Z;
+            floats[at + 3] = v.Color.X;
+            floats[at + 4] = v.Color.Y;
+            floats[at + 5] = v.Color.Z;
+            if (normals is not null)
+            {
+                floats[at + 6] = normals[i].X;
+                floats[at + 7] = normals[i].Y;
+                floats[at + 8] = normals[i].Z;
+            }
         }
 
         fixed (float* vertices = floats)
@@ -606,7 +1337,7 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
             wgpuQueueWriteBuffer(_queue, indexBuffer, 0, indices, (nuint)indexBytes);
         }
 
-        return new GpuMesh(vertexBuffer, indexBuffer, (uint)mesh.Indices.Length);
+        return new GpuMesh(vertexBuffer, indexBuffer, mesh);
     }
 
     private nint CreateBuffer(ulong size, ulong usage, string label)
@@ -724,11 +1455,46 @@ public sealed unsafe class WgpuRenderer : IRenderer, IRenderCapture
         public nint Handle;
     }
 
-    private sealed class GpuMesh(nint vertices, nint indices, uint indexCount)
+    /// <summary>Offscreen color (surface format, copy source) and depth of one pass at its rect size.</summary>
+    private sealed class PassTarget(nint color, nint colorView, nint depth, nint depthView, uint width, uint height)
+    {
+        public nint Color { get; private set; } = color;
+        public nint ColorView { get; private set; } = colorView;
+        public nint Depth { get; private set; } = depth;
+        public nint DepthView { get; private set; } = depthView;
+        public uint Width { get; } = width;
+        public uint Height { get; } = height;
+
+        public void Release()
+        {
+            if (ColorView != 0) { wgpuTextureViewRelease(ColorView); ColorView = 0; }
+            if (Color != 0) { wgpuTextureDestroy(Color); wgpuTextureRelease(Color); Color = 0; }
+            if (DepthView != 0) { wgpuTextureViewRelease(DepthView); DepthView = 0; }
+            if (Depth != 0) { wgpuTextureDestroy(Depth); wgpuTextureRelease(Depth); Depth = 0; }
+        }
+    }
+
+    private sealed class GpuTexture(nint texture, nint view, nint bindGroup)
+    {
+        public nint Texture { get; private set; } = texture;
+        public nint View { get; private set; } = view;
+        public nint BindGroup { get; private set; } = bindGroup;
+
+        public void Release()
+        {
+            if (BindGroup != 0) { wgpuBindGroupRelease(BindGroup); BindGroup = 0; }
+            if (View != 0) { wgpuTextureViewRelease(View); View = 0; }
+            if (Texture != 0) { wgpuTextureDestroy(Texture); wgpuTextureRelease(Texture); Texture = 0; }
+        }
+    }
+
+    /// <summary>GPU buffers; <see cref="HasNormals"/> selects the lit vertex layout and feeds the shared draw-time checks.</summary>
+    private sealed class GpuMesh(nint vertices, nint indices, MeshData data)
     {
         public nint Vertices { get; private set; } = vertices;
         public nint Indices { get; private set; } = indices;
-        public uint IndexCount { get; } = indexCount;
+        public uint IndexCount { get; } = (uint)data.Indices.Length;
+        public bool HasNormals { get; } = data.Normals is not null;
 
         public void Release()
         {

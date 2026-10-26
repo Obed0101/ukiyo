@@ -1,0 +1,11 @@
+[ukiyo] target=headless game=Minimap MinimapGame.cs=5869AB6B9E6C Program.cs=BF7D76A7C416
+[ukiyo] renderer=SoftwareRenderer backend=CPU device="managed rasterizer" profile=G1Lit capture=True
+snapshot {"tick":0,"renderer":"SoftwareRenderer","backend":"CPU","source":{"MinimapGame.cs":"5869AB6B9E6CEE3646A2A13B99C4D8E26BC5B72386DFA4741E5169441C87AF27","Program.cs":"BF7D76A7C416B508FF8835715E2F7B38E6FB75E01118C459340A69B500AC77D3"},"entities":{"rover":{"position":[0,0,0],"rotation":[0,0,0,1],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+capture <frames>/headless-tick-000000.png
+capture-pass 0 primary=true <frames>/headless-tick-000000-pass-0.png
+capture-pass 1 primary=false <frames>/headless-tick-000000-pass-1.png
+snapshot {"tick":60,"renderer":"SoftwareRenderer","backend":"CPU","source":{"MinimapGame.cs":"5869AB6B9E6CEE3646A2A13B99C4D8E26BC5B72386DFA4741E5169441C87AF27","Program.cs":"BF7D76A7C416B508FF8835715E2F7B38E6FB75E01118C459340A69B500AC77D3"},"entities":{"rover":{"position":[2.818118,0.3,1.0286934],"rotation":[0,-0.17410813,0,0.98472655],"scale":[0.6,0.6,0.6]}},"values":{"passes":2,"primaryPass":0}}
+capture <frames>/headless-tick-000060.png
+capture-pass 0 primary=true <frames>/headless-tick-000060-pass-0.png
+capture-pass 1 primary=false <frames>/headless-tick-000060-pass-1.png
+[ukiyo] software frames=2 size=1280x720

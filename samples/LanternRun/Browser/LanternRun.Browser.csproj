@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>lantern-run-web</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.LanternRun</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <UkiyoBrowserHost>true</UkiyoBrowserHost>
+  </PropertyGroup>
+  <ItemGroup>
+    <UkiyoSharedSource Include="../Shared/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Browser/Ukiyo.Platform.Browser.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Physics/Ukiyo.Physics.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.UI/Ukiyo.UI.csproj" />
+    <ProjectReference Include="../../../src/Ukiyo.Audio/Ukiyo.Audio.csproj" />
+    <SupportedPlatform Include="browser" />
+    <AssemblyAttribute Include="System.Runtime.Versioning.SupportedOSPlatformAttribute">
+      <_Parameter1>browser</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+</Project>

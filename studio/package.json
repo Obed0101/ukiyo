@@ -1,0 +1,11 @@
+{
+  "name": "@ukiyo/studio",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "The person's window onto a running ukiyo game: live frame, transport, values, entities, input recording. Panels, layouts and themes are files agents edit. Zero dependencies; runs on Bun.",
+  "scripts": {
+    "start": "bun src/server.ts",
+    "test": "bun test"
+  }
+}

@@ -1,0 +1,14 @@
+# TexturedQuad: headless snapshots at 0,1,60,180,600
+# Pinned on every CI machine. Regenerate only for an intended change: UKIYO_UPDATE_GOLDEN=1 dotnet test tests/Ukiyo.Tests --filter SnapshotGoldenTests
+snapshot {"tick":0,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"wisp":{"position":[0,0.5,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"atlasHeight":40,"atlasWidth":60,"wispFrame":0}}
+snapshot {"tick":1,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"wisp":{"position":[0,0.5,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"atlasHeight":40,"atlasWidth":60,"wispFrame":0}}
+snapshot {"tick":60,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"wisp":{"position":[0,0.5,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"atlasHeight":40,"atlasWidth":60,"wispFrame":2}}
+snapshot {"tick":180,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"wisp":{"position":[0,0.5,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"atlasHeight":40,"atlasWidth":60,"wispFrame":2}}
+snapshot {"tick":600,"renderer":"NullRenderer","backend":"None","source":{},"entities":{"wisp":{"position":[0,0.5,0],"rotation":[0,0,0,1],"scale":[1,1,1]}},"values":{"atlasHeight":40,"atlasWidth":60,"wispFrame":0}}
+[ukiyo] null frames=5 instances=0 sprites=70 meshes=0 materials=0 textures=1
+resources e15b8337aca6ca3c576c6a4c90512ba126c180ce81e4220c18f8bf8c87eadc0a
+frame 0 9269f83a0851417c69ff60f8604d1943b21a57ff2159f32902cab5404436adce
+frame 1 9870aa77ab0d47e5df27f99a5f09582a34a52f64909e640346c675c698cf587f
+frame 60 eec8c9bd45f945e11d3cc85d51d8b2fac520ec5bec056cdd5236ccdf432d769d
+frame 180 17a42c196af55ca697607eb52dd5e8fe551c01ab8774d4fa3ddbc0260807e414
+frame 600 5a84639772ff3d7ada9cb2adf1f2c7eb2e72b35f66f1f7120cbbba73812f3f03

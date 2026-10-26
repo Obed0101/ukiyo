@@ -1,0 +1,10 @@
+{
+  "description": "Frame on the left, values / entities / the clock stacked on the right.",
+  "columns": "minmax(0, 1fr) minmax(260px, 320px)",
+  "rows": "minmax(0, 1fr) minmax(0, 1fr) auto",
+  "areas": [
+    "viewport values",
+    "viewport entities",
+    "viewport clock"
+  ]
+}

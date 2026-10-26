@@ -1,0 +1,6 @@
+[
+  {"id":"p1","tick":12,"ops":[{"op":"spawn","id":"bat-3","prefab":"drifter","position":[-5,-1],"values":{"speed":3}}]},
+  {"id":"p2","tick":40,"ops":[{"op":"retarget","id":"lamp-east","position":[2,1],"values":{"glow":0.25}}]},
+  {"id":"p3","tick":75,"scene":"cavern","ops":[{"op":"dispose","id":"bat-2"},{"op":"retarget","id":"bat-1","values":{"speed":-6}}]},
+  {"id":"p4","tick":80,"ops":[{"op":"dispose","id":"moth"}]}
+]

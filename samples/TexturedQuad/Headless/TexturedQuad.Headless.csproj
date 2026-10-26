@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>textured-quad-headless</AssemblyName>
+    <RootNamespace>Ukiyo.Samples.TexturedQuad</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <!-- Recursive so imported art (Shared/gen/*.g.cs) is compiled and hashed into the source identity too. -->
+    <UkiyoSharedSource Include="../Shared/**/*.cs" />
+    <Compile Include="@(UkiyoSharedSource)" Link="Shared/%(RecursiveDir)%(Filename)%(Extension)" />
+    <ProjectReference Include="../../../src/Ukiyo.Platform.Headless/Ukiyo.Platform.Headless.csproj" />
+  </ItemGroup>
+</Project>
